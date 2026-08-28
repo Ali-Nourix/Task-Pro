@@ -1,0 +1,1227 @@
+/* @settings
+
+name: TaskPro
+id: taskpro
+settings:
+  -
+    id: taskpro-status-colors
+    title: Status Badge Colors
+    type: heading
+    level: 2
+  -
+    id: taskpro-status-done-color
+    title: Done Status Color
+    type: variable-themed-color
+    format: hex
+    default-light: '#d1e7dd'
+    default-dark: '#d1e7dd'
+  -
+    id: taskpro-status-progress-color
+    title: In Progress Status Color
+    type: variable-themed-color
+    format: hex
+    default-light: '#cfe2ff'
+    default-dark: '#cfe2ff'
+  -
+    id: taskpro-status-notstarted-color
+    title: Not Started Status Color
+    type: variable-themed-color
+    format: hex
+    default-light: '#e2e3e5'
+    default-dark: '#e2e3e5'
+  -
+    id: taskpro-status-overdue-color
+    title: Overdue Status Color
+    type: variable-themed-color
+    format: hex
+    default-light: '#f8d7da'
+    default-dark: '#f8d7da'
+  -
+    id: taskpro-status-notdone-color
+    title: Not Done Status Color
+    type: variable-themed-color
+    format: hex
+    default-light: '#f8d7da'
+    default-dark: '#f8d7da'
+  -
+    id: taskpro-widgets
+    title: Widgets & Panels
+    type: heading
+    level: 2
+  -
+    id: taskpro-badge-padding-y
+    title: Badge padding (vertical)
+    type: variable-number
+    default: 2
+    format: px
+  -
+    id: taskpro-badge-padding-x
+    title: Badge padding (horizontal)
+    type: variable-number
+    default: 8
+    format: px
+  -
+    id: taskpro-badge-radius
+    title: Badge corner radius
+    type: variable-number
+    default: 12
+    format: px
+  -
+    id: taskpro-badge-font-size
+    title: Badge font size
+    type: variable-number
+    default: 12
+    format: px
+  -
+    id: taskpro-chip-min-height
+    title: Chip minimum height
+    type: variable-number
+    default: 22
+    format: px
+  -
+    id: taskpro-progress-bg
+    title: Progress chip background
+    type: variable-themed-color
+    format: hex
+    default-light: '#E8F4F8'
+    default-dark: '#2A3F47'
+  -
+    id: taskpro-progress-color
+    title: Progress chip text color
+    type: variable-themed-color
+    format: hex
+    default-light: '#1E88A8'
+    default-dark: '#7DD3FC'
+  -
+    id: taskpro-panel-padding
+    title: Panel padding
+    type: variable-number
+    default: 20
+    format: px
+  -
+    id: taskpro-panel-radius
+    title: Panel corner radius
+    type: variable-number
+    default: 10
+    format: px
+  -
+    id: taskpro-panel-border-width
+    title: Panel border width
+    type: variable-number
+    default: 2
+    format: px
+  -
+    id: taskpro-menu-disabled-color
+    title: Disabled menu item color
+    type: variable-themed-color
+    format: hex
+    default-light: '#9ca3af'
+    default-dark: '#6b7280'
+  -
+    id: taskpro-menu-info-color
+    title: Info menu item color (read-only headers)
+    type: variable-themed-color
+    format: hex
+    default-light: '#1E88A8'
+    default-dark: '#7DD3FC'
+  -
+    id: taskpro-capability-chips
+    title: Focus Timer & Repeat Chips
+    type: heading
+    level: 2
+  -
+    id: taskpro-timer-color
+    title: Focus timer chip color (running)
+    type: variable-themed-color
+    format: hex
+    default-light: '#0f766e'
+    default-dark: '#5eead4'
+  -
+    id: taskpro-timer-bg
+    title: Focus timer chip background (running)
+    type: variable-themed-color
+    format: hex
+    default-light: '#e6f7f5'
+    default-dark: '#1f3b39'
+  -
+    id: taskpro-timer-overrun-color
+    title: Focus timer chip color (finished)
+    type: variable-themed-color
+    format: hex
+    default-light: '#b42318'
+    default-dark: '#fda4a4'
+  -
+    id: taskpro-repeat-color
+    title: Repeat chip color
+    type: variable-themed-color
+    format: hex
+    default-light: '#6941c6'
+    default-dark: '#c4b0ff'
+
+*/
+
+:root {
+  --taskpro-status-done-color: #d1e7dd;
+  --taskpro-status-progress-color: #cfe2ff;
+  --taskpro-status-notstarted-color: #e2e3e5;
+  --taskpro-status-overdue-color: #f8d7da;
+  --taskpro-status-notdone-color: #f8d7da;
+  --taskpro-deadline-overdue-bg: #f8d7da;
+  --taskpro-deadline-today-bg: #ffe5b4;
+  --taskpro-deadline-tomorrow-bg: #fff3cd;
+  --taskpro-deadline-soon-bg: #fff3cd;
+  --taskpro-deadline-week-bg: #d1ecf1;
+  --taskpro-deadline-normal-bg: #e2e3e5;
+  --taskpro-deadline-completed-bg: #cfe2ff;
+  --taskpro-deadline-missed-bg: #f8d7da;
+  --taskpro-deadline-text: #3a3a3a;
+  --taskpro-deadline-text-week: #055160;
+  --taskpro-deadline-border-opacity: 0.45;
+  
+  /* Badge styling */
+  --taskpro-badge-padding: 2px 8px;
+  --taskpro-badge-radius: 12px;
+  
+  /* Legacy badge variables for compatibility */
+  --taskpro-badge-bg: #E8F4F8;
+  --taskpro-badge-color: #1E88A8;
+  --taskpro-badge-opacity-normal: 0.86;
+  --taskpro-badge-opacity-hover: 1;
+  --taskpro-badge-opacity-active: 0.72;
+  --taskpro-badge-padding-y: 2px;
+  --taskpro-badge-padding-x: 8px;
+  --taskpro-badge-margin-inline-start: 8px;
+  --taskpro-badge-gap: 4px;
+  --taskpro-badge-font-size: 12px;
+  --taskpro-badge-radius: 12px;
+  --taskpro-tag-radius: 999px;
+  --taskpro-chip-min-height: 22px;
+  /* Chip padding is defined once here; see the chip geometry rules below. */
+  --taskpro-chip-padding-block: 3px;
+  --taskpro-chip-padding-inline: 8px;
+  --taskpro-progress-bg: #E8F4F8;
+  --taskpro-progress-color: #1E88A8;
+  --taskpro-panel-border-color: var(--background-modifier-border);
+  --taskpro-panel-padding: 20px;
+  --taskpro-panel-radius: 10px;
+  --taskpro-panel-border-width: 2px;
+  --taskpro-panel-min-width: 320px;
+  --taskpro-panel-gap: 12px;
+  --taskpro-menu-info-color: var(--text-accent);
+  --taskpro-menu-disabled-color: #9ca3af;
+  --taskpro-menu-disabled-opacity: 0.55;
+
+  /* Focus timer + repeat chips */
+  --taskpro-timer-color: #0f766e;
+  --taskpro-timer-bg: #e6f7f5;
+  --taskpro-timer-overrun-color: #b42318;
+  --taskpro-repeat-color: #6941c6;
+}
+
+.theme-dark {
+  --taskpro-badge-bg: #2A3F47;
+  --taskpro-badge-color: #7DD3FC;
+  --taskpro-progress-bg: #2A3F47;
+  --taskpro-progress-color: #7DD3FC;
+  --taskpro-timer-color: #5eead4;
+  --taskpro-timer-bg: #1f3b39;
+  --taskpro-timer-overrun-color: #fda4a4;
+  --taskpro-repeat-color: #c4b0ff;
+}
+
+.taskpro-badge-container {
+  display: inline-flex;
+  flex-direction: row;
+  direction: rtl;
+  align-items: center;
+  gap: var(--taskpro-badge-gap);
+  margin-inline-start: var(--taskpro-badge-margin-inline-start);
+  vertical-align: middle;
+  line-height: 0;
+}
+
+/* Hidden block ID carrier — lives inside the widget, never in file text */
+.taskpro-block-id {
+  display: none !important;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* Shared chip geometry — status, progress, deadline */
+.taskpro-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-height: var(--taskpro-chip-min-height);
+  padding: var(--taskpro-badge-padding-y) var(--taskpro-badge-padding-x);
+  font-size: var(--taskpro-badge-font-size);
+  font-weight: var(--font-semibold);
+  line-height: 1.2;
+  border-radius: var(--taskpro-badge-radius);
+  border: 1px solid var(--background-modifier-border);
+  white-space: nowrap;
+  vertical-align: middle;
+  unicode-bidi: isolate;
+  direction: auto;
+}
+
+.taskpro-interactive-badge {
+  cursor: pointer;
+  color: var(--taskpro-badge-color);
+  background: var(--taskpro-badge-bg);
+  opacity: var(--taskpro-badge-opacity-normal);
+  transition: opacity 140ms ease, border-color 140ms ease;
+}
+
+/* Status-specific badge colors using pastel palette */
+.taskpro-interactive-badge[data-status="done"],
+.taskpro-interactive-badge[data-status="[x]"] {
+  background: var(--taskpro-status-done-color);
+  color: #0f5132;
+  border-color: #badbcc;
+}
+
+.taskpro-interactive-badge[data-status="in-progress"],
+.taskpro-interactive-badge[data-status="[/]"] {
+  background: var(--taskpro-status-progress-color);
+  color: #084298;
+  border-color: #b6d4fe;
+}
+
+.taskpro-interactive-badge[data-status="not-started"],
+.taskpro-interactive-badge[data-status="[ ]"] {
+  background: var(--taskpro-status-notstarted-color);
+  color: #41464b;
+  border-color: #c4c8cb;
+}
+
+.taskpro-interactive-badge[data-status="overdue"] {
+  background: var(--taskpro-status-overdue-color);
+  color: #842029;
+  border-color: #f5c2c7;
+}
+
+.taskpro-interactive-badge[data-status="[!]"] {
+  background: var(--taskpro-status-notdone-color);
+  color: #842029;
+  border-color: #f5c2c7;
+}
+
+.taskpro-progress-badge {
+  cursor: pointer;
+  user-select: none;
+  color: var(--taskpro-progress-color);
+  background: var(--taskpro-progress-bg);
+  opacity: var(--taskpro-badge-opacity-normal);
+  transition: opacity 140ms ease;
+}
+
+.taskpro-progress-badge:hover {
+  opacity: var(--taskpro-badge-opacity-hover);
+}
+
+.taskpro-deadline-badge {
+  font-size: var(--taskpro-badge-font-size);
+  opacity: var(--taskpro-badge-opacity-normal);
+}
+
+/* Informational menu rows (read-only header) — accent blue */
+.menu .menu-item.taskpro-menu-item--info {
+  opacity: 1;
+  cursor: default;
+}
+
+.menu .menu-item.taskpro-menu-item--info .menu-item-title,
+.menu .menu-item.taskpro-menu-item--info .menu-item-icon,
+.menu .menu-item.taskpro-menu-item--info .menu-item-icon svg {
+  color: var(--taskpro-menu-info-color, var(--text-accent)) !important;
+  opacity: 1;
+}
+
+/* Blocked actions (e.g. decrease at 0 steps) — muted gray */
+.menu .menu-item.taskpro-menu-item--disabled {
+  opacity: var(--taskpro-menu-disabled-opacity);
+}
+
+.menu .menu-item.taskpro-menu-item--disabled .menu-item-title,
+.menu .menu-item.taskpro-menu-item--disabled .menu-item-icon,
+.menu .menu-item.taskpro-menu-item--disabled .menu-item-icon svg {
+  color: var(--taskpro-menu-disabled-color) !important;
+}
+
+/* Shared modal panels (deadline, progress settings) */
+.taskpro-panel-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(2px);
+}
+
+.taskpro-panel {
+  min-width: var(--taskpro-panel-min-width);
+  max-width: 92vw;
+  padding: var(--taskpro-panel-padding);
+  border: 1px solid var(--taskpro-panel-border-color);
+  border-radius: var(--taskpro-panel-radius);
+  background: var(--background-primary);
+  box-shadow: var(--shadow-l);
+}
+
+.taskpro-panel__title {
+  margin: 0 0 var(--taskpro-panel-gap);
+  font-size: 1.1em;
+  font-weight: var(--font-bold);
+  color: var(--text-normal);
+}
+
+.taskpro-panel__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--taskpro-panel-gap);
+}
+
+.taskpro-panel__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.taskpro-panel__label {
+  font-size: 0.9em;
+  font-weight: var(--font-semibold);
+  color: var(--text-muted);
+}
+
+.taskpro-panel__input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: calc(var(--taskpro-panel-radius) - 4px);
+  background: var(--background-primary);
+  color: var(--text-normal);
+  font-size: var(--font-ui-medium);
+  box-sizing: border-box;
+}
+
+.taskpro-panel__input:focus {
+  border-color: var(--interactive-accent);
+  outline: none;
+}
+
+.taskpro-panel__toggle-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.taskpro-panel__footer {
+  margin-top: var(--taskpro-panel-gap);
+}
+
+.taskpro-panel__button-row {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.taskpro-panel__btn {
+  padding: 8px 16px;
+  border-radius: calc(var(--taskpro-panel-radius) - 2px);
+  cursor: pointer;
+  font-size: var(--font-ui-small);
+}
+
+.taskpro-panel__btn--secondary {
+  background: var(--background-modifier-hover);
+  color: var(--text-muted);
+  border: 1px solid var(--background-modifier-border);
+}
+
+.taskpro-panel__btn--primary {
+  border: none;
+}
+
+.taskpro-deadline-badge[data-state="overdue"] {
+  background: var(--taskpro-deadline-overdue-bg);
+  color: #842029;
+  border-color: rgba(132, 32, 41, var(--taskpro-deadline-border-opacity));
+}
+
+.taskpro-deadline-badge[data-state="completed"] {
+  background: var(--taskpro-deadline-completed-bg);
+  color: #084298;
+  border-color: rgba(8, 66, 152, var(--taskpro-deadline-border-opacity));
+}
+
+.taskpro-deadline-badge[data-state="missed"] {
+  background: var(--taskpro-deadline-missed-bg);
+  color: #842029;
+  border-color: rgba(132, 32, 41, var(--taskpro-deadline-border-opacity));
+}
+
+.taskpro-deadline-badge[data-state="today"] {
+  background: var(--taskpro-deadline-today-bg);
+  color: #664d03;
+  border-color: rgba(102, 77, 3, var(--taskpro-deadline-border-opacity));
+}
+
+.taskpro-deadline-badge[data-state="tomorrow"] {
+  background: var(--taskpro-deadline-tomorrow-bg);
+  color: #664d03;
+  border-color: rgba(102, 77, 3, var(--taskpro-deadline-border-opacity));
+}
+
+.taskpro-deadline-badge[data-state="soon"] {
+  background: var(--taskpro-deadline-soon-bg);
+  color: #664d03;
+  border-color: rgba(102, 77, 3, var(--taskpro-deadline-border-opacity));
+}
+
+.taskpro-deadline-badge[data-state="week"] {
+  background: var(--taskpro-deadline-week-bg);
+  color: var(--taskpro-deadline-text-week);
+  border-color: rgba(13, 110, 137, var(--taskpro-deadline-border-opacity));
+}
+
+.taskpro-deadline-badge[data-state="normal"] {
+  background: var(--taskpro-deadline-normal-bg);
+  color: var(--taskpro-deadline-text);
+  border-color: rgba(73, 80, 87, var(--taskpro-deadline-border-opacity));
+}
+
+.taskpro-interactive-badge:hover {
+  opacity: var(--taskpro-badge-opacity-hover);
+  border-color: var(--taskpro-badge-color);
+}
+
+.taskpro-interactive-badge:active {
+  opacity: var(--taskpro-badge-opacity-active);
+}
+
+.taskpro-tag-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+  min-height: 1.3em;
+  border-radius: var(--taskpro-tag-radius);
+  color: var(--text-muted);
+  background: var(--background-primary-alt);
+  border: 1px solid var(--background-modifier-border);
+}
+
+/* Hide badges in embeds if setting is disabled */
+body.taskpro-hide-badges-in-embeds .internal-embed .taskpro-badge-container,
+body.taskpro-hide-badges-in-embeds .markdown-embed .taskpro-badge-container {
+  display: none !important;
+}
+
+.internal-embed .taskpro-badge-container {
+  max-width: 100%;
+}
+
+.global-tasks-container {
+  margin-top: 10px;
+  padding: 10px;
+  background-color: var(--background-secondary);
+  border-radius: var(--radius-s);
+}
+
+.global-tasks-container .setting-item {
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--background-modifier-border);
+  padding: 18px 0;
+}
+
+.global-tasks-container .setting-item:last-child {
+  border-bottom: none;
+}
+
+.global-tasks-container .setting-item-info {
+  flex-grow: 1;
+  margin-right: 12px;
+}
+
+.global-tasks-container .setting-item-control {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.markdown-source-view.mod-cm6 .task-list-item-checkbox[data-task="/"],
+.markdown-source-view.mod-cm6 .HyperMD-task-line[data-task="/"] input[type="checkbox"] {
+  background: linear-gradient(to right, var(--text-accent) 50%, transparent 50%);
+  border-color: var(--text-accent);
+}
+
+.markdown-preview-view .task-list-item input[type="checkbox"].is-in-progress {
+  background: linear-gradient(to right, var(--text-accent) 50%, transparent 50%);
+  border-color: var(--text-accent);
+}
+
+.markdown-source-view.mod-cm6 .task-list-item-checkbox[data-task="!"],
+.markdown-source-view.mod-cm6 .HyperMD-task-line[data-task="!"] input[type="checkbox"],
+.markdown-preview-view .task-list-item input[type="checkbox"].is-not-done {
+  display: inline-grid;
+  place-content: center;
+  background: var(--taskpro-status-notdone-color);
+  border-color: #dc3545;
+  position: relative;
+  color: #dc3545 !important;
+  --checkbox-marker-color: #dc3545;
+}
+
+.markdown-source-view.mod-cm6 .task-list-item-checkbox[data-task="!"]::before,
+.markdown-source-view.mod-cm6 .HyperMD-task-line[data-task="!"] input[type="checkbox"]::before,
+.markdown-preview-view .task-list-item input[type="checkbox"].is-not-done::before {
+  content: none !important;
+}
+
+.markdown-source-view.mod-cm6 .task-list-item-checkbox[data-task="!"]::after,
+.markdown-source-view.mod-cm6 .HyperMD-task-line[data-task="!"] input[type="checkbox"]::after,
+.markdown-preview-view .task-list-item input[type="checkbox"].is-not-done::after {
+  content: "!";
+  position: static;
+  display: block;
+  margin: 0;
+  color: #dc3545 !important;
+  font-weight: var(--font-bold);
+  font-size: 0.95em;
+  line-height: 1;
+  text-align: center;
+  opacity: 1;
+}
+
+/* Import / configure task modal */
+.taskpro-config-modal .modal-content {
+  padding: var(--size-4-4);
+}
+
+.taskpro-config-modal__title {
+  margin: 0 0 var(--size-4-3);
+  font-size: var(--font-ui-large);
+  font-weight: var(--font-bold);
+  color: var(--text-normal);
+}
+
+.taskpro-config-modal__preview {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: var(--size-4-3);
+  margin-bottom: var(--size-4-4);
+  border-radius: var(--radius-m);
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+}
+
+.taskpro-config-modal__preview-label {
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-semibold);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.taskpro-config-modal__preview-text {
+  font-size: var(--font-ui-medium);
+  color: var(--text-normal);
+  line-height: 1.4;
+}
+
+.taskpro-config-modal .setting-item {
+  border-top: 1px solid var(--background-modifier-border);
+  padding-top: var(--size-4-3);
+  padding-bottom: var(--size-4-3);
+}
+
+.taskpro-config-modal__date-input {
+  width: 100%;
+  max-width: 100%;
+}
+
+.taskpro-panel__input--date[type='date'] {
+  min-height: 36px;
+  cursor: pointer;
+}
+
+.taskpro-panel__input--date[type='date']::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  opacity: 0.85;
+}
+
+.taskpro-config-modal__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: var(--size-4-4);
+  padding-top: var(--size-4-3);
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.task-preview {
+  padding: 12px;
+  background: var(--background-secondary);
+  border-radius: var(--radius-m);
+  margin-bottom: 20px;
+}
+
+.reference-note-display {
+  font-family: var(--font-monospace);
+  padding: 8px 12px;
+  background: var(--background-secondary);
+  border-radius: var(--radius-s);
+  font-size: 0.9em;
+}
+
+/* Hide tags and block IDs from inline task text in Live Preview */
+.cm-line .cm-hashtag {
+  display: none;
+}
+
+.cm-line:has(.taskpro-badge-container) .cm-formatting-link,
+.cm-line:has(.taskpro-badge-container) .cm-link-alias {
+  display: none;
+}
+
+/* Hide block IDs (^block-id) from task lines */
+.cm-line:has(.taskpro-badge-container) .cm-hmd-codeblock:has-text("^") {
+  display: none;
+}
+
+/* Hide deadline markers (⏳ YYYY-MM-DD) from task lines in Live Preview */
+.cm-line:has(.taskpro-badge-container) {
+  /* This will be handled by a more specific approach */
+}
+
+/* Hide deadline text in Reading Mode */
+.markdown-preview-view .task-list-item:has(.taskpro-badge-container) {
+  /* Deadline is shown in badge, hide from text */
+}
+
+/* Hide the deadline emoji and date pattern from rendered text */
+li.task-list-item {
+  /* Use JavaScript to hide deadline markers */
+}
+
+/* Ensure badges are visible and properly positioned */
+.taskpro-badge-container {
+  display: inline-flex !important;
+}
+
+
+/* ── Priority badges ─────────────────────────────────────────────────────── */
+
+.taskpro-priority-badge {
+  --taskpro-priority-color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--taskpro-priority-color);
+  border: 1px solid var(--taskpro-priority-color);
+  background: transparent;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.taskpro-priority-badge:hover,
+.taskpro-priority-badge:focus-visible {
+  background: var(--background-modifier-hover);
+}
+
+.taskpro-priority-badge[data-priority='highest'] { --taskpro-priority-color: var(--color-red, #e03131); }
+.taskpro-priority-badge[data-priority='high']    { --taskpro-priority-color: var(--color-orange, #f76707); }
+.taskpro-priority-badge[data-priority='medium']  { --taskpro-priority-color: var(--color-yellow, #f59f00); }
+.taskpro-priority-badge[data-priority='low']     { --taskpro-priority-color: var(--color-blue, #1c7ed6); }
+.taskpro-priority-badge[data-priority='lowest']  { --taskpro-priority-color: var(--text-faint); }
+
+/* Priority picker inside the shared TaskPro panel */
+.taskpro-priority-options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.taskpro-priority-option {
+  width: 100%;
+  text-align: start;
+  cursor: pointer;
+}
+
+/* ── Reminder overlay ────────────────────────────────────────────────────── */
+
+.taskpro-reminder-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--layer-modal, 100);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(3px);
+  animation: taskpro-reminder-fade 160ms ease-out;
+}
+
+.taskpro-reminder-overlay[data-strictness='strict'] {
+  background: rgba(0, 0, 0, 0.78);
+}
+
+@keyframes taskpro-reminder-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.taskpro-reminder-dialog {
+  width: min(680px, 100%);
+  max-height: 84vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 24px;
+  border-radius: 14px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  color: var(--text-normal);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.35);
+}
+
+.taskpro-reminder-overlay[dir='rtl'] .taskpro-reminder-dialog {
+  text-align: right;
+}
+
+.taskpro-reminder-header {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.taskpro-reminder-title {
+  margin: 0;
+  font-size: 1.4em;
+  line-height: 1.3;
+}
+
+.taskpro-reminder-message {
+  color: var(--text-muted);
+}
+
+.taskpro-reminder-hint,
+.taskpro-reminder-error {
+  font-size: 0.85em;
+  color: var(--text-warning, var(--color-orange, #f76707));
+}
+
+.taskpro-reminder-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.taskpro-reminder-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--background-secondary);
+}
+
+.taskpro-reminder-priority {
+  flex: 0 0 auto;
+  font-size: 0.8em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+}
+
+.taskpro-reminder-priority[data-priority='highest'] { color: var(--color-red, #e03131); }
+.taskpro-reminder-priority[data-priority='high']    { color: var(--color-orange, #f76707); }
+.taskpro-reminder-priority[data-priority='medium']  { color: var(--color-yellow, #f59f00); }
+.taskpro-reminder-priority[data-priority='low']     { color: var(--color-blue, #1c7ed6); }
+.taskpro-reminder-priority[data-priority='lowest']  { color: var(--text-faint); }
+
+.taskpro-reminder-text {
+  flex: 1 1 220px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.taskpro-reminder-meta {
+  flex: 0 0 auto;
+  font-size: 0.8em;
+  color: var(--text-muted);
+}
+
+.taskpro-reminder-open {
+  flex: 0 0 auto;
+  cursor: pointer;
+}
+
+.taskpro-reminder-empty,
+.taskpro-reminder-more {
+  color: var(--text-muted);
+  font-size: 0.9em;
+}
+
+.taskpro-reminder-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.taskpro-reminder-button {
+  cursor: pointer;
+  min-width: 120px;
+}
+
+.taskpro-reminder-primary {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.taskpro-reminder-primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.taskpro-reminder-overlay :focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+}
+
+/* Small screens / narrow panes */
+@media (max-width: 600px) {
+  .taskpro-reminder-dialog {
+    padding: 16px;
+    gap: 12px;
+  }
+
+  .taskpro-reminder-actions,
+  .taskpro-reminder-button {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .taskpro-reminder-overlay {
+    animation: none;
+  }
+}
+
+/* ── Chip icons (Obsidian/Lucide, not emoji) ─────────────────────────────── */
+.taskpro-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25em;
+}
+
+.taskpro-chip__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Icons scale with the badge font size so the size slider keeps working. */
+.taskpro-chip__icon .svg-icon {
+  width: 1.05em;
+  height: 1.05em;
+  stroke-width: 2.25px;
+  color: currentColor;
+}
+
+.taskpro-chip__label {
+  line-height: 1;
+}
+
+.taskpro-reminder-priority {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25em;
+}
+
+.taskpro-priority-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+}
+
+/* ── Settings: tabs and sections ─────────────────────────────────────────── */
+.taskpro-settings-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0 0 1rem;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.taskpro-settings-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: none;
+  border-radius: var(--radius-m);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.taskpro-settings-tab:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.taskpro-settings-tab.is-active {
+  background: var(--background-modifier-active-hover, var(--background-secondary-alt));
+  color: var(--text-accent);
+  font-weight: var(--font-semibold);
+}
+
+.taskpro-settings-tab:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+}
+
+.taskpro-settings-tab__icon .svg-icon,
+.taskpro-settings-section__icon .svg-icon,
+.taskpro-settings-item__icon .svg-icon {
+  width: 1em;
+  height: 1em;
+}
+
+.taskpro-settings-section {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 1.6em 0 0.2em;
+  padding-top: 0.6em;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.taskpro-settings-content > .taskpro-settings-section:first-child {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+
+.taskpro-settings-section__icon {
+  display: inline-flex;
+  color: var(--text-accent);
+}
+
+.taskpro-settings-section__title {
+  margin: 0;
+  font-size: var(--font-ui-medium);
+}
+
+.taskpro-settings-section__desc {
+  margin-top: 0;
+}
+
+.taskpro-settings-item__icon {
+  display: inline-flex;
+  align-items: center;
+  margin-inline-end: 6px;
+  color: var(--text-muted);
+  vertical-align: -0.15em;
+}
+
+.taskpro-settings .setting-item-name {
+  display: flex;
+  align-items: center;
+}
+
+.taskpro-reminder-settings h4 {
+  margin: 1.2em 0 0.4em;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+@media (max-width: 600px) {
+  .taskpro-settings-tab {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+}
+
+/* ── Chip icon alignment ────────────────────────────────────────────────────
+ * The chips are inline-flex, so the icon and the label are centred against
+ * each other rather than against the text baseline. Without this the SVG sits
+ * a few pixels low inside the capsule, which is very visible in RTL lines. */
+.taskpro-chip,
+.taskpro-interactive-badge,
+.taskpro-deadline-badge,
+.taskpro-progress-badge,
+.taskpro-priority-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3em;
+  line-height: 1;
+  vertical-align: middle;
+}
+
+.taskpro-chip__icon {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* Square box keeps every chip the same height, whatever the icon shape. */
+  width: 1.05em;
+  height: 1.05em;
+  line-height: 0;
+}
+
+.taskpro-chip__icon .svg-icon,
+.taskpro-chip__icon svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  stroke-width: 2.25px;
+  color: currentColor;
+  /* Cancels Obsidian's default baseline nudge on inline SVGs. */
+  vertical-align: top;
+}
+
+.taskpro-chip__label {
+  /* Flex, not inline-block: an inline-block still carries a text baseline,
+     which is what pushed numbers like "0%" against the top of the capsule.
+     A fixed em-height also keeps digits and Persian text the same height. */
+  display: flex;
+  align-items: center;
+  height: 1em;
+  line-height: 1;
+  padding: 0;
+}
+
+/* The container previously collapsed its line box to 0, which shifted every
+   chip inside it upward relative to the task text. */
+.taskpro-badge-container {
+  line-height: 1;
+}
+
+/* Single source of truth for chip padding, so top/bottom and left/right are
+   symmetric in every chip regardless of which rule defined them earlier. */
+.taskpro-chip,
+.taskpro-interactive-badge,
+.taskpro-deadline-badge,
+.taskpro-progress-badge,
+.taskpro-priority-badge {
+  padding-block: var(--taskpro-chip-padding-block);
+  padding-inline: var(--taskpro-chip-padding-inline);
+}
+
+
+/* ==========================================================================
+   Focus timer chip
+
+   The label is a countdown, so it is width-stable (tabular numerals) and the
+   state lives in a data attribute the timer service rewrites in place once a
+   second — no decoration rebuild, no cursor churn.
+   ========================================================================== */
+.taskpro-timer-badge {
+  cursor: pointer;
+  user-select: none;
+  color: var(--taskpro-timer-color);
+  background: var(--taskpro-timer-bg);
+  border-color: color-mix(in srgb, var(--taskpro-timer-color) 35%, transparent);
+  opacity: var(--taskpro-badge-opacity-normal);
+  font-variant-numeric: tabular-nums;
+  transition: opacity 140ms ease, border-color 140ms ease;
+}
+.taskpro-timer-badge:hover,
+.taskpro-timer-badge:focus-visible {
+  opacity: var(--taskpro-badge-opacity-hover);
+}
+
+/* Idle and paused timers step back; only a live countdown is tinted. */
+.taskpro-timer-badge[data-state='idle'],
+.taskpro-timer-badge[data-state='paused'] {
+  color: var(--text-muted);
+  background: transparent;
+  border-color: var(--background-modifier-border);
+}
+
+.taskpro-timer-badge[data-state='done'] {
+  color: var(--taskpro-timer-overrun-color);
+  background: color-mix(in srgb, var(--taskpro-timer-overrun-color) 12%, transparent);
+  border-color: color-mix(in srgb, var(--taskpro-timer-overrun-color) 40%, transparent);
+}
+
+/* A running timer breathes just enough to read as live at a glance. */
+.taskpro-timer-badge[data-state='running'] .taskpro-chip__icon {
+  animation: taskpro-timer-pulse 2s ease-in-out infinite;
+}
+@keyframes taskpro-timer-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .taskpro-timer-badge[data-state='running'] .taskpro-chip__icon { animation: none; }
+}
+
+/* ==========================================================================
+   Repeat chip
+   ========================================================================== */
+.taskpro-repeat-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  color: var(--taskpro-repeat-color);
+  background: transparent;
+  border-color: color-mix(in srgb, var(--taskpro-repeat-color) 45%, transparent);
+  white-space: nowrap;
+}
+.taskpro-repeat-badge:hover,
+.taskpro-repeat-badge:focus-visible {
+  background: var(--background-modifier-hover);
+}
+
+/* ==========================================================================
+   Status-bar readout for the running focus timer
+   ========================================================================== */
+.taskpro-status-timer {
+  display: none;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+}
+.taskpro-status-timer.is-active { display: inline-flex; }
+.taskpro-status-timer:hover { color: var(--text-normal); }
+.taskpro-status-timer__icon { display: grid; place-items: center; }
+.taskpro-status-timer__icon .svg-icon { width: 14px; height: 14px; }
+.taskpro-status-timer__text {
+  max-width: 22ch;
+  overflow: hidden;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Settings-screen bits that used to be styled from TypeScript. */
+.taskpro-settings-path {
+  margin-bottom: 20px;
+  color: var(--text-muted);
+}
+.taskpro-settings-number-input { width: 72px; }
