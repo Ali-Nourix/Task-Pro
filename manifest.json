@@ -1,0 +1,9 @@
+{
+  "id": "taskpro",
+  "name": "TaskPro",
+  "version": "1.1.2",
+  "minAppVersion": "1.0.0",
+  "description": "Seamless task management with bi-directional sync, dynamic badges, and deadline tracking.",
+  "author": "Ali",
+  "isDesktopOnly": false
+}
