@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>TaskPro chip preview</title>
+  <link rel="stylesheet" href="obsidian-theme.css">
+  <link rel="stylesheet" href="../styles.css">
+  <style>
+    /* Only the fake note and status bar are styled here. Every chip is rendered
+       by the plugin's own styles.css. */
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 24px 28px;
+      background: var(--background-primary);
+      color: var(--text-normal);
+      font-family: var(--font-ui);
+    }
+    .note { width: 820px; font-family: var(--font-text); }
+    .note h2 { margin: 0 0 16px; font-size: 21px; letter-spacing: -0.01em; }
+    .line {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 34px;
+      padding: 3px 0;
+      font-size: 15px;
+      line-height: 1.6;
+    }
+    /* Obsidian's Live Preview task checkbox, close enough for a still. */
+    .cb {
+      width: 15px; height: 15px; flex: 0 0 15px;
+      margin-top: 1px;
+      border: 1.6px solid var(--text-faint);
+      border-radius: 3px;
+      background: transparent;
+      position: relative;
+    }
+    .cb.done { border-color: var(--interactive-accent); background: var(--interactive-accent); }
+    .cb.done::after {
+      content: ""; position: absolute; inset: 0;
+      border-bottom: 2px solid var(--text-on-accent);
+      border-right: 2px solid var(--text-on-accent);
+      width: 5px; height: 9px; margin: 1px auto auto 4px;
+      transform: rotate(45deg);
+    }
+    .cb.doing::after {
+      content: ""; position: absolute; inset: 3px;
+      border-radius: 1px; background: var(--text-muted);
+    }
+    .cb.blocked { border-color: var(--color-red); }
+    .cb.blocked::after {
+      content: "!"; position: absolute; inset: 0;
+      color: var(--color-red); font: 700 11px/13px var(--font-ui); text-align: center;
+    }
+    .txt { flex: 0 0 auto; }
+    .line.done .txt { color: var(--text-muted); text-decoration: line-through; }
+
+    /* Chip-state strips */
+    /* Padding so a screenshot cropped to this element does not clip labels. */
+    .strip { width: 820px; margin-top: 26px; padding: 10px 12px 4px; }
+    .strip h3 {
+      margin: 0 0 10px;
+      color: var(--text-muted);
+      font: 600 11px/1 var(--font-ui);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+    .row { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin-bottom: 16px; }
+    .cell { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+    .cell small { color: var(--text-faint); font: 400 11px/1 var(--font-ui); }
+    /* The container is direction:rtl in the plugin; a lone chip needs no order. */
+    .cell .taskpro-badge-container { margin-inline-start: 0; }
+
+    /* Faux status bar */
+    .statusbar {
+      display: flex; align-items: center; gap: 18px;
+      width: 820px; margin-top: 22px; padding: 8px 14px;
+      border-top: 1px solid var(--background-modifier-border);
+      color: var(--text-muted);
+      font: 400 12px/1.4 var(--font-ui);
+      background: var(--background-secondary);
+      border-radius: 0 0 8px 8px;
+    }
+    .statusbar .filler { margin-left: auto; }
+  </style>
+</head>
+<body class="theme-dark">
+  <main class="note">
+    <h2>This week</h2>
+
+    <div class="line">
+      <span class="cb doing"></span>
+      <span class="txt">Draft the launch post</span>
+      <span class="taskpro-badge-container" style="--taskpro-badge-font-size: 12px">
+        <span class="taskpro-block-id">a1b2c3</span>
+        <span class="taskpro-chip taskpro-interactive-badge" data-status="[/]" role="button" tabindex="0"><span class="taskpro-chip__icon" aria-hidden="true"><svg class="svg-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="1" fill="currentColor"/></svg></span><span class="taskpro-chip__label">In Progress</span></span>
+        <span class="taskpro-chip taskpro-priority-badge" data-priority="high" role="button" tabindex="0"><span class="taskpro-chip__icon" aria-hidden="true"><svg class="svg-icon" viewBox="0 0 24 24"><path d="m18 15-6-6-6 6"/></svg></span><span class="taskpro-chip__label">High</span></span>
+        <span class="taskpro-chip taskpro-deadline-badge" data-state="soon"><span class="taskpro-chip__icon" aria-hidden="true"><svg class="svg-icon" viewBox="0 0 24 24"><path d="M21 7.5V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h6M8 2v4M16 2v4M3 10h18"/><circle cx="18" cy="18" r="4"/><path d="M18 16.5V18l1 1"/></svg></span><span class="taskpro-chip__label">3 Days Left</span></span>
+        <span class="taskpro-chip taskpro-timer-badge" data-state="running" data-timer-key="This week.md:a1b2c3" role="button" tabindex="0"><span class="taskpro-chip__icon" aria-hidden="true"><svg class="svg-icon" viewBox="0 0 24 24"><path d="M10 2h4M12 14l3-3"/><circle cx="12" cy="14" r="8"/></svg></span><span class="taskpro-chip__label">18:42</span></span>
+        <span class="taskpro-chip taskpro-progress-badge" data-progress="3/8"><span class="taskpro-chip__icon" aria-hidden="true"><svg class="svg-icon" viewBox="0 0 24 24"><path d="M21.2 15.9A10 10 0 1 1 8 2.8"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg></span><span class="taskpro-chip__label">38%</span></span>
+      </span>
+    </div>
+
+    <div class="line">
+      <span class="cb"></span>
+      <span class="txt">Water the plants</span>
+      <span class="taskpro-badge-container" style="--taskpro-badge-font-size: 12px">
+        <span class="taskpro-chip taskpro-interactive-badge" data-status="[ ]" role="button" tabindex="0"><span class="taskpro-chip__icon" aria-hidden="true"><svg class="svg-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/></svg></span><span class="taskpro-chip__label">Not Started</span></span>
+        <span class="taskpro-chip taskpro-repeat-badge" data-repeat="1w" role="button" tabindex="0"><span class="taskpro-chip__icon" aria-hidden="true"><svg class="svg-icon" viewBox="0 0 24 24"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg></span><span class="taskpro-chip__label">Every week</span></span>
+        <span class="taskpro-chip taskpro-deadline-badge" data-state="tomorrow"><span class="taskpro-chip__icon" aria-hidden="true"><svg class="svg-icon" viewBox="0 0 24 24"><path d="M21 7.5V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h6M8 2v4M16 2v4M3 10h18"/><circle cx="18" cy="18" r="4"/><path d="M18 16.5V18l1 1"/></svg></span><span class="taskpro-chip__label">Tomorrow</span></span>
+      </span>
+    </div>
+
+    <div class="line">
+      <span class="cb blocked"></span>
+      <span class="txt">Chase the missing invoice</span>
+      <span class="taskpro-badge-container" style="--taskpro-badge-font-size: 12px">
+        <span class="taskpro-chip taskpro-interactive-badge" data-status="[!]" role="button" tabindex="0"><span class="taskpro-chip__icon" aria-hidden="true"><svg class="svg-icon" viewBox="0 0 24 24"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg></span><span class="taskpro-chip__label">Not Done</span></span>
+        <span class="taskpro-chip taskpro-priority-badge" data-priority="highest" role="button" tabindex="0"><span class="taskpro-chip__icon" aria-hidden="true"><svg class="svg-icon" viewBox="0 0 24 24"><path d="m17 11-5-5-5 5M17 18l-5-5-5 5"/></svg></span><span class="taskpro-chip__label">Highest</span></span>
+        <span class="taskpro-chip taskpro-deadline-badge" data-state="missed"><span class="taskpro-chip__icon" aria-hidden="true"><svg class="svg-icon" viewBox="0 0 24 24"><path d="M21 7.5V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h6M8 2v4M16 2v4M3 10h18"/><circle cx="18" cy="18" r="4"/><path d="M18 16.5V18l1 1"/></svg></span><span class="taskpro-chip__label">Not completed on time</span></span>
+      </span>
+    </div>
+
+    <div class="line done">
+      <span class="cb done"></span>
+      <span class="txt">Book the venue</span>
+      <span class="taskpro-badge-container" style="--taskpro-badge-font-size: 12px">
+        <span class="taskpro-chip taskpro-interactive-badge" data-status="[x]" role="button" tabindex="0"><span class="taskpro-chip__icon" aria-hidden="true"><svg class="svg-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg></span><span class="taskpro-chip__label">Done</span></span>
+        <span class="taskpro-chip taskpro-timer-badge" data-state="done" data-timer-key="This week.md:d4e5f6"><span class="taskpro-chip__icon" aria-hidden="true"><svg class="svg-icon" viewBox="0 0 24 24"><path d="M10 2h4M4.6 11a8 8 0 1 0 8.9-8.9M2 2l20 20"/></svg></span><span class="taskpro-chip__label">Done</span></span>
+        <span class="taskpro-chip taskpro-progress-badge" data-progress="4/4"><span class="taskpro-chip__icon" aria-hidden="true"><svg class="svg-icon" viewBox="0 0 24 24"><path d="M21.2 15.9A10 10 0 1 1 8 2.8"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg></span><span class="taskpro-chip__label">100%</span></span>
+      </span>
+    </div>
+  </main>
+
+  <section class="strip" id="states">
+    <h3>Focus timer states</h3>
+    <div class="row">
+      <div class="cell"><span class="taskpro-badge-container" style="--taskpro-badge-font-size: 12px"><span class="taskpro-chip taskpro-timer-badge" data-state="idle"><span class="taskpro-chip__icon"><svg class="svg-icon" viewBox="0 0 24 24"><path d="M10 2h4M12 14l3-3"/><circle cx="12" cy="14" r="8"/></svg></span><span class="taskpro-chip__label">25:00</span></span></span><small>idle</small></div>
+      <div class="cell"><span class="taskpro-badge-container" style="--taskpro-badge-font-size: 12px"><span class="taskpro-chip taskpro-timer-badge" data-state="running"><span class="taskpro-chip__icon"><svg class="svg-icon" viewBox="0 0 24 24"><path d="M10 2h4M12 14l3-3"/><circle cx="12" cy="14" r="8"/></svg></span><span class="taskpro-chip__label">18:42</span></span></span><small>running</small></div>
+      <div class="cell"><span class="taskpro-badge-container" style="--taskpro-badge-font-size: 12px"><span class="taskpro-chip taskpro-timer-badge" data-state="paused"><span class="taskpro-chip__icon"><svg class="svg-icon" viewBox="0 0 24 24"><rect x="14" y="4" width="4" height="16" rx="1"/><rect x="6" y="4" width="4" height="16" rx="1"/></svg></span><span class="taskpro-chip__label">07:15</span></span></span><small>paused</small></div>
+      <div class="cell"><span class="taskpro-badge-container" style="--taskpro-badge-font-size: 12px"><span class="taskpro-chip taskpro-timer-badge" data-state="done"><span class="taskpro-chip__icon"><svg class="svg-icon" viewBox="0 0 24 24"><path d="M10 2h4M4.6 11a8 8 0 1 0 8.9-8.9M2 2l20 20"/></svg></span><span class="taskpro-chip__label">Done</span></span></span><small>finished</small></div>
+    </div>
+
+    <h3>Repeat intervals</h3>
+    <div class="row" id="repeats"></div>
+
+    <h3>Priority levels</h3>
+    <div class="row" id="priorities"></div>
+  </section>
+
+  <div class="statusbar">
+    <div class="taskpro-status-timer is-active" role="button" tabindex="0">
+      <span class="taskpro-status-timer__icon"><svg class="svg-icon" viewBox="0 0 24 24"><path d="M10 2h4M12 14l3-3"/><circle cx="12" cy="14" r="8"/></svg></span>
+      <span class="taskpro-status-timer__text">18:42 · This week</span>
+    </div>
+    <span class="filler">142 words</span>
+  </div>
+
+  <script>
+    const REPEAT_ICON = '<svg class="svg-icon" viewBox="0 0 24 24"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg>';
+    const PRIORITY_ICONS = {
+      highest: '<svg class="svg-icon" viewBox="0 0 24 24"><path d="m17 11-5-5-5 5M17 18l-5-5-5 5"/></svg>',
+      high: '<svg class="svg-icon" viewBox="0 0 24 24"><path d="m18 15-6-6-6 6"/></svg>',
+      medium: '<svg class="svg-icon" viewBox="0 0 24 24"><path d="M5 9h14M5 15h14"/></svg>',
+      low: '<svg class="svg-icon" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>',
+      lowest: '<svg class="svg-icon" viewBox="0 0 24 24"><path d="m7 6 5 5 5-5M7 13l5 5 5-5"/></svg>',
+    };
+    const chip = (cls, attr, icon, label) =>
+      `<span class="taskpro-badge-container" style="--taskpro-badge-font-size: 12px">
+         <span class="taskpro-chip ${cls}" ${attr} role="button" tabindex="0">
+           <span class="taskpro-chip__icon" aria-hidden="true">${icon}</span>
+           <span class="taskpro-chip__label">${label}</span>
+         </span></span>`;
+
+    document.getElementById('repeats').innerHTML = [
+      ['1d', 'Every day'], ['1w', 'Every week'], ['2w', 'Every 2 weeks'], ['1m', 'Every month'],
+    ].map(([v, label]) =>
+      `<div class="cell">${chip('taskpro-repeat-badge', `data-repeat="${v}"`, REPEAT_ICON, label)}<small>@repeat(${v})</small></div>`
+    ).join('');
+
+    document.getElementById('priorities').innerHTML =
+      ['highest', 'high', 'medium', 'low', 'lowest'].map((p) =>
+        `<div class="cell">${chip('taskpro-priority-badge', `data-priority="${p}"`, PRIORITY_ICONS[p], p[0].toUpperCase() + p.slice(1))}<small>@priority(${p})</small></div>`
+      ).join('');
+
+    const params = new URLSearchParams(location.search);
+    if (params.has('light')) document.body.className = 'theme-light';
+  </script>
+</body>
+</html>
