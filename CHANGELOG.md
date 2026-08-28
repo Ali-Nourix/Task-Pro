@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.2.1 - Chip text direction fix
 
 - Fixed chip text direction. `.taskpro-badge-container` reversed the chip row
   with `direction: rtl` and `.taskpro-chip` tried to opt out with
