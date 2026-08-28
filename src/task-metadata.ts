@@ -1,7 +1,7 @@
 // ── task-metadata.ts ─────────────────────────────────────────────────────
 // Shared helpers for parsing and updating task metadata markers.
 
-import { TaskPriority, TaskProgress, PRIORITY_ICONS, TASK_PRIORITIES } from './types';
+import { RepeatUnit, TaskPriority, TaskProgress, TaskRepeat, PRIORITY_ICONS, TASK_PRIORITIES } from './types';
 
 // Canonical inline form is `@due(2026-08-10)`, matching `@priority(...)`.
 //
@@ -26,6 +26,20 @@ const LEADING_WHITESPACE_PATTERN = /^\s*/;
 //
 // Both the legacy `[priority:: high]` field and the Obsidian Tasks emoji are
 // still parsed for backwards compatibility and are rewritten on the next edit.
+// Canonical inline form is `@repeat(1w)`; `daily` / `weekly` / `monthly` and a
+// bare unit (`@repeat(w)`) are accepted on the way in and rewritten on the next
+// edit. Same reasoning as `@priority(...)`: Obsidian renders `[key:: value]`
+// itself, which would fight our replace decoration.
+const REPEAT_PATTERN =
+  /@repeat\(\s*(?:(\d+)\s*)?(d|w|m|day|days|daily|week|weeks|weekly|month|months|monthly)\s*\)/i;
+const REPEAT_PATTERN_GLOBAL = new RegExp(REPEAT_PATTERN.source, 'gi');
+const REPEAT_UNIT_BY_TOKEN: Record<string, RepeatUnit> = {
+  d: 'day', day: 'day', days: 'day', daily: 'day',
+  w: 'week', week: 'week', weeks: 'week', weekly: 'week',
+  m: 'month', month: 'month', months: 'month', monthly: 'month',
+};
+const REPEAT_UNIT_TOKEN: Record<RepeatUnit, string> = { day: 'd', week: 'w', month: 'm' };
+
 const PRIORITY_KEYWORD_PATTERN = /@priority\(\s*(highest|high|medium|low|lowest)\s*\)/i;
 const PRIORITY_LEGACY_FIELD_PATTERN = /\[priority::\s*(highest|high|medium|low|lowest)\s*\]/i;
 const PRIORITY_EMOJI_PATTERN = /(\uD83D\uDD3A|\u23EB|\uD83D\uDD3C|\uD83D\uDD3D|\u23EC)/;
@@ -201,6 +215,110 @@ export function setPriority(line: string, priority: TaskPriority | null): string
   return `${withoutPriority} ${marker}`;
 }
 
+/**
+ * Extracts the recurrence rule from a task line, if any.
+ */
+export function extractRepeat(line: string): TaskRepeat | undefined {
+  const match = line.match(REPEAT_PATTERN);
+  if (!match) return undefined;
+
+  const unit = REPEAT_UNIT_BY_TOKEN[match[2].toLowerCase()];
+  if (!unit) return undefined;
+
+  const every = match[1] ? parseInt(match[1], 10) : 1;
+  if (!Number.isFinite(every) || every < 1) return undefined;
+
+  return { every, unit };
+}
+
+/**
+ * Removes all recurrence markers from a task line.
+ */
+export function stripRepeat(line: string): string {
+  return line.replace(REPEAT_PATTERN_GLOBAL, '').replace(/\s{2,}/g, ' ').trim();
+}
+
+/**
+ * Removes all recurrence markers while preserving leading indentation.
+ */
+export function stripRepeatPreserveIndent(line: string): string {
+  return normalizeAfterMarkerRemovalPreserveIndent(line.replace(REPEAT_PATTERN_GLOBAL, ''));
+}
+
+/**
+ * Replaces existing recurrence markers with a new rule, or removes them.
+ * The marker is inserted before a trailing block ID so the ID stays last.
+ */
+export function setRepeat(line: string, repeat: TaskRepeat | null): string {
+  const withoutRepeat = stripRepeatPreserveIndent(line);
+  if (!repeat || repeat.every < 1) return withoutRepeat;
+
+  const marker = `@repeat(${repeat.every}${REPEAT_UNIT_TOKEN[repeat.unit]})`;
+  const blockIdMatch = withoutRepeat.match(/\s*\^([a-zA-Z0-9-]+)\s*$/);
+  if (blockIdMatch) {
+    return withoutRepeat.replace(/\s*\^([a-zA-Z0-9-]+)\s*$/, ` ${marker} ^${blockIdMatch[1]}`);
+  }
+
+  return `${withoutRepeat} ${marker}`;
+}
+
+/**
+ * The next occurrence of a repeating task, as `YYYY-MM-DD`.
+ *
+ * Counting forward from the old deadline keeps a weekly task on its weekday
+ * even when it is ticked off a few days late. A deadline already in the past is
+ * advanced until it lands in the future, so finishing a month of missed dailies
+ * at once leaves one task due tomorrow rather than one due last week.
+ */
+export function nextRepeatDate(
+  repeat: TaskRepeat,
+  fromDeadline: string | undefined,
+  today = new Date()
+): string {
+  const base = fromDeadline ? parseIsoDate(fromDeadline) : null;
+  const start = startOfDay(today);
+  const cursor = base ?? new Date(start);
+
+  do {
+    advance(cursor, repeat);
+  } while (cursor.getTime() <= start.getTime());
+
+  return toIsoDate(cursor);
+}
+
+function advance(date: Date, repeat: TaskRepeat): void {
+  if (repeat.unit === 'day') date.setDate(date.getDate() + repeat.every);
+  else if (repeat.unit === 'week') date.setDate(date.getDate() + repeat.every * 7);
+  else {
+    // Keep the day of the month where the target month has one; a task due on
+    // the 31st repeats on the 30th in a 30-day month rather than sliding into
+    // the next one.
+    const day = date.getDate();
+    date.setDate(1);
+    date.setMonth(date.getMonth() + repeat.every);
+    const lastDay = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+    date.setDate(Math.min(day, lastDay));
+  }
+}
+
+function parseIsoDate(value: string): Date | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+  if (!match) return null;
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function startOfDay(date: Date): Date {
+  const copy = new Date(date);
+  copy.setHours(0, 0, 0, 0);
+  return copy;
+}
+
+function toIsoDate(date: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
 export {
   DEADLINE_PATTERN as DEADLINE_REGEX,
   PRIORITY_PATTERN_GLOBAL as PRIORITY_REGEX_GLOBAL,
@@ -211,6 +329,9 @@ export {
  * Shared so the hidden range can never drift from what the parser accepts.
  */
 export const DEADLINE_MARKER_PATTERN = new RegExp(DEADLINE_PATTERN.source, '');
+
+/** Single-match recurrence pattern for decoration ranges. */
+export const REPEAT_MARKER_PATTERN = new RegExp(REPEAT_PATTERN.source, 'i');
 
 /** Single-match priority pattern (all supported forms) for decoration ranges. */
 export const PRIORITY_MARKER_PATTERN = new RegExp(

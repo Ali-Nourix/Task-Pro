@@ -1,0 +1,93 @@
+name: Release Obsidian plugin
+
+on:
+  push:
+    tags:
+      - "*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20.x"
+
+      - name: Show runtime versions
+        run: |
+          node --version
+          npm --version
+
+      # A tag that disagrees with the manifest ships a release Obsidian will
+      # refuse to update to, so the mismatch is caught before anything is built.
+      - name: Validate all release versions
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          node <<'NODE'
+          const manifest = require('./manifest.json');
+          const pkg = require('./package.json');
+          const lock = require('./package-lock.json');
+          const versions = require('./versions.json');
+          const tag = process.env.RELEASE_TAG;
+          const values = {
+            tag,
+            manifest: manifest.version,
+            package: pkg.version,
+            packageLock: lock.version,
+            packageLockRoot: lock.packages?.['']?.version,
+          };
+          console.log(values);
+          for (const [name, value] of Object.entries(values)) {
+            if (value !== tag) throw new Error(`${name} is ${value}; expected ${tag}`);
+          }
+          if (versions[tag] !== manifest.minAppVersion) {
+            throw new Error(`versions.json is missing ${tag}: ${manifest.minAppVersion}`);
+          }
+          console.log(`Release metadata is consistent for ${tag}`);
+          NODE
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build plugin
+        run: npm run build
+
+      - name: Verify release assets
+        run: |
+          test -s main.js
+          test -s manifest.json
+          test -s styles.css
+
+      # Two shapes of the same build: the three loose files Obsidian's community
+      # installer reads, and a zip for anyone installing by hand into
+      # .obsidian/plugins/. The zip holds the files at its root so it can be
+      # unpacked straight into the plugin folder.
+      - name: Package plugin zip
+        env:
+          PLUGIN_ID: taskpro
+        run: |
+          zip -j "${PLUGIN_ID}-${GITHUB_REF_NAME}.zip" main.js manifest.json styles.css
+          unzip -l "${PLUGIN_ID}-${GITHUB_REF_NAME}.zip"
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PLUGIN_ID: taskpro
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --verify-tag \
+            --title "${GITHUB_REF_NAME}" \
+            --generate-notes \
+            main.js manifest.json styles.css "${PLUGIN_ID}-${GITHUB_REF_NAME}.zip"

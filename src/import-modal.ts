@@ -2,7 +2,7 @@
 // Modal for importing tasks from reference note
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { App, Editor, FuzzySuggestModal, Notice, TFile } from 'obsidian';
+import { App, Editor, FuzzySuggestModal, Notice } from 'obsidian';
 import { ParsedTask, GlobalInternalTask, TaskMapping, TaskProgress } from './types';
 import { parseTasksWithHierarchy, flattenTasks, taskToMarkdown, generateBlockId } from './task-parser';
 import { CalendarSystem } from './types';
@@ -56,7 +56,7 @@ export class TaskImportModal extends FuzzySuggestModal<TaskOption> {
     }
 
     // Parse reference note
-    const refFile = this.app.vault.getAbstractFileByPath(this.referenceNotePath);
+    const refFile = this.app.vault.getFileByPath(this.referenceNotePath);
     
     if (!refFile) {
       new Notice(`Reference note not found: ${this.referenceNotePath}`);
@@ -64,7 +64,7 @@ export class TaskImportModal extends FuzzySuggestModal<TaskOption> {
       return;
     }
     
-    if (refFile instanceof TFile) {
+    if (refFile) {
       const content = await this.app.vault.read(refFile);
       const tasks = parseTasksWithHierarchy(content);
       
@@ -160,9 +160,9 @@ export class TaskImportModal extends FuzzySuggestModal<TaskOption> {
       // Create mappings for parent and ALL subtasks
     if (!isGlobal && sourceFile) {
        // Read source file to get original line content
-       const sourceFileObj = this.app.vault.getAbstractFileByPath(sourceFile);
+       const sourceFileObj = this.app.vault.getFileByPath(sourceFile);
        let sourceContent = '';
-       if (sourceFileObj instanceof TFile) {
+       if (sourceFileObj) {
          sourceContent = await this.app.vault.read(sourceFileObj);
        }
        const sourceLines = sourceContent.split('\n');
@@ -229,9 +229,9 @@ export class TaskImportModal extends FuzzySuggestModal<TaskOption> {
     // Copy progress from source tasks into imported file storage
     if (this.saveTaskProgress && !isGlobal && sourceFile && 'lineNumber' in task) {
       const parsedTask = task as ParsedTask;
-      const sourceFileObj = this.app.vault.getAbstractFileByPath(sourceFile);
+      const sourceFileObj = this.app.vault.getFileByPath(sourceFile);
       let sourceLines: string[] = [];
-      if (sourceFileObj instanceof TFile) {
+      if (sourceFileObj) {
         sourceLines = (await this.app.vault.read(sourceFileObj)).split('\n');
       }
 

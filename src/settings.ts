@@ -21,11 +21,12 @@ import { ReminderSoundPlayer } from './reminders/reminder-sound';
 import { NoteSelectionModal } from './note-selector-modal';
 
 /** Tabs shown at the top of the settings screen. */
-type SettingsTabId = 'general' | 'appearance' | 'reminders' | 'tasks';
+type SettingsTabId = 'general' | 'appearance' | 'capabilities' | 'reminders' | 'tasks';
 
 const SETTINGS_TABS: Array<{ id: SettingsTabId; label: string; icon: string }> = [
   { id: 'general', label: 'General', icon: 'settings' },
   { id: 'appearance', label: 'Badges', icon: 'palette' },
+  { id: 'capabilities', label: 'Capabilities', icon: 'sparkles' },
   { id: 'reminders', label: 'Reminders', icon: 'bell-ring' },
   { id: 'tasks', label: 'Internal Tasks', icon: 'list-checks' },
 ];
@@ -147,6 +148,9 @@ export class TaskProSettingTab extends PluginSettingTab {
       case 'appearance':
         this.renderAppearanceTab(containerEl);
         return;
+      case 'capabilities':
+        this.renderCapabilitiesTab(containerEl);
+        return;
       case 'reminders':
         this.renderReminderSettings(containerEl);
         return;
@@ -188,8 +192,7 @@ export class TaskProSettingTab extends PluginSettingTab {
     // Display current selection
     pathDisplay = containerEl.createDiv('reference-note-display');
     pathDisplay.setText(this.plugin.settings.referenceNotePath || 'No note selected');
-    pathDisplay.style.marginBottom = '20px';
-    pathDisplay.style.color = 'var(--text-muted)';
+    pathDisplay.addClass('taskpro-settings-path');
 
     // Target Folder Restriction
     new Setting(containerEl)
@@ -299,12 +302,138 @@ export class TaskProSettingTab extends PluginSettingTab {
           this.plugin.refreshDecorations();
         }));
 
+    // Show Focus Timer Badges
+    new Setting(containerEl)
+      .setName('Show Focus Timer Badges')
+      .setDesc('Display the live countdown chip on tasks that have a focus timer')
+      .addToggle(toggle => toggle
+        .setValue(this.plugin.settings.showTimerBadges)
+        .onChange(async (value) => {
+          this.plugin.settings.showTimerBadges = value;
+          await this.plugin.saveSettings();
+          this.plugin.refreshDecorations();
+        }));
+
+    // Show Repeat Badges
+    new Setting(containerEl)
+      .setName('Show Repeat Badges')
+      .setDesc('Display a recurrence chip next to repeating tasks and hide the raw @repeat marker')
+      .addToggle(toggle => toggle
+        .setValue(this.plugin.settings.showRepeatBadges)
+        .onChange(async (value) => {
+          this.plugin.settings.showRepeatBadges = value;
+          await this.plugin.saveSettings();
+          this.plugin.refreshDecorations();
+        }));
+
     this.renderSectionHeader(
       containerEl,
       'paintbrush',
       'Appearance Customization',
       'Install the "Style Settings" plugin to customize badge colors, padding, border radius, and opacity.'
     );
+  }
+
+  /**
+   * Per-task capabilities. Each one is added to an individual task from its
+   * chip menu; this tab only holds the defaults and the alerting behaviour.
+   */
+  private renderCapabilitiesTab(containerEl: HTMLElement): void {
+    this.renderSectionHeader(
+      containerEl,
+      'timer',
+      'Focus Timer',
+      'A countdown you can attach to any task from its status chip. Timers keep counting while Obsidian is closed, because the remaining time is read from the clock rather than ticked down in memory.'
+    );
+
+    new Setting(containerEl)
+      .setName('Default Duration')
+      .setDesc('Minutes pre-filled when a focus timer is added to a task')
+      .addSlider(slider => slider
+        .setLimits(5, 120, 5)
+        .setValue(this.plugin.settings.defaultTimerMinutes)
+        .setDynamicTooltip()
+        .onChange(async (value) => {
+          this.plugin.settings.defaultTimerMinutes = value;
+          await this.plugin.saveSettings();
+        }));
+
+    new Setting(containerEl)
+      .setName('Desktop Notification')
+      .setDesc('Post a system notification when a timer runs out. On Windows this appears as a toast and stays in the Action Center; permission is asked for once.')
+      .addToggle(toggle => toggle
+        .setValue(this.plugin.settings.timerSystemNotification)
+        .onChange(async (value) => {
+          this.plugin.settings.timerSystemNotification = value;
+          await this.plugin.saveSettings();
+        }));
+
+    new Setting(containerEl)
+      .setName('Play Sound')
+      .setDesc('Play the reminder sound once when a timer runs out. Uses the sound chosen under Reminders.')
+      .addToggle(toggle => toggle
+        .setValue(this.plugin.settings.timerSound)
+        .onChange(async (value) => {
+          this.plugin.settings.timerSound = value;
+          await this.plugin.saveSettings();
+        }));
+
+    new Setting(containerEl)
+      .setName('Show in Status Bar')
+      .setDesc('Keep the running timer visible in Obsidian\u2019s status bar. Click it to open the note the task lives in.')
+      .addToggle(toggle => toggle
+        .setValue(this.plugin.settings.timerInStatusBar)
+        .onChange(async (value) => {
+          this.plugin.settings.timerInStatusBar = value;
+          await this.plugin.saveSettings();
+          this.plugin.timerService.render();
+        }));
+
+    const runningTimers = (this.plugin.settings.taskTimers ?? []).filter(
+      (entry) => entry.timer?.enabled
+    );
+    new Setting(containerEl)
+      .setName('Attached Timers')
+      .setDesc(
+        runningTimers.length
+          ? `${runningTimers.length} task${runningTimers.length === 1 ? '' : 's'} currently carry a focus timer.`
+          : 'No task has a focus timer yet. Click a task\u2019s status chip and choose "Add Focus Timer".'
+      )
+      .addButton(button => button
+        .setButtonText('Clear all')
+        .setDisabled(runningTimers.length === 0)
+        .onClick(async () => {
+          this.plugin.settings.taskTimers = [];
+          await this.plugin.saveSettings();
+          this.plugin.timerService.rebuildCache();
+          this.plugin.refreshDecorations();
+          new Notice('All focus timers removed');
+          this.display();
+        }));
+
+    this.renderSectionHeader(
+      containerEl,
+      'repeat',
+      'Repeating Tasks',
+      'Ticking off a repeating task rolls it forward instead of closing it: the deadline moves to the next occurrence, the status returns to "not started", and any progress bar or focus timer on the task resets. The rule is written into the task line as @repeat(1w), so it travels with the task.'
+    );
+
+    containerEl.createEl('p', {
+      cls: 'setting-item-description',
+      text:
+        'The next occurrence is counted from the task\u2019s own deadline, so a weekly task keeps its weekday even when it is ticked off late. A deadline already in the past is advanced until it lands in the future.',
+    });
+
+    new Setting(containerEl)
+      .setName('Add a Repeat Rule')
+      .setDesc('Click a task\u2019s status chip and choose "Repeat This Task", or run "Toggle Weekly Repeat on Current Task" from the Command Palette.')
+      .addButton(button => button
+        .setButtonText('Copy marker')
+        .setTooltip('Copies @repeat(1w) so you can paste it onto a task by hand')
+        .onClick(async () => {
+          await navigator.clipboard.writeText('@repeat(1w)');
+          new Notice('Copied @repeat(1w)');
+        }));
   }
 
   private renderInternalTasksTab(containerEl: HTMLElement): void {
@@ -434,7 +563,7 @@ export class TaskProSettingTab extends PluginSettingTab {
           text.inputEl.type = 'number';
           text.inputEl.min = '1';
           text.inputEl.step = '1';
-          text.inputEl.style.width = '72px';
+          text.inputEl.addClass('taskpro-settings-number-input');
           text.setPlaceholder('1')
             .setValue(String(schedule.every))
             .onChange(async (value) => {

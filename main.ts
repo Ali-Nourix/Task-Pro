@@ -2,7 +2,7 @@
 // TaskPro - Main plugin entry point
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { Plugin, Editor, MarkdownView, Notice, TFile, setIcon } from 'obsidian';
+import { Plugin, Editor, MarkdownFileInfo, MarkdownView, Notice, TFile, setIcon } from 'obsidian';
 import { EditorView } from '@codemirror/view';
 import {
   TaskProSettings,
@@ -15,6 +15,9 @@ import {
   TASK_PRIORITIES,
   PRIORITY_ICON_NAMES,
   PRIORITY_LABELS,
+  TaskRepeat,
+  TaskTimer,
+  TaskTimerEntry,
 } from './src/types';
 import { jalaliToGregorian, gregorianToJalali } from './src/date-utils';
 import { TaskProSettingTab } from './src/settings';
@@ -26,12 +29,18 @@ import {
   extractDeadline,
   extractProgress,
   extractPriority,
+  extractRepeat,
+  nextRepeatDate,
   setDeadline,
   setPriority,
+  setRepeat,
   stripDeadline,
   stripPriority,
   stripProgress,
+  stripRepeat,
 } from './src/task-metadata';
+import { TaskTimerService } from './src/timer-service';
+import { getRepeatLabels, getTimerLabels } from './src/timer-localization';
 import { ReminderService } from './src/reminders/reminder-service';
 import { TaskCreationRegistry } from './src/task-registry';
 import { TaskIndexService } from './src/task-index-service';
@@ -58,6 +67,7 @@ export default class TaskProPlugin extends Plugin {
   private fileTaskStates = new Map<string, Map<string, TaskStatus>>(); // Track task states per file
   private taskBlockIds = new Map<string, Map<string, string>>(); // Store block IDs: filePath -> (taskContent -> blockId)
   private taskProgressCache = new Map<string, TaskProgress>(); // Fast lookup: filePath:blockId -> progress
+  timerService!: TaskTimerService;
 
   // Helper method to check if a file is within the target folder
   private isFileInTargetFolder(filePath: string): boolean {
@@ -109,6 +119,30 @@ export default class TaskProPlugin extends Plugin {
       }
     );
 
+    // Focus timers. Built before any renderer can ask for one, and given
+    // Obsidian's status bar so a running timer stays visible while the user
+    // works in another note.
+    this.timerService = new TaskTimerService({
+      getEntries: () => this.settings.taskTimers,
+      setEntries: (entries) => {
+        this.settings.taskTimers = entries;
+      },
+      save: () => this.saveSettings(),
+      getLanguage: () => this.settings.badgeLanguage,
+      getSettings: () => ({
+        showTimerBadges: this.settings.showTimerBadges,
+        timerSystemNotification: this.settings.timerSystemNotification,
+        timerSound: this.settings.timerSound,
+        timerInStatusBar: this.settings.timerInStatusBar,
+      }),
+      playSound: () => this.reminderService?.playTimerSound(),
+      reveal: (filePath) => {
+        void this.app.workspace.openLinkText(filePath, filePath, false);
+      },
+      registerInterval: (id) => this.registerInterval(id),
+      statusBarEl: this.addStatusBarItem(),
+    });
+
     // Rebuild block ID cache from saved mappings (survives plugin reload)
     this.rebuildBlockIdCache();
 
@@ -127,8 +161,9 @@ export default class TaskProPlugin extends Plugin {
     this.registerEditorExtension(
      createTaskBadgePlugin(
        this.app,
-        () => ({ enableBadges: this.settings.enableBadges, badgeLanguage: this.settings.badgeLanguage, badgeSize: this.settings.badgeSize, targetFolder: this.settings.targetFolder, calendarSystem: this.settings.calendarSystem, showPriorityBadges: this.settings.showPriorityBadges }),
+        () => ({ enableBadges: this.settings.enableBadges, badgeLanguage: this.settings.badgeLanguage, badgeSize: this.settings.badgeSize, targetFolder: this.settings.targetFolder, calendarSystem: this.settings.calendarSystem, showPriorityBadges: this.settings.showPriorityBadges, showTimerBadges: this.settings.showTimerBadges, showRepeatBadges: this.settings.showRepeatBadges }),
         (filePath: string, blockId?: string) => this.getTaskProgress(filePath, blockId),
+        (filePath: string, blockId?: string) => this.timerService.get(filePath, blockId),
         (filePath: string, lineContent: string) => this.getStoredBlockId(filePath, lineContent)
      )
    );
@@ -137,8 +172,9 @@ export default class TaskProPlugin extends Plugin {
     this.registerMarkdownPostProcessor(
      createReadingModeProcessor(
        this.app,
-        () => ({ enableBadges: this.settings.enableBadges, badgeLanguage: this.settings.badgeLanguage, badgeSize: this.settings.badgeSize, showBadgesInEmbeds: this.settings.showBadgesInEmbeds, targetFolder: this.settings.targetFolder, calendarSystem: this.settings.calendarSystem, showPriorityBadges: this.settings.showPriorityBadges }),
+        () => ({ enableBadges: this.settings.enableBadges, badgeLanguage: this.settings.badgeLanguage, badgeSize: this.settings.badgeSize, showBadgesInEmbeds: this.settings.showBadgesInEmbeds, targetFolder: this.settings.targetFolder, calendarSystem: this.settings.calendarSystem, showPriorityBadges: this.settings.showPriorityBadges, showTimerBadges: this.settings.showTimerBadges, showRepeatBadges: this.settings.showRepeatBadges }),
         (filePath: string, blockId?: string) => this.getTaskProgress(filePath, blockId),
+        (filePath: string, blockId?: string) => this.timerService.get(filePath, blockId),
         (filePath: string, lineContent: string) => this.getStoredBlockId(filePath, lineContent)
      )
    );
@@ -155,6 +191,8 @@ export default class TaskProPlugin extends Plugin {
      
       // Get progress from stored data
       const progress = this.getTaskProgress(resolvedFilePath, blockId);
+      const timer = this.timerService.get(resolvedFilePath, blockId);
+      const repeat = extractRepeat(lineContent ?? '');
      
       // Find task mapping if it exists
       const mapping = resolvedFilePath
@@ -174,6 +212,9 @@ export default class TaskProPlugin extends Plugin {
           tags,
           progress,
           priority,
+          timer,
+          repeat,
+          defaultTimerMinutes: this.settings.defaultTimerMinutes,
           calendarSystem: this.settings.calendarSystem,
           onToggleSync: async (enabled) => {
             if (mapping) {
@@ -183,8 +224,8 @@ export default class TaskProPlugin extends Plugin {
           onStatusChange: async (newStatus) => {
             const effectiveBlockId = blockId || mapping?.importedBlockId;
             // Update status in current file
-            const file = this.app.vault.getAbstractFileByPath(resolvedFilePath);
-            if (file instanceof TFile) {
+            const file = this.app.vault.getFileByPath(resolvedFilePath);
+            if (file) {
               const updated = await this.updateTaskLineInFile(
                 file,
                 lineContent,
@@ -207,8 +248,8 @@ export default class TaskProPlugin extends Plugin {
           onDeadlineChange: async (newDeadline: string | null) => {
             const effectiveBlockId = blockId || mapping?.importedBlockId;
             // Update deadline in current file
-            const file = this.app.vault.getAbstractFileByPath(resolvedFilePath);
-            if (file instanceof TFile) {
+            const file = this.app.vault.getFileByPath(resolvedFilePath);
+            if (file) {
               const updated = await this.updateTaskLineInFile(
                 file,
                 lineContent,
@@ -227,8 +268,8 @@ export default class TaskProPlugin extends Plugin {
          },
          onPriorityChange: async (newPriority) => {
             const effectiveBlockId = blockId || mapping?.importedBlockId;
-            const file = this.app.vault.getAbstractFileByPath(resolvedFilePath);
-            if (file instanceof TFile) {
+            const file = this.app.vault.getFileByPath(resolvedFilePath);
+            if (file) {
               const updated = await this.updateTaskLineInFile(
                 file,
                 lineContent,
@@ -247,7 +288,30 @@ export default class TaskProPlugin extends Plugin {
           },
          onProgressChange: async (newProgress) => {
             await this.handleProgressUpdate(resolvedFilePath, lineContent, blockId, newProgress);
-          }
+          },
+          onTimerChange: async (newTimer) => {
+            await this.handleTimerUpdate(resolvedFilePath, lineContent, blockId, newTimer);
+          },
+          onTimerStart: async () => {
+            const effectiveBlockId = blockId || mapping?.importedBlockId;
+            if (!effectiveBlockId) return;
+            // Re-read: the menu may have been open while the timer ran out.
+            const current = this.timerService.get(resolvedFilePath, effectiveBlockId);
+            if (!current) return;
+            await this.timerService.start(resolvedFilePath, effectiveBlockId, current);
+            this.refreshDecorations();
+          },
+          onTimerPause: async () => {
+            const effectiveBlockId = blockId || mapping?.importedBlockId;
+            if (!effectiveBlockId) return;
+            const current = this.timerService.get(resolvedFilePath, effectiveBlockId);
+            if (!current) return;
+            await this.timerService.pause(resolvedFilePath, effectiveBlockId, current);
+            this.refreshDecorations();
+          },
+          onRepeatChange: async (newRepeat) => {
+            await this.handleRepeatUpdate(resolvedFilePath, lineContent, blockId, newRepeat);
+          },
         });
         popover.show();
       });
@@ -273,6 +337,50 @@ export default class TaskProPlugin extends Plugin {
           language: language || this.settings.badgeLanguage,
           onProgressChange: async (newProgress) => {
             await this.handleProgressUpdate(resolvedFilePath, lineContent, blockId, newProgress);
+          },
+        });
+        popover.show();
+      });
+    });
+
+    // Listen for focus-timer chip clicks to open the timer menu
+    this.registerDomEvent(document.body, 'taskpro-timer-click' as keyof HTMLElementEventMap, (evt: Event) => {
+      const customEvt = evt as CustomEvent;
+      const { lineContent, filePath, targetElement, blockId, language } = customEvt.detail;
+      const resolvedFilePath = filePath || this.app.workspace.getActiveFile()?.path || '';
+      const timer = this.timerService.get(resolvedFilePath, blockId);
+      if (!timer || !blockId) return;
+
+      import('./src/timer-popover').then(({ TaskTimerPopover }) => {
+        const popover = new TaskTimerPopover({
+          app: this.app,
+          targetElement,
+          timer,
+          language: language || this.settings.badgeLanguage,
+          // Every action re-reads the timer: the menu can sit open while the
+          // countdown keeps running, so the captured copy above goes stale.
+          onStart: async () => {
+            const current = this.timerService.get(resolvedFilePath, blockId);
+            if (current) await this.timerService.start(resolvedFilePath, blockId, current);
+            this.refreshDecorations();
+          },
+          onPause: async () => {
+            const current = this.timerService.get(resolvedFilePath, blockId);
+            if (current) await this.timerService.pause(resolvedFilePath, blockId, current);
+            this.refreshDecorations();
+          },
+          onReset: async () => {
+            const current = this.timerService.get(resolvedFilePath, blockId);
+            if (current) await this.timerService.reset(resolvedFilePath, blockId, current);
+            this.refreshDecorations();
+          },
+          onExtend: async (minutes) => {
+            const current = this.timerService.get(resolvedFilePath, blockId);
+            if (current) await this.timerService.extend(resolvedFilePath, blockId, current, minutes);
+            this.refreshDecorations();
+          },
+          onChange: async (newTimer) => {
+            await this.handleTimerUpdate(resolvedFilePath, lineContent, blockId, newTimer);
           },
         });
         popover.show();
@@ -452,6 +560,62 @@ export default class TaskProPlugin extends Plugin {
       },
     });
 
+    // Command: start or pause the focus timer on the task under the cursor
+    this.addCommand({
+      id: 'toggle-task-focus-timer',
+      name: 'Start / Pause Focus Timer on Current Task',
+      editorCallback: async (editor: Editor, ctx: MarkdownView | MarkdownFileInfo) => {
+        const context = this.taskAtCursor(editor, ctx);
+        if (!context) return;
+
+        const labels = getTimerLabels(this.settings.badgeLanguage);
+        const blockId = await this.ensureTaskBlockId(
+          context.filePath,
+          context.line,
+          context.blockId,
+          true
+        );
+        if (!blockId) return;
+
+        const existing = this.timerService.get(context.filePath, blockId);
+        if (!existing?.enabled) {
+          // No timer yet: create one at the configured default and start it.
+          await this.timerService.set(context.filePath, blockId, {
+            enabled: true,
+            durationSeconds: Math.max(1, this.settings.defaultTimerMinutes) * 60,
+            elapsedSeconds: 0,
+            runningSince: Date.now(),
+            label: this.taskTitle(context.line),
+          });
+          new Notice(labels.start);
+        } else if (existing.runningSince > 0) {
+          await this.timerService.pause(context.filePath, blockId, existing);
+          new Notice(labels.pause);
+        } else {
+          await this.timerService.start(context.filePath, blockId, existing);
+          new Notice(labels.resume);
+        }
+        this.refreshDecorations();
+      },
+    });
+
+    // Command: turn recurrence on or off for the task under the cursor
+    this.addCommand({
+      id: 'toggle-task-repeat',
+      name: 'Toggle Weekly Repeat on Current Task',
+      editorCallback: async (editor: Editor, ctx: MarkdownView | MarkdownFileInfo) => {
+        const context = this.taskAtCursor(editor, ctx);
+        if (!context) return;
+
+        const labels = getRepeatLabels(this.settings.badgeLanguage);
+        const existing = extractRepeat(context.line);
+        const next: TaskRepeat | null = existing ? null : { every: 1, unit: 'week' };
+        editor.setLine(context.lineNumber, setRepeat(context.line, next));
+        new Notice(next ? labels.chip(next) : labels.repeatRemoved);
+        this.refreshDecorations();
+      },
+    });
+
     // Daily / periodic reminders
     this.reminderService = new ReminderService({
       app: this.app,
@@ -505,7 +669,6 @@ export default class TaskProPlugin extends Plugin {
     // Add settings tab
     this.addSettingTab(new TaskProSettingTab(this.app, this));
 
-    console.log('TaskPro loaded');
   }
 
   async loadSettings() {
@@ -532,6 +695,7 @@ export default class TaskProPlugin extends Plugin {
     }
 
     this.rebuildProgressCache();
+    this.timerService?.rebuildCache();
   }
 
   async saveSettings() {
@@ -926,6 +1090,9 @@ export default class TaskProPlugin extends Plugin {
 
     // Set debounce timer (300ms)
     const timer = setTimeout(async () => {
+      // Recurrence first: rolling a completed repeating task forward changes
+      // its status, and the sync pass below should see the rolled state.
+      await this.rollCompletedRecurringTasks(file);
       await this.processSyncForFile(file);
       this.syncDebounceTimers.delete(file.path);
     }, 300);
@@ -1245,7 +1412,7 @@ export default class TaskProPlugin extends Plugin {
   }
 
   private normalizeTaskContent(content: string): string {
-    return stripPriority(stripProgress(stripDeadline(content)))
+    return stripRepeat(stripPriority(stripProgress(stripDeadline(content))))
       .replace(/^(\s*)- \[([ \/xX!])\]\s*/, '')
       .replace(/\^[a-zA-Z0-9-]+\s*$/, '')
       .trim()
@@ -1282,8 +1449,8 @@ export default class TaskProPlugin extends Plugin {
     let mappingsChanged = false;
 
     for (const [filePath, ids] of mappingIds) {
-      const file = this.app.vault.getAbstractFileByPath(filePath);
-      if (!(file instanceof TFile)) continue;
+      const file = this.app.vault.getFileByPath(filePath);
+      if (!file) continue;
 
       let fileChanged = false;
 
@@ -1339,20 +1506,12 @@ export default class TaskProPlugin extends Plugin {
       blockId,
     });
 
-    let effectiveBlockId = blockId || mapping?.importedBlockId;
-
-    if (!effectiveBlockId && newProgress) {
-      effectiveBlockId = generateBlockId();
-      const file = this.app.vault.getAbstractFileByPath(resolvedFilePath);
-      if (file instanceof TFile) {
-        await this.updateTaskLineInFile(
-          file,
-          lineContent,
-          undefined,
-          (content) => content.trimEnd() + ` ^${effectiveBlockId}`
-        );
-      }
-    }
+    const effectiveBlockId = await this.ensureTaskBlockId(
+      resolvedFilePath,
+      lineContent,
+      blockId,
+      newProgress !== null
+    );
 
     if (!effectiveBlockId) {
       if (newProgress) {
@@ -1365,8 +1524,8 @@ export default class TaskProPlugin extends Plugin {
     this.refreshDecorations();
 
     if (newProgress && newProgress.currentSteps === newProgress.totalSteps) {
-      const file = this.app.vault.getAbstractFileByPath(resolvedFilePath);
-      if (file instanceof TFile) {
+      const file = this.app.vault.getFileByPath(resolvedFilePath);
+      if (file) {
         await this.updateTaskLineInFile(
           file,
           lineContent,
@@ -1390,6 +1549,237 @@ export default class TaskProPlugin extends Plugin {
         await this.saveTaskProgress(mapping.sourceFilePath, mapping.sourceBlockId, newProgress);
       }
     }
+  }
+
+  /**
+   * Attaches, edits, or removes a task's focus timer.
+   *
+   * A timer is keyed by block ID like progress is, so a task that has never
+   * been given one gets a block ID written first — otherwise there is nothing
+   * stable to hang the timer on when the line's text later changes.
+   */
+  async handleTimerUpdate(
+    filePath: string,
+    lineContent: string,
+    blockId: string | undefined,
+    newTimer: TaskTimer | null
+  ): Promise<void> {
+    const resolvedFilePath = filePath || this.app.workspace.getActiveFile()?.path || '';
+    if (!resolvedFilePath) return;
+
+    const effectiveBlockId = await this.ensureTaskBlockId(
+      resolvedFilePath,
+      lineContent,
+      blockId,
+      newTimer !== null
+    );
+    if (!effectiveBlockId) return;
+
+    // Carry the task's own text so a finished timer can name it.
+    const labelled = newTimer
+      ? { ...newTimer, label: newTimer.label ?? this.taskTitle(lineContent) }
+      : null;
+
+    await this.timerService.set(resolvedFilePath, effectiveBlockId, labelled);
+    this.refreshDecorations();
+  }
+
+  /**
+   * Writes the recurrence rule into the task line itself, so it travels with
+   * the task rather than living in plugin storage.
+   */
+  async handleRepeatUpdate(
+    filePath: string,
+    lineContent: string,
+    blockId: string | undefined,
+    newRepeat: TaskRepeat | null
+  ): Promise<void> {
+    const resolvedFilePath = filePath || this.app.workspace.getActiveFile()?.path || '';
+    if (!resolvedFilePath) return;
+
+    const mapping = this.syncManager.findMapping(resolvedFilePath, lineContent, {
+      scope: 'imported',
+      blockId,
+    });
+    const effectiveBlockId = blockId || mapping?.importedBlockId;
+
+    const file = this.app.vault.getFileByPath(resolvedFilePath);
+    if (!file) return;
+
+    const updated = await this.updateTaskLineInFile(
+      file,
+      lineContent,
+      effectiveBlockId,
+      (content) => setRepeat(content, newRepeat)
+    );
+    if (updated) this.refreshDecorations();
+  }
+
+  /**
+   * Rolls every completed repeating task in a file forward: the deadline moves
+   * to the next occurrence, the status goes back to "not started", and any
+   * progress bar or focus timer on the task resets with it.
+   *
+   * Runs over the whole file rather than a single line so it also catches a
+   * task ticked off by typing `[x]` by hand, which no popover callback sees.
+   */
+  private async rollCompletedRecurringTasks(file: TFile): Promise<void> {
+    if (!this.isFileInTargetFolder(file.path)) return;
+
+    const content = await this.app.vault.cachedRead(file);
+    if (!content.includes('@repeat(')) return;
+
+    /** Rewrites one completed repeating line, or returns null to leave it be. */
+    const roll = (line: string): { line: string; nextDeadline: string } | null => {
+      const match = TASK_LINE_REGEX.exec(line);
+      if (!match || match[2].toLowerCase() !== 'x') return null;
+
+      const repeat = extractRepeat(line);
+      if (!repeat) return null;
+
+      const nextDeadline = nextRepeatDate(repeat, extractDeadline(line));
+      const reopened = setDeadline(line, nextDeadline).replace(TASK_STATUS_REGEX, '- [ ]');
+      return reopened === line ? null : { line: reopened, nextDeadline };
+    };
+
+    // The write below fires another `modify`, which lands back here. That pass
+    // finds no completed repeating tasks (they are `[ ]` now) and never reaches
+    // vault.process, so the cycle stops after one write. Checking before
+    // writing is what keeps it from becoming a ping-pong.
+    if (!content.split('\n').some((line) => roll(line) !== null)) return;
+
+    const rolled: Array<{ line: string; blockId?: string; nextDeadline: string }> = [];
+
+    await this.app.vault.process(file, (current) => {
+      const lines = current.split('\n');
+      let changed = false;
+
+      for (let i = 0; i < lines.length; i++) {
+        const next = roll(lines[i]);
+        if (!next) continue;
+
+        rolled.push({
+          line: next.line,
+          blockId: this.extractTaskBlockId(next.line),
+          nextDeadline: next.nextDeadline,
+        });
+        lines[i] = next.line;
+        changed = true;
+      }
+
+      return changed ? lines.join('\n') : current;
+    });
+
+    if (!rolled.length) return;
+
+    for (const entry of rolled) {
+      // Recording the rolled state first stops the sync pass that follows from
+      // reading the roll as a status change the user made.
+      this.recordTaskState(file.path, entry.line, entry.blockId, '[ ]');
+      if (!entry.blockId) continue;
+
+      // A fresh occurrence starts from zero on both of the other capabilities.
+      const progress = this.getTaskProgress(file.path, entry.blockId);
+      if (progress?.enabled) {
+        await this.saveTaskProgress(file.path, entry.blockId, {
+          ...progress,
+          currentSteps: 0,
+        });
+      }
+      const timer = this.timerService.get(file.path, entry.blockId);
+      if (timer?.enabled) await this.timerService.reset(file.path, entry.blockId, timer);
+
+      // A linked copy has to advance with this one; syncing the completion
+      // instead would leave the source stuck on a tick that no longer stands.
+      const mapping = this.syncManager.findMapping(file.path, entry.line, {
+        scope: 'imported',
+        blockId: entry.blockId,
+      });
+      if (mapping?.linked) {
+        await this.syncManager.syncTaskDeadline(file.path, entry.line, entry.nextDeadline, {
+          blockId: entry.blockId,
+        });
+        await this.syncManager.syncTaskStatus(file.path, entry.line, '[ ]', {
+          blockId: entry.blockId,
+        });
+        if (mapping.sourceBlockId && progress?.enabled) {
+          await this.saveTaskProgress(mapping.sourceFilePath, mapping.sourceBlockId, {
+            ...progress,
+            currentSteps: 0,
+          });
+        }
+      }
+    }
+
+    const labels = getRepeatLabels(this.settings.badgeLanguage);
+    new Notice(labels.rolledForward(rolled[0].nextDeadline));
+    this.refreshDecorations();
+  }
+
+  /**
+   * Returns a block ID for a task, writing a fresh one into the line when the
+   * task does not have one yet. Capabilities stored outside the note (progress,
+   * timers) need this anchor; callers that are only reading pass create=false.
+   */
+  /**
+   * A task line reduced to its readable title: no marker, no metadata, no block
+   * ID. Unlike normalizeTaskContent (which builds a lookup key and lowercases),
+   * this preserves the user's own capitalisation because it is shown to them.
+   */
+  private taskTitle(lineContent: string): string {
+    const match = TASK_LINE_WITH_CONTENT_REGEX.exec(lineContent ?? '');
+    const body = match ? match[3] : (lineContent ?? '').replace(/^\s*- \[[ \/xX!]\]\s*/, '');
+    return stripRepeat(stripPriority(stripProgress(stripDeadline(body))))
+      .replace(BLOCK_ID_TAIL_REGEX, '')
+      .trim();
+  }
+
+  /** The task line under the cursor, or a Notice explaining why there isn't one. */
+  private taskAtCursor(
+    editor: Editor,
+    ctx: MarkdownView | MarkdownFileInfo
+  ): { line: string; lineNumber: number; blockId?: string; filePath: string } | null {
+    const lineNumber = editor.getCursor().line;
+    const line = editor.getLine(lineNumber);
+    if (!TASK_LINE_WITH_CONTENT_REGEX.test(line)) {
+      new Notice('Cursor is not on a task line');
+      return null;
+    }
+
+    const filePath = ctx.file?.path ?? this.app.workspace.getActiveFile()?.path ?? '';
+    if (!filePath) return null;
+    if (!this.isFileInTargetFolder(filePath)) {
+      new Notice('This file is outside the target folder restriction');
+      return null;
+    }
+
+    return { line, lineNumber, blockId: this.extractTaskBlockId(line), filePath };
+  }
+
+  private async ensureTaskBlockId(
+    filePath: string,
+    lineContent: string,
+    blockId: string | undefined,
+    create: boolean
+  ): Promise<string | undefined> {
+    const mapping = this.syncManager.findMapping(filePath, lineContent, {
+      scope: 'imported',
+      blockId,
+    });
+    let effectiveBlockId = blockId || mapping?.importedBlockId;
+    if (effectiveBlockId || !create) return effectiveBlockId;
+
+    effectiveBlockId = generateBlockId();
+    const file = this.app.vault.getFileByPath(filePath);
+    if (!file) return undefined;
+
+    const written = await this.updateTaskLineInFile(
+      file,
+      lineContent,
+      undefined,
+      (content) => content.trimEnd() + ` ^${effectiveBlockId}`
+    );
+    return written ? effectiveBlockId : undefined;
   }
 
   // Get progress for a task (settings storage, with optional inline marker fallback)
@@ -1441,10 +1831,14 @@ export default class TaskProPlugin extends Plugin {
     // Clear all debounce timers
     this.syncDebounceTimers.forEach(timer => clearTimeout(timer));
     this.fileTaskStates.clear();
+    // The embed-visibility class is set on document.body in onload, so it has
+    // to come back off here — otherwise disabling the plugin leaves the vault
+    // styled by a plugin that is no longer running.
+    document.body.removeClass('taskpro-hide-badges-in-embeds');
     // Release the reminder ticker, overlay and audio nodes
     this.reminderService?.stop();
     this.taskIndexService?.stop();
-    console.log('TaskPro unloaded');
+    this.timerService?.destroy();
   }
 
   private rebuildProgressCache(): void {

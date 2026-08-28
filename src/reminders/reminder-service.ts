@@ -81,6 +81,16 @@ export class ReminderService {
     this.overlay = null;
   }
 
+  /**
+   * Plays the configured reminder sound once, for callers outside the reminder
+   * schedule (a focus timer running out). Never loops, so a timer chime cannot
+   * keep sounding with no alert on screen to acknowledge.
+   */
+  playTimerSound(): void {
+    const result = this.sound.play({ ...this.settings, soundRepeat: false });
+    if (!result.ok) console.error('TaskPro: timer sound failed', result.reason);
+  }
+
   /** Call after the user edits reminder settings. */
   refresh(): void {
     this.snoozeUntil = 0;

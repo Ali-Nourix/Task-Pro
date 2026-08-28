@@ -2,17 +2,22 @@
 // MarkdownPostProcessor for Reading Mode badges with localization support
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { MarkdownPostProcessorContext } from 'obsidian';
-import { TaskStatus, Language, CalendarSystem, TaskProgress, TaskPriority } from './types';
+import { App, MarkdownPostProcessorContext } from 'obsidian';
+import { TaskStatus, Language, CalendarSystem, TaskProgress, TaskPriority, TaskRepeat, TaskTimer } from './types';
 import { isWithinTargetFolder } from './path-utils';
-import { extractDeadline, extractProgress, extractPriority } from './task-metadata';
+import { extractDeadline, extractProgress, extractPriority, extractRepeat } from './task-metadata';
 import {
   applyChipScale,
   createDeadlineChip,
   createPriorityChip,
   createProgressChip,
+  createRepeatChip,
   createStatusChip,
+  createTimerChip,
 } from './ui/chips';
+
+/** A pattern that matches nothing, used to switch off an optional strip. */
+const NEVER_MATCHES = /(?!)/g;
 
 /** Settings slice the reading-mode renderer depends on. */
 export interface ReadingModeSettings {
@@ -23,15 +28,18 @@ export interface ReadingModeSettings {
   targetFolder: string;
   calendarSystem: CalendarSystem;
   showPriorityBadges: boolean;
+  showTimerBadges: boolean;
+  showRepeatBadges: boolean;
 }
 
 /**
  * Create reading mode processor
  */
 export function createReadingModeProcessor(
-  app: any,
+  app: App,
   getSettings: () => ReadingModeSettings,
   getProgress: (filePath: string, blockId?: string) => TaskProgress | undefined,
+  getTimer: (filePath: string, blockId?: string) => TaskTimer | undefined,
   getBlockId?: (filePath: string, lineContent: string) => string | undefined
 ) {
   return (el: HTMLElement, ctx: MarkdownPostProcessorContext) => {
@@ -102,6 +110,8 @@ export function createReadingModeProcessor(
       const progress = getProgress(ctx.sourcePath, blockId) ?? extractProgress(text) ?? null;
 
       const priority = settings.showPriorityBadges ? extractPriority(text) : undefined;
+      const timer = settings.showTimerBadges ? getTimer(ctx.sourcePath, blockId) : undefined;
+      const repeat = settings.showRepeatBadges ? extractRepeat(text) : undefined;
 
       // Extract tags
       const tagMatches = text.matchAll(/#([a-zA-Z0-9_-]+)/g);
@@ -109,18 +119,20 @@ export function createReadingModeProcessor(
 
       // Create badge container
       const badgeContainer = createInteractiveBadgeContainer(
-        status, 
-        deadline, 
+        status,
+        deadline,
         progress,
         priority,
-        settings, 
-        text, 
-        ctx.sourcePath, 
-        blockId, 
+        timer?.enabled ? timer : undefined,
+        repeat,
+        settings,
+        text,
+        ctx.sourcePath,
+        blockId,
         tags
       );
       
-      hideInlineTaskMetadata(item);
+      hideInlineTaskMetadata(item, settings.showRepeatBadges);
       
       // Append to the list item
       item.appendChild(badgeContainer);
@@ -128,7 +140,12 @@ export function createReadingModeProcessor(
   };
 }
 
-function hideInlineTaskMetadata(root: Element): void {
+/**
+ * Strips the plugin's own inline markers from the rendered line, now that chips
+ * carry the same information. The recurrence marker is only stripped while its
+ * chip is on — otherwise turning the chip off would hide the rule entirely.
+ */
+function hideInlineTaskMetadata(root: Element, hideRepeat: boolean): void {
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   const emptyTextNodes: Text[] = [];
 
@@ -147,6 +164,12 @@ function hideInlineTaskMetadata(root: Element): void {
       .replace(/\[progress::\s*\d+\/\d+\]/g, '')
       .replace(/@priority\(\s*(?:highest|high|medium|low|lowest)\s*\)/gi, '')
       .replace(/\[priority::\s*(?:highest|high|medium|low|lowest)\s*\]/gi, '')
+      .replace(
+        hideRepeat
+          ? /@repeat\(\s*(?:\d+\s*)?(?:d|w|m|day|days|daily|week|weeks|weekly|month|months|monthly)\s*\)/gi
+          : NEVER_MATCHES,
+        ''
+      )
       .replace(/\uD83D\uDD3A|\u23EB|\uD83D\uDD3C|\uD83D\uDD3D|\u23EC/g, '')
       .replace(/\s*\^[a-zA-Z0-9-]+\s*$/g, '')
       .replace(/\s{2,}/g, ' ');
@@ -159,6 +182,7 @@ function hideInlineTaskMetadata(root: Element): void {
         || textNode.textContent.includes('[progress::')
         || /@priority\(/i.test(textNode.textContent)
         || /\[priority::/i.test(textNode.textContent)
+        || (hideRepeat && /@repeat\(/i.test(textNode.textContent))
         || /\uD83D\uDD3A|\u23EB|\uD83D\uDD3C|\uD83D\uDD3D|\u23EC/.test(textNode.textContent)
         || /\^[a-zA-Z0-9-]+/.test(textNode.textContent);
       if (!cleanedText.trim() && hadMetadata) {
@@ -183,6 +207,8 @@ function createInteractiveBadgeContainer(
   deadline: string | null,
   progress: { enabled: boolean; currentSteps: number; totalSteps: number } | null,
   priority: TaskPriority | undefined,
+  timer: TaskTimer | undefined,
+  repeat: TaskRepeat | undefined,
   settings: { badgeLanguage: Language; badgeSize: number },
   lineContent: string,
   filePath: string,
@@ -229,8 +255,36 @@ function createInteractiveBadgeContainer(
     );
   }
 
+  if (repeat) {
+    container.appendChild(
+      createRepeatChip({
+        repeat,
+        language: settings.badgeLanguage,
+        filePath,
+        lineContent,
+        blockId,
+        status,
+        deadline: deadline ?? undefined,
+        priority,
+        tags,
+      })
+    );
+  }
+
   if (deadline) {
     container.appendChild(createDeadlineChip(deadline, settings.badgeLanguage, status));
+  }
+
+  if (timer?.enabled) {
+    container.appendChild(
+      createTimerChip({
+        timer,
+        filePath,
+        lineContent,
+        blockId,
+        language: settings.badgeLanguage,
+      })
+    );
   }
 
   if (progress && progress.enabled) {
