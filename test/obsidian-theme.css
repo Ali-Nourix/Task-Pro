@@ -1,0 +1,83 @@
+/* ---------------------------------------------------------------------------
+   Obsidian's default theme variables, for the offline preview harnesses.
+
+   The plugin's own styles.css is built entirely on these, so reproducing them
+   here is what lets a plain browser render the panel the way Obsidian does.
+   Values match Obsidian's stock dark theme; `body.theme-light` swaps in the
+   stock light theme so both can be checked without launching the app. The
+   class names are the ones Obsidian itself puts on <body>, so the plugin's own
+   `.theme-dark` rules apply here exactly as they do in the app.
+   --------------------------------------------------------------------------- */
+:root {
+  --font-ui: Inter, "Segoe UI", Roboto, sans-serif;
+  --font-text: Inter, "Segoe UI", Roboto, sans-serif;
+  --font-monospace: "JetBrains Mono", Consolas, monospace;
+  --font-ui-small: 13px;
+  --font-ui-smaller: 12px;
+  --font-semibold: 600;
+
+  --background-primary: #1e1e1e;
+  --background-primary-alt: #191919;
+  --background-secondary: #262626;
+  --background-secondary-alt: #161616;
+  --background-modifier-border: #363636;
+  --background-modifier-border-hover: #484848;
+  --background-modifier-hover: rgba(255, 255, 255, 0.06);
+  --interactive-accent: #7f6df2;
+  --interactive-accent-hover: #9586f8;
+  --interactive-success: #55b982;
+  --text-normal: #e6e6e6;
+  --text-muted: #9a9a9a;
+  --text-faint: #6f6f6f;
+  --text-on-accent: #ffffff;
+  --text-accent: #a396f5;
+  --text-success: #55b982;
+  --text-warning: #e9b949;
+  --text-error: #ef6b73;
+  --color-red: #e5534b;
+  --color-orange: #d98b3a;
+  --color-yellow: #d4b02a;
+  --color-blue: #4b8cd6;
+
+  --radius-s: 6px;
+  --radius-m: 10px;
+  --shadow-s: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-l: 0 16px 48px rgba(0, 0, 0, 0.4);
+  --layer-menu: 65;
+  --layer-popover: 30;
+}
+
+body.theme-light {
+  --background-primary: #ffffff;
+  --background-primary-alt: #f7f6f4;
+  --background-secondary: #f4f3f1;
+  --background-secondary-alt: #e8e6e3;
+  --background-modifier-border: #e0dedb;
+  --background-modifier-border-hover: #ccc9c4;
+  --background-modifier-hover: rgba(0, 0, 0, 0.045);
+  --interactive-accent: #6a58e8;
+  --interactive-accent-hover: #5847d6;
+  --interactive-success: #2f9e68;
+  --text-normal: #2c2c2b;
+  --text-muted: #75726d;
+  --text-faint: #a3a09b;
+  --text-on-accent: #ffffff;
+  --text-accent: #5847d6;
+  --text-success: #2f9e68;
+  --text-error: #c0392b;
+  --color-red: #c0392b;
+  --color-orange: #c1741f;
+  --color-yellow: #a8860a;
+  --color-blue: #2f6fbd;
+  --shadow-s: 0 1px 2px rgba(0, 0, 0, 0.07);
+  --shadow-l: 0 12px 36px rgba(0, 0, 0, 0.14);
+}
+
+/* setIcon() emits <svg class="svg-icon">; the harnesses do the same. */
+.svg-icon {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}

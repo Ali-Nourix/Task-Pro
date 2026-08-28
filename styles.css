@@ -231,8 +231,15 @@ settings:
 
 .taskpro-badge-container {
   display: inline-flex;
-  flex-direction: row;
-  direction: rtl;
+  /* row-reverse, not direction: rtl.
+     The chip row is deliberately ordered right-to-left (status nearest the
+     task text, then priority, repeat, deadline, timer, progress). Reversing it
+     with `direction: rtl` also flipped the *text* inside every chip, because
+     direction inherits: "3 Days Left" came out as "Days Left 3", and each
+     chip's icon landed to the right of its own label. row-reverse reverses only
+     the layout order and leaves text direction inherited from the note, so
+     chips read correctly in an English vault and mirror properly in an RTL one. */
+  flex-direction: row-reverse;
   align-items: center;
   gap: var(--taskpro-badge-gap);
   margin-inline-start: var(--taskpro-badge-margin-inline-start);
@@ -262,8 +269,10 @@ settings:
   border: 1px solid var(--background-modifier-border);
   white-space: nowrap;
   vertical-align: middle;
+  /* Each chip is its own bidi paragraph, so a label never reorders against a
+     neighbouring one. (`direction: auto` used to sit here; it is not a valid
+     value for the property and was silently dropped.) */
   unicode-bidi: isolate;
-  direction: auto;
 }
 
 .taskpro-interactive-badge {
