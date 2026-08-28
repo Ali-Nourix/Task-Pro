@@ -137,6 +137,24 @@ When you import a task from your reference note, TaskPro creates a mapping betwe
 - Supports RTL text for Persian language
 - `npm test` covers the recurrence date maths and the timer bookkeeping
 
+## 🔖 Releasing
+
+1. Update the version in `manifest.json`, `package.json`, and `package-lock.json`.
+2. Add the version and minimum Obsidian version to `versions.json`.
+3. Commit and push.
+4. Tag the commit with exactly the manifest version, without a `v` prefix:
+
+   ```bash
+   git tag 1.2.0
+   git push origin 1.2.0
+   ```
+
+The release workflow validates that the tag, manifest, package, lockfile, and
+`versions.json` all agree, runs the tests, builds, and publishes `main.js`,
+`manifest.json`, `styles.css`, and `taskpro-<version>.zip` containing the three.
+Running the workflow by hand from the Actions tab produces the same files as
+downloadable artifacts without creating a release.
+
 ## 📝 License
 
 MIT License

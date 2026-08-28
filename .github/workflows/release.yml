@@ -4,6 +4,10 @@ on:
   push:
     tags:
       - "*"
+  # Lets the same build be run by hand from the Actions tab. A manual run
+  # produces the zip and the three loose files as downloadable artifacts and
+  # stops there; only a tag push creates a GitHub release.
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -29,6 +33,7 @@ jobs:
       # A tag that disagrees with the manifest ships a release Obsidian will
       # refuse to update to, so the mismatch is caught before anything is built.
       - name: Validate all release versions
+        if: github.ref_type == 'tag'
         env:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
@@ -75,19 +80,34 @@ jobs:
       # .obsidian/plugins/. The zip holds the files at its root so it can be
       # unpacked straight into the plugin folder.
       - name: Package plugin zip
-        env:
-          PLUGIN_ID: taskpro
+        id: package
         run: |
-          zip -j "${PLUGIN_ID}-${GITHUB_REF_NAME}.zip" main.js manifest.json styles.css
-          unzip -l "${PLUGIN_ID}-${GITHUB_REF_NAME}.zip"
+          PLUGIN_ID=$(node -p "require('./manifest.json').id")
+          VERSION=$(node -p "require('./manifest.json').version")
+          ZIP="${PLUGIN_ID}-${VERSION}.zip"
+          zip -j "$ZIP" main.js manifest.json styles.css
+          unzip -l "$ZIP"
+          echo "zip=$ZIP" >> "$GITHUB_OUTPUT"
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ github.event.repository.name }}-build
+          path: |
+            ${{ steps.package.outputs.zip }}
+            main.js
+            manifest.json
+            styles.css
+          if-no-files-found: error
 
       - name: Create GitHub release
+        if: github.ref_type == 'tag'
         env:
           GH_TOKEN: ${{ github.token }}
-          PLUGIN_ID: taskpro
+          ZIP: ${{ steps.package.outputs.zip }}
         run: |
           gh release create "${GITHUB_REF_NAME}" \
             --verify-tag \
             --title "${GITHUB_REF_NAME}" \
             --generate-notes \
-            main.js manifest.json styles.css "${PLUGIN_ID}-${GITHUB_REF_NAME}.zip"
+            main.js manifest.json styles.css "$ZIP"
