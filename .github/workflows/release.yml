@@ -4,10 +4,20 @@ on:
   push:
     tags:
       - "*"
-  # Lets the same build be run by hand from the Actions tab. A manual run
-  # produces the zip and the three loose files as downloadable artifacts and
-  # stops there; only a tag push creates a GitHub release.
+  # The same build, run by hand from the Actions tab. By default it only
+  # produces the zip and the three loose files as downloadable artifacts;
+  # tick "publish" to have it create the tag and the GitHub release too, for
+  # when tagging from a local clone is not an option.
   workflow_dispatch:
+    inputs:
+      publish:
+        description: "Create the tag and GitHub release (version comes from manifest.json)"
+        type: boolean
+        default: false
+      target:
+        description: "Commit-ish to build and tag (default: the branch this run was started from)"
+        type: string
+        default: ""
 
 permissions:
   contents: write
@@ -17,8 +27,12 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Check out tagged source
+      - name: Check out source
         uses: actions/checkout@v4
+        with:
+          # A tag push builds the tag. A manual run builds the ref it was
+          # started from, or an explicit target when one is given.
+          ref: ${{ inputs.target || github.ref }}
 
       - name: Set up Node.js 20
         uses: actions/setup-node@v4
@@ -30,34 +44,38 @@ jobs:
           node --version
           npm --version
 
-      # A tag that disagrees with the manifest ships a release Obsidian will
-      # refuse to update to, so the mismatch is caught before anything is built.
-      - name: Validate all release versions
-        if: github.ref_type == 'tag'
+      # A release whose tag disagrees with the manifest is one Obsidian will
+      # refuse to update to, so the metadata is checked before anything is
+      # built. On a tag push the tag is the expected value; on a manual
+      # publish the manifest is, and every other file must agree with it.
+      - name: Validate release versions
+        id: version
+        if: github.ref_type == 'tag' || inputs.publish
         env:
-          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
         run: |
-          node <<'NODE'
+          node <<'NODE' >> "$GITHUB_OUTPUT"
           const manifest = require('./manifest.json');
           const pkg = require('./package.json');
           const lock = require('./package-lock.json');
           const versions = require('./versions.json');
-          const tag = process.env.RELEASE_TAG;
+          const expected = process.env.RELEASE_TAG || manifest.version;
           const values = {
-            tag,
             manifest: manifest.version,
             package: pkg.version,
             packageLock: lock.version,
             packageLockRoot: lock.packages?.['']?.version,
           };
-          console.log(values);
+          if (process.env.RELEASE_TAG) values.tag = process.env.RELEASE_TAG;
+          console.error(JSON.stringify(values, null, 2));
           for (const [name, value] of Object.entries(values)) {
-            if (value !== tag) throw new Error(`${name} is ${value}; expected ${tag}`);
+            if (value !== expected) throw new Error(`${name} is ${value}; expected ${expected}`);
           }
-          if (versions[tag] !== manifest.minAppVersion) {
-            throw new Error(`versions.json is missing ${tag}: ${manifest.minAppVersion}`);
+          if (versions[expected] !== manifest.minAppVersion) {
+            throw new Error(`versions.json is missing ${expected}: ${manifest.minAppVersion}`);
           }
-          console.log(`Release metadata is consistent for ${tag}`);
+          console.error(`Release metadata is consistent for ${expected}`);
+          console.log(`version=${expected}`);
           NODE
 
       - name: Install dependencies
@@ -101,13 +119,27 @@ jobs:
           if-no-files-found: error
 
       - name: Create GitHub release
-        if: github.ref_type == 'tag'
+        if: github.ref_type == 'tag' || inputs.publish
         env:
           GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
           ZIP: ${{ steps.package.outputs.zip }}
         run: |
-          gh release create "${GITHUB_REF_NAME}" \
-            --verify-tag \
-            --title "${GITHUB_REF_NAME}" \
-            --generate-notes \
-            main.js manifest.json styles.css "$ZIP"
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            # The tag already exists and was pushed deliberately.
+            gh release create "$VERSION" \
+              --verify-tag \
+              --title "$VERSION" \
+              --generate-notes \
+              main.js manifest.json styles.css "$ZIP"
+          else
+            # Manual publish: create the tag at the commit that was just built.
+            # gh refuses if the release already exists, which is the guard
+            # against publishing the same version twice.
+            gh release create "$VERSION" \
+              --target "$(git rev-parse HEAD)" \
+              --title "$VERSION" \
+              --generate-notes \
+              main.js manifest.json styles.css "$ZIP"
+          fi
+          echo "Released $VERSION at $(git rev-parse HEAD)"
