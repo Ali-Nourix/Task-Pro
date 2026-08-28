@@ -68,6 +68,11 @@ export const STATUS_ICON_NAMES: Record<TaskStatus, string> = {
 export const CHIP_ICON_NAMES = {
   deadline: 'calendar-clock',
   progress: 'pie-chart',
+  timer: 'timer',
+  timerRunning: 'timer',
+  timerPaused: 'pause',
+  timerDone: 'timer-off',
+  repeat: 'repeat',
 } as const;
 
 export const PRIORITY_LABELS: Record<Language, Record<TaskPriority, string>> = {
@@ -209,6 +214,91 @@ export interface TaskProgress {
   currentSteps: number;
 }
 
+// ── Focus timer ────────────────────────────────────────────────────────────
+// A per-task countdown. Time is derived from wall-clock stamps rather than
+// counted down in memory, so a running timer survives a reload, a window
+// close, or Obsidian being quit and reopened.
+export type TaskTimerState = 'idle' | 'running' | 'paused' | 'done';
+
+export interface TaskTimer {
+  enabled: boolean;
+  /** Planned length of the timer, in seconds. */
+  durationSeconds: number;
+  /** Time already banked by finished runs, in seconds. */
+  elapsedSeconds: number;
+  /**
+   * Epoch ms when the current run started, or 0 when the timer is not running.
+   * Remaining time is duration - (elapsed + now - runningSince).
+   */
+  runningSince: number;
+  /** Epoch ms when the timer first hit zero. Set once, kept for the chip. */
+  completedAt?: number;
+  /** Suppresses a repeat notification after the first one for this run. */
+  notifiedAt?: number;
+  /**
+   * The task's text, captured when the timer is attached. Kept on the timer so
+   * the "time is up" notification can name the task without reading the note
+   * back from disk at the moment it fires.
+   */
+  label?: string;
+}
+
+export interface TaskTimerEntry {
+  filePath: string;
+  blockId: string;
+  timer: TaskTimer;
+}
+
+export const DEFAULT_TIMER_MINUTES = 25;
+
+/** Seconds a timer has left. Negative once it has run past its duration. */
+export function timerRemainingSeconds(timer: TaskTimer, now = Date.now()): number {
+  return Math.round(timer.durationSeconds - timerSpentSeconds(timer, now));
+}
+
+/** Seconds spent on a timer, including the run currently in flight. */
+export function timerSpentSeconds(timer: TaskTimer, now = Date.now()): number {
+  const live = timer.runningSince > 0 ? Math.max(0, (now - timer.runningSince) / 1000) : 0;
+  return timer.elapsedSeconds + live;
+}
+
+export function timerState(timer: TaskTimer, now = Date.now()): TaskTimerState {
+  if (timer.completedAt) return 'done';
+  if (timer.runningSince > 0) return timerRemainingSeconds(timer, now) <= 0 ? 'done' : 'running';
+  return timerSpentSeconds(timer, now) > 0 ? 'paused' : 'idle';
+}
+
+/** mm:ss, or h:mm:ss once an hour is involved. */
+export function formatTimerClock(totalSeconds: number): string {
+  const sign = totalSeconds < 0 ? '-' : '';
+  const abs = Math.abs(Math.round(totalSeconds));
+  const hours = Math.floor(abs / 3600);
+  const minutes = Math.floor((abs % 3600) / 60);
+  const seconds = abs % 60;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return hours > 0
+    ? `${sign}${hours}:${pad(minutes)}:${pad(seconds)}`
+    : `${sign}${minutes}:${pad(seconds)}`;
+}
+
+// ── Recurrence ─────────────────────────────────────────────────────────────
+// Unlike progress and timers, a recurrence rule belongs to the task itself, so
+// it lives in the note as `@repeat(1w)` next to `@due(...)` and `@priority(...)`
+// and travels with the line when it is moved, synced, or shared.
+export type RepeatUnit = 'day' | 'week' | 'month';
+
+export interface TaskRepeat {
+  every: number;
+  unit: RepeatUnit;
+}
+
+export const REPEAT_PRESETS: ReadonlyArray<TaskRepeat> = [
+  { every: 1, unit: 'day' },
+  { every: 1, unit: 'week' },
+  { every: 2, unit: 'week' },
+  { every: 1, unit: 'month' },
+] as const;
+
 export interface TaskMapping {
   linked: boolean; // Whether sync is enabled for this task
   importedFilePath: string;
@@ -253,6 +343,17 @@ export interface TaskProSettings {
   taskMappings: TaskMapping[];
   taskProgress: TaskProgressEntry[]; // Store progress data separately
   showPriorityBadges: boolean; // Toggle priority chip rendering
+  taskTimers: TaskTimerEntry[]; // Focus timers, stored per task like progress
+  showTimerBadges: boolean; // Toggle focus-timer chip rendering
+  showRepeatBadges: boolean; // Toggle recurrence chip rendering
+  /** Minutes offered when a focus timer is first added to a task. */
+  defaultTimerMinutes: number;
+  /** Post a desktop (Windows / macOS / Linux) notification when a timer ends. */
+  timerSystemNotification: boolean;
+  /** Play the reminder sound when a timer ends. */
+  timerSound: boolean;
+  /** Show the running timer in Obsidian's status bar. */
+  timerInStatusBar: boolean;
   reminders: ReminderSettings; // Daily reminder configuration
   reminderState?: ReminderState; // Internal scheduler bookkeeping
   blockIdMigrationDone?: boolean; // Guard: skip inline-strip migration after first run
@@ -276,6 +377,13 @@ export const DEFAULT_SETTINGS: TaskProSettings = {
   taskMappings: [],
   taskProgress: [],
   showPriorityBadges: true,
+  taskTimers: [],
+  showTimerBadges: true,
+  showRepeatBadges: true,
+  defaultTimerMinutes: DEFAULT_TIMER_MINUTES,
+  timerSystemNotification: true,
+  timerSound: true,
+  timerInStatusBar: true,
   reminders: DEFAULT_REMINDER_SETTINGS,
 };
 
@@ -290,6 +398,7 @@ export interface ParsedTask {
   customTags?: string[]; // Plugin-managed custom tags
   lineNumber: number;
   progress?: TaskProgress; // Progress tracking
+  repeat?: TaskRepeat; // Plugin-managed recurrence rule
 }
 
 export const STATUS_LABELS = {

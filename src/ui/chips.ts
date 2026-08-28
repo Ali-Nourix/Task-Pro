@@ -12,8 +12,14 @@ import {
   PRIORITY_LABELS,
   STATUS_ICON_NAMES,
   CHIP_ICON_NAMES,
+  TaskRepeat,
+  TaskTimer,
+  formatTimerClock,
+  timerRemainingSeconds,
+  timerState,
 } from '../types';
 import { getDeadlineInfo } from '../widget-localization';
+import { getRepeatLabels, getTimerLabels } from '../timer-localization';
 
 export function applyChipScale(container: HTMLElement, badgeSize: number): void {
   container.style.setProperty('--taskpro-badge-font-size', `${badgeSize}px`);
@@ -178,5 +184,107 @@ export function createDeadlineChip(deadline: string, language: Language, status?
   const deadlineInfo = getDeadlineInfo(deadline, language, status);
   const badge = buildChip('taskpro-deadline-badge', CHIP_ICON_NAMES.deadline, deadlineInfo.text);
   badge.setAttribute('data-state', deadlineInfo.state);
+  return badge;
+}
+
+
+/**
+ * Focus-timer chip. The label is a live countdown, so it carries a stable
+ * `data-timer-key` that the timer service uses to retarget it every second
+ * without rebuilding the surrounding decoration.
+ */
+export function createTimerChip(options: {
+  timer: TaskTimer;
+  filePath: string;
+  lineContent: string;
+  blockId?: string;
+  language: Language;
+}): HTMLElement {
+  const labels = getTimerLabels(options.language);
+  const now = Date.now();
+  const state = timerState(options.timer, now);
+  const remaining = timerRemainingSeconds(options.timer, now);
+  const icon =
+    state === 'paused'
+      ? CHIP_ICON_NAMES.timerPaused
+      : state === 'done'
+        ? CHIP_ICON_NAMES.timerDone
+        : CHIP_ICON_NAMES.timer;
+
+  const badge = buildChip(
+    'taskpro-timer-badge',
+    icon,
+    state === 'done' ? labels.doneChip : formatTimerClock(remaining)
+  );
+  badge.dataset.state = state;
+  if (options.blockId) badge.dataset.timerKey = `${options.filePath}:${options.blockId}`;
+  badge.setAttribute('aria-label', labels.chipAria(formatTimerClock(remaining), state));
+  badge.setAttribute('role', 'button');
+  badge.tabIndex = 0;
+
+  badge.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    badge.dispatchEvent(
+      new CustomEvent('taskpro-timer-click', {
+        bubbles: true,
+        detail: {
+          filePath: options.filePath,
+          lineContent: options.lineContent,
+          blockId: options.blockId,
+          language: options.language,
+          targetElement: badge,
+        },
+      })
+    );
+  });
+
+  return badge;
+}
+
+/**
+ * Recurrence chip. Clicking it reuses the task popover, so changing the
+ * interval lives beside every other task edit.
+ */
+export function createRepeatChip(options: {
+  repeat: TaskRepeat;
+  language: Language;
+  filePath: string;
+  lineContent: string;
+  blockId?: string;
+  status: TaskStatus;
+  deadline?: string;
+  priority?: TaskPriority;
+  tags?: string[];
+}): HTMLElement {
+  const labels = getRepeatLabels(options.language);
+  const label = labels.chip(options.repeat);
+  const badge = buildChip('taskpro-repeat-badge', CHIP_ICON_NAMES.repeat, label);
+  badge.setAttribute('data-repeat', `${options.repeat.every}${options.repeat.unit[0]}`);
+  badge.setAttribute('aria-label', label);
+  badge.setAttribute('role', 'button');
+  badge.tabIndex = 0;
+
+  badge.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    badge.dispatchEvent(
+      new CustomEvent('taskpro-badge-click', {
+        bubbles: true,
+        detail: {
+          status: options.status,
+          deadline: options.deadline,
+          language: options.language,
+          lineContent: options.lineContent,
+          filePath: options.filePath,
+          targetElement: badge,
+          blockId: options.blockId,
+          tags: options.tags,
+          priority: options.priority,
+        },
+      })
+    );
+  });
+
   return badge;
 }

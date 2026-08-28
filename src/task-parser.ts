@@ -9,7 +9,9 @@ import {
   extractProgress,
   stripProgress,
   extractPriority,
+  extractRepeat,
   stripPriority,
+  stripRepeat,
 } from './task-metadata';
 
 const TASK_REGEX = /^(\s*)- \[([ /xX!])\]\s*(.*)$/;
@@ -51,6 +53,10 @@ export function parseTasksFromContent(content: string): ParsedTask[] {
     // Remove priority from content to avoid duplication
     taskContent = stripPriority(taskContent);
 
+   const repeat = extractRepeat(taskContent);
+    // Remove the recurrence marker from content to avoid duplication
+    taskContent = stripRepeat(taskContent);
+
    // Extract block ID
     const blockIdMatch = taskContent.match(BLOCK_ID_REGEX);
     const blockId = blockIdMatch ? blockIdMatch[1] : undefined;
@@ -66,6 +72,7 @@ export function parseTasksFromContent(content: string): ParsedTask[] {
       deadline,
       progress,
       priority,
+      repeat,
       blockId,
       lineNumber: i,
     };
@@ -109,6 +116,10 @@ export function parseTasksWithHierarchy(content: string): ParsedTask[] {
     // Remove priority from content to avoid duplication
     taskContent = stripPriority(taskContent);
 
+   const repeat = extractRepeat(taskContent);
+    // Remove the recurrence marker from content to avoid duplication
+    taskContent = stripRepeat(taskContent);
+
    const blockIdMatch = taskContent.match(BLOCK_ID_REGEX);
     const blockId = blockIdMatch ? blockIdMatch[1] : undefined;
     if (blockId) {
@@ -123,6 +134,7 @@ export function parseTasksWithHierarchy(content: string): ParsedTask[] {
       deadline,
       progress,
       priority,
+      repeat,
       blockId,
       lineNumber: i,
     };

@@ -13,7 +13,16 @@ import {
   TASK_PRIORITIES,
   PRIORITY_ICON_NAMES,
   PRIORITY_LABELS,
+  TaskRepeat,
+  TaskTimer,
+  REPEAT_PRESETS,
+  RepeatUnit,
+  formatTimerClock,
+  timerRemainingSeconds,
+  timerState,
 } from './types';
+import { getRepeatLabels, getTimerLabels } from './timer-localization';
+import { showTimerEditor } from './timer-popover';
 import { jalaliToGregorian, gregorianToJalali } from './date-utils';
 import { pickDateWithCalendar, isCalendarPluginAvailable } from './calendar-integration';
 import { addPanelButtonRow, addPanelField, openTaskProPanel } from './ui/panel';
@@ -31,11 +40,19 @@ export interface PopoverOptions {
   tags?: string[];
   progress?: TaskProgress;
   priority?: TaskPriority;
+  timer?: TaskTimer;
+  repeat?: TaskRepeat;
+  /** Minutes pre-filled when a focus timer is added for the first time. */
+  defaultTimerMinutes?: number;
   onToggleSync?: (enabled: boolean) => void;
   onPriorityChange?: (priority: TaskPriority | null) => void;
   onStatusChange?: (newStatus: TaskStatus) => void;
   onDeadlineChange?: (deadline: string | null) => void;
   onProgressChange?: (progress: TaskProgress | null) => void;
+  onTimerChange?: (timer: TaskTimer | null) => void;
+  onTimerStart?: () => void;
+  onTimerPause?: () => void;
+  onRepeatChange?: (repeat: TaskRepeat | null) => void;
   calendarSystem?: 'gregorian' | 'jalali';
 }
 
@@ -51,7 +68,7 @@ export class TaskPopover {
   }
 
   private buildMenu() {
-    const { taskMapping, deadline, status, blockId, tags, progress, priority, showSourceLink = false } = this.options;
+    const { taskMapping, deadline, status, blockId, tags, progress, priority, timer, repeat, showSourceLink = false } = this.options;
     const language = this.options.language || 'en';
     const labels = this.getLabels(language);
     this.infoMenuTitles = [];
@@ -135,6 +152,78 @@ export class TaskPopover {
       this.menu.addSeparator();
     }
 
+    // Focus timer section (only while a timer is attached)
+    if (timer?.enabled && this.options.onTimerChange) {
+      const timerLabels = getTimerLabels(language);
+      const state = timerState(timer);
+      const timerTitle = `${timerLabels.timerLabel}: ${
+        state === 'done' ? timerLabels.doneChip : formatTimerClock(timerRemainingSeconds(timer))
+      }`;
+      this.infoMenuTitles.push(timerTitle);
+      this.menu.addItem((item) => item.setTitle(timerTitle).setIcon('timer').setDisabled(true));
+
+      if (state === 'running') {
+        if (this.options.onTimerPause) {
+          this.menu.addItem((item) =>
+            item.setTitle(timerLabels.pause).setIcon('pause').onClick(() => this.options.onTimerPause?.())
+          );
+        }
+      } else if (this.options.onTimerStart) {
+        this.menu.addItem((item) =>
+          item
+            .setTitle(state === 'paused' ? timerLabels.resume : timerLabels.start)
+            .setIcon('play')
+            .onClick(() => this.options.onTimerStart?.())
+        );
+      }
+
+      this.menu.addItem((item) =>
+        item
+          .setTitle(timerLabels.changeDuration)
+          .setIcon('edit')
+          .onClick(() => this.showTimerEditor(timer))
+      );
+
+      this.menu.addItem((item) =>
+        item
+          .setTitle(timerLabels.removeTimer)
+          .setIcon('x')
+          .onClick(() => {
+            this.options.onTimerChange?.(null);
+            new Notice(timerLabels.timerRemoved);
+          })
+      );
+
+      this.menu.addSeparator();
+    }
+
+    // Recurrence section (only while a rule is attached)
+    if (repeat && this.options.onRepeatChange) {
+      const repeatLabels = getRepeatLabels(language);
+      const repeatTitle = `${repeatLabels.repeatLabel}: ${repeatLabels.chip(repeat)}`;
+      this.infoMenuTitles.push(repeatTitle);
+      this.menu.addItem((item) => item.setTitle(repeatTitle).setIcon('repeat').setDisabled(true));
+
+      this.menu.addItem((item) =>
+        item
+          .setTitle(repeatLabels.changeRepeat)
+          .setIcon('edit')
+          .onClick(() => this.showRepeatPicker(repeat))
+      );
+
+      this.menu.addItem((item) =>
+        item
+          .setTitle(repeatLabels.removeRepeat)
+          .setIcon('x')
+          .onClick(() => {
+            this.options.onRepeatChange?.(null);
+            new Notice(repeatLabels.repeatRemoved);
+          })
+      );
+
+      this.menu.addSeparator();
+    }
+
     // Deadline section
     if (deadline) {
       const remainingTime = this.calculateRemainingTime(deadline, status);
@@ -172,22 +261,52 @@ export class TaskPopover {
 
     this.menu.addSeparator();
 
-    // Add Capability section
-    if (!progress || !progress.enabled) {
+    // Add Capability section — each capability appears here until it is added.
+    const timerLabels = getTimerLabels(language);
+    const repeatLabels = getRepeatLabels(language);
+    const missingProgress = !progress?.enabled;
+    const missingTimer = !timer?.enabled && !!this.options.onTimerChange;
+    const missingRepeat = !repeat && !!this.options.onRepeatChange;
+
+    if (missingProgress || missingTimer || missingRepeat) {
       this.infoMenuTitles.push(labels.addCapability);
       this.menu.addItem((item) => {
         item.setTitle(labels.addCapability).setIcon('plus-circle').setDisabled(true);
       });
-      
-      this.menu.addItem((item) => {
-        item
-          .setTitle(`  ${labels.enableProgressBar}`)
-          .setIcon('bar-chart-2')
-          .onClick(() => {
-            this.showProgressEditor(progress);
-          });
-      });
-      
+
+      if (missingProgress) {
+        this.menu.addItem((item) => {
+          item
+            .setTitle(`  ${labels.enableProgressBar}`)
+            .setIcon('bar-chart-2')
+            .onClick(() => {
+              this.showProgressEditor(progress);
+            });
+        });
+      }
+
+      if (missingTimer) {
+        this.menu.addItem((item) => {
+          item
+            .setTitle(`  ${timerLabels.addTimer}`)
+            .setIcon('timer')
+            .onClick(() => {
+              this.showTimerEditor(undefined);
+            });
+        });
+      }
+
+      if (missingRepeat) {
+        this.menu.addItem((item) => {
+          item
+            .setTitle(`  ${repeatLabels.addRepeat}`)
+            .setIcon('repeat')
+            .onClick(() => {
+              this.showRepeatPicker(undefined);
+            });
+        });
+      }
+
       this.menu.addSeparator();
     }
 
@@ -375,6 +494,92 @@ export class TaskPopover {
     });
 
     input.focus();
+  }
+
+  /** Duration picker. A brand-new timer starts counting down straight away. */
+  private showTimerEditor(currentTimer?: TaskTimer) {
+    const language = this.options.language || 'en';
+    const labels = getTimerLabels(language);
+    showTimerEditor({
+      language,
+      timer: currentTimer,
+      defaultMinutes: this.options.defaultTimerMinutes,
+      onSave: (timer) => {
+        const isNew = !currentTimer?.enabled;
+        this.options.onTimerChange?.(isNew ? { ...timer, runningSince: Date.now() } : timer);
+        new Notice(labels.timerUpdated(formatTimerClock(timer.durationSeconds)));
+      },
+    });
+  }
+
+  /**
+   * Recurrence picker: four presets plus a custom interval. Shown as a nested
+   * menu so adding "every week" is a single extra click.
+   */
+  private showRepeatPicker(current?: TaskRepeat) {
+    const language = this.options.language || 'en';
+    const labels = getRepeatLabels(language);
+    const menu = new Menu();
+    const titles: string[] = [labels.customTitle];
+
+    for (const preset of REPEAT_PRESETS) {
+      menu.addItem((item) =>
+        item
+          .setTitle(labels.preset(preset))
+          .setIcon('repeat')
+          .setChecked(!!current && current.every === preset.every && current.unit === preset.unit)
+          .onClick(() => this.options.onRepeatChange?.({ ...preset }))
+      );
+    }
+
+    menu.addSeparator();
+    menu.addItem((item) =>
+      item
+        .setTitle(labels.custom)
+        .setIcon('settings')
+        .onClick(() => this.showCustomRepeatEditor(current))
+    );
+
+    const rect = this.options.targetElement.getBoundingClientRect();
+    menu.showAtPosition({ x: rect.left, y: rect.bottom });
+    styleTaskProMenu(titles);
+  }
+
+  private showCustomRepeatEditor(current?: TaskRepeat) {
+    const language = this.options.language || 'en';
+    const labels = getRepeatLabels(language);
+    const { body, footer, close } = openTaskProPanel(labels.customTitle);
+
+    const everyInput = addPanelField(body, labels.every, 'number');
+    everyInput.min = '1';
+    everyInput.value = String(current?.every ?? 1);
+
+    const unitField = body.createDiv({ cls: 'taskpro-panel__field' });
+    unitField.createEl('label', { text: labels.unit, cls: 'taskpro-panel__label' });
+    const unitSelect = unitField.createEl('select', { cls: 'taskpro-panel__input' });
+    for (const unit of ['day', 'week', 'month'] as RepeatUnit[]) {
+      const option = unitSelect.createEl('option', { text: labels.units[unit] });
+      option.value = unit;
+      if ((current?.unit ?? 'week') === unit) option.selected = true;
+    }
+
+    addPanelButtonRow(footer, {
+      cancelLabel: labels.cancel,
+      saveLabel: labels.save,
+      onCancel: close,
+      onSave: () => {
+        const every = parseInt(everyInput.value, 10);
+        if (!Number.isFinite(every) || every <= 0) {
+          new Notice(labels.invalidEvery);
+          return;
+        }
+        this.options.onRepeatChange?.({ every, unit: unitSelect.value as RepeatUnit });
+        close();
+      },
+    });
+
+    everyInput.focus();
+    everyInput.select();
   }
 
   private showProgressEditor(currentProgress?: TaskProgress) {

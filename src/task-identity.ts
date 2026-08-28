@@ -8,7 +8,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { TaskStatus } from './types';
-import { stripDeadline, stripPriority, stripProgress } from './task-metadata';
+import { stripDeadline, stripPriority, stripProgress, stripRepeat } from './task-metadata';
 import { buildTaskKey } from './task-registry';
 
 const TASK_LINE_REGEX = /^(\s*)- \[([ \/xX!])\] (.+)$/;
@@ -46,7 +46,7 @@ export function parseTaskLine(line: string): ParsedTaskLine | null {
   const rawContent = match[3];
   return {
     rawContent,
-    text: stripPriority(stripProgress(stripDeadline(rawContent)))
+    text: stripRepeat(stripPriority(stripProgress(stripDeadline(rawContent))))
       .replace(BLOCK_ID_TAIL_REGEX, '')
       .trim(),
     status: normalizeStatus(match[2]),

@@ -15,21 +15,25 @@ import { RangeSetBuilder, StateEffect } from '@codemirror/state';
 /** Dispatch this effect on any editor to force the decoration plugin to rebuild. */
 export const forceDecorationsRefresh = StateEffect.define<null>();
 import { App } from 'obsidian';
-import { TaskStatus, Language, BlockId, TaskProgress, TaskPriority } from './types';
+import { TaskStatus, Language, BlockId, TaskProgress, TaskPriority, TaskRepeat, TaskTimer } from './types';
 import { isWithinTargetFolder } from './path-utils';
 import {
   extractDeadline,
   extractProgress,
   extractPriority,
+  extractRepeat,
   DEADLINE_MARKER_PATTERN,
   PRIORITY_MARKER_PATTERN,
+  REPEAT_MARKER_PATTERN,
 } from './task-metadata';
 import {
   applyChipScale,
   createDeadlineChip,
   createPriorityChip,
   createProgressChip,
+  createRepeatChip,
   createStatusChip,
+  createTimerChip,
 } from './ui/chips';
 
 /** Settings slice the decoration layer depends on. */
@@ -40,6 +44,8 @@ export interface DecorationSettings {
   targetFolder: string;
   calendarSystem: 'gregorian' | 'jalali';
   showPriorityBadges: boolean;
+  showTimerBadges: boolean;
+  showRepeatBadges: boolean;
 }
 
 // ── Module-level constants (compiled once, reused on every line) ──────────
@@ -51,6 +57,7 @@ const DEADLINE_MATCH_REGEX = DEADLINE_MARKER_PATTERN;
 const PROGRESS_MATCH_REGEX = /\[progress::\s*\d+\/\d+\]/;
 // Shared with the parser so the hidden range always matches what we parse.
 const PRIORITY_MATCH_REGEX = PRIORITY_MARKER_PATTERN;
+const REPEAT_MATCH_REGEX = REPEAT_MARKER_PATTERN;
 
 // Pre-created stateless decorations — reused instead of allocated per line
 const HIDE_DECO = Decoration.replace({});
@@ -90,6 +97,8 @@ class TaskBadgeWidget extends WidgetType {
     deadline: string | undefined;
     progress: TaskProgress | undefined;
     priority: TaskPriority | undefined;
+    timer: TaskTimer | undefined;
+    repeat: TaskRepeat | undefined;
     language: Language;
     badgeSize: number;
     lineContent: string;
@@ -103,6 +112,8 @@ class TaskBadgeWidget extends WidgetType {
     deadline: string | undefined,
     progress: TaskProgress | undefined,
     priority: TaskPriority | undefined,
+    timer: TaskTimer | undefined,
+    repeat: TaskRepeat | undefined,
     language: Language,
     badgeSize: number,
     lineContent: string,
@@ -116,6 +127,8 @@ class TaskBadgeWidget extends WidgetType {
       deadline,
       progress,
       priority,
+      timer,
+      repeat,
       language,
       badgeSize,
       lineContent,
@@ -136,11 +149,31 @@ class TaskBadgeWidget extends WidgetType {
         p.currentSteps === op.currentSteps &&
         p.totalSteps === op.totalSteps);
 
+    const t = this.widgetState.timer;
+    const ot = other.widgetState.timer;
+    // The countdown itself is retargeted in place every second by the timer
+    // service, so only the fields that change the chip's identity are compared.
+    const timerEq =
+      (!t && !ot) ||
+      (!!t &&
+        !!ot &&
+        t.enabled === ot.enabled &&
+        t.durationSeconds === ot.durationSeconds &&
+        t.runningSince === ot.runningSince &&
+        !!t.completedAt === !!ot.completedAt);
+
+    const r = this.widgetState.repeat;
+    const or = other.widgetState.repeat;
+    const repeatEq =
+      (!r && !or) || (!!r && !!or && r.every === or.every && r.unit === or.unit);
+
     return (
       this.widgetState.status === other.widgetState.status &&
       this.widgetState.deadline === other.widgetState.deadline &&
       this.widgetState.priority === other.widgetState.priority &&
       progressEq &&
+      timerEq &&
+      repeatEq &&
       this.widgetState.language === other.widgetState.language &&
       this.widgetState.badgeSize === other.widgetState.badgeSize &&
       this.widgetState.lineContent === other.widgetState.lineContent &&
@@ -164,7 +197,7 @@ class TaskBadgeWidget extends WidgetType {
       container.appendChild(hiddenId);
     }
 
-    // RTL order (right → left): status, deadline, progress
+    // RTL order (right → left): status, priority, repeat, deadline, timer, progress
     container.appendChild(
       createStatusChip({
         status: s.status,
@@ -193,8 +226,36 @@ class TaskBadgeWidget extends WidgetType {
       );
     }
 
+    if (s.repeat) {
+      container.appendChild(
+        createRepeatChip({
+          repeat: s.repeat,
+          language: s.language,
+          filePath: s.filePath,
+          lineContent: s.lineContent,
+          blockId: s.blockId,
+          status: s.status,
+          deadline: s.deadline,
+          priority: s.priority,
+          tags: s.tags,
+        })
+      );
+    }
+
     if (s.deadline) {
       container.appendChild(createDeadlineChip(s.deadline, s.language, s.status));
+    }
+
+    if (s.timer?.enabled) {
+      container.appendChild(
+        createTimerChip({
+          timer: s.timer,
+          filePath: s.filePath,
+          lineContent: s.lineContent,
+          blockId: s.blockId,
+          language: s.language,
+        })
+      );
     }
 
     if (s.progress?.enabled) {
@@ -219,6 +280,7 @@ function buildDecorations(
   filePath: string,
   settings: DecorationSettings,
   getProgress: (filePath: string, blockId?: string) => TaskProgress | undefined,
+  getTimer: (filePath: string, blockId?: string) => TaskTimer | undefined,
   getBlockId?: (filePath: string, lineContent: string) => string | undefined
 ): DecorationSet {
   const builder = new RangeSetBuilder<Decoration>();
@@ -283,6 +345,8 @@ function buildDecorations(
         const deadline = extractDeadline(content);
         const progress = getProgress(filePath || '', blockId) ?? extractProgress(content);
         const priority = settings.showPriorityBadges ? extractPriority(content) : undefined;
+        const timer = settings.showTimerBadges ? getTimer(filePath || '', blockId) : undefined;
+        const repeat = settings.showRepeatBadges ? extractRepeat(content) : undefined;
 
         if (deadline) {
           const deadlineMatch = DEADLINE_MATCH_REGEX.exec(content);
@@ -304,6 +368,17 @@ function buildDecorations(
           const priorityStart = contentStart + priorityMatch.index;
           const priorityEnd = priorityStart + priorityMatch[0].length;
           addRange(priorityStart, priorityEnd, HIDE_DECO_NONINCLUSIVE);
+        }
+
+        // Hidden only while the chip is rendering it. With the chip switched
+        // off the marker stays visible, so the recurrence never becomes
+        // invisible information.
+        const repeatMatch = settings.showRepeatBadges ? REPEAT_MATCH_REGEX.exec(content) : null;
+        if (repeatMatch) {
+          const contentStart = line.from + (lineText.length - taskMatch[3].length);
+          const repeatStart = contentStart + repeatMatch.index;
+          const repeatEnd = repeatStart + repeatMatch[0].length;
+          addRange(repeatStart, repeatEnd, HIDE_DECO_NONINCLUSIVE);
         }
 
         const progressMatch = PROGRESS_MATCH_REGEX.exec(content);
@@ -330,6 +405,8 @@ function buildDecorations(
               deadline,
               progress?.enabled ? progress : undefined,
               priority,
+              timer?.enabled ? timer : undefined,
+              repeat,
               settings.badgeLanguage,
               settings.badgeSize,
               lineText,
@@ -362,6 +439,7 @@ export function createTaskBadgePlugin(
   app: App,
   getSettings: () => DecorationSettings,
   getProgress: (filePath: string, blockId?: string) => TaskProgress | undefined,
+  getTimer: (filePath: string, blockId?: string) => TaskTimer | undefined,
   getBlockId?: (filePath: string, lineContent: string) => string | undefined
 ) {
   return ViewPlugin.fromClass(
@@ -385,7 +463,14 @@ export function createTaskBadgePlugin(
        */
       private safeBuild(view: EditorView): DecorationSet {
         try {
-          return buildDecorations(view, this.filePath, getSettings(), getProgress, getBlockId);
+          return buildDecorations(
+            view,
+            this.filePath,
+            getSettings(),
+            getProgress,
+            getTimer,
+            getBlockId
+          );
         } catch (error) {
           console.error('TaskPro: failed to build task badges for this view', error);
           return Decoration.none;

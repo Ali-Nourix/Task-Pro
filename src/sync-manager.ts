@@ -2,7 +2,7 @@
 // Redesigned: Strictly one-way sync (imported → source), action-triggered only
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { App, TFile } from 'obsidian';
+import { App } from 'obsidian';
 import { TaskMapping, TaskPriority, TaskProgress } from './types';
 import {
   setDeadline as setDeadlineInLine,
@@ -11,6 +11,7 @@ import {
   stripProgress,
   setPriority as setPriorityInLine,
   stripPriority,
+  stripRepeat,
 } from './task-metadata';
 
 type MappingScope = 'either' | 'imported' | 'source';
@@ -201,7 +202,7 @@ export class SyncManager {
    * Normalize task content for comparison (removes status, deadline, block ID)
    */
   private normalizeTaskContent(line: string): string {
-    return stripPriority(stripProgress(stripDeadline(line)))
+    return stripRepeat(stripPriority(stripProgress(stripDeadline(line))))
       .replace(/^(\s*)- \[([ \/xX!])\]\s*/, '') // Remove task marker and status
       .replace(/\^[a-zA-Z0-9-]+\s*$/, '')
       .trim()
@@ -220,8 +221,8 @@ export class SyncManager {
       return;
     }
 
-    const sourceFile = this.app.vault.getAbstractFileByPath(mapping.sourceFilePath);
-    if (!(sourceFile instanceof TFile)) return;
+    const sourceFile = this.app.vault.getFileByPath(mapping.sourceFilePath);
+    if (!sourceFile) return;
 
     let updated = false;
     const sourceBlockId = mapping.sourceBlockId;

@@ -124,6 +124,39 @@ settings:
     format: hex
     default-light: '#1E88A8'
     default-dark: '#7DD3FC'
+  -
+    id: taskpro-capability-chips
+    title: Focus Timer & Repeat Chips
+    type: heading
+    level: 2
+  -
+    id: taskpro-timer-color
+    title: Focus timer chip color (running)
+    type: variable-themed-color
+    format: hex
+    default-light: '#0f766e'
+    default-dark: '#5eead4'
+  -
+    id: taskpro-timer-bg
+    title: Focus timer chip background (running)
+    type: variable-themed-color
+    format: hex
+    default-light: '#e6f7f5'
+    default-dark: '#1f3b39'
+  -
+    id: taskpro-timer-overrun-color
+    title: Focus timer chip color (finished)
+    type: variable-themed-color
+    format: hex
+    default-light: '#b42318'
+    default-dark: '#fda4a4'
+  -
+    id: taskpro-repeat-color
+    title: Repeat chip color
+    type: variable-themed-color
+    format: hex
+    default-light: '#6941c6'
+    default-dark: '#c4b0ff'
 
 */
 
@@ -177,6 +210,12 @@ settings:
   --taskpro-menu-info-color: var(--text-accent);
   --taskpro-menu-disabled-color: #9ca3af;
   --taskpro-menu-disabled-opacity: 0.55;
+
+  /* Focus timer + repeat chips */
+  --taskpro-timer-color: #0f766e;
+  --taskpro-timer-bg: #e6f7f5;
+  --taskpro-timer-overrun-color: #b42318;
+  --taskpro-repeat-color: #6941c6;
 }
 
 .theme-dark {
@@ -184,6 +223,10 @@ settings:
   --taskpro-badge-color: #7DD3FC;
   --taskpro-progress-bg: #2A3F47;
   --taskpro-progress-color: #7DD3FC;
+  --taskpro-timer-color: #5eead4;
+  --taskpro-timer-bg: #1f3b39;
+  --taskpro-timer-overrun-color: #fda4a4;
+  --taskpro-repeat-color: #c4b0ff;
 }
 
 .taskpro-badge-container {
@@ -1087,3 +1130,98 @@ li.task-list-item {
   padding-block: var(--taskpro-chip-padding-block);
   padding-inline: var(--taskpro-chip-padding-inline);
 }
+
+
+/* ==========================================================================
+   Focus timer chip
+
+   The label is a countdown, so it is width-stable (tabular numerals) and the
+   state lives in a data attribute the timer service rewrites in place once a
+   second — no decoration rebuild, no cursor churn.
+   ========================================================================== */
+.taskpro-timer-badge {
+  cursor: pointer;
+  user-select: none;
+  color: var(--taskpro-timer-color);
+  background: var(--taskpro-timer-bg);
+  border-color: color-mix(in srgb, var(--taskpro-timer-color) 35%, transparent);
+  opacity: var(--taskpro-badge-opacity-normal);
+  font-variant-numeric: tabular-nums;
+  transition: opacity 140ms ease, border-color 140ms ease;
+}
+.taskpro-timer-badge:hover,
+.taskpro-timer-badge:focus-visible {
+  opacity: var(--taskpro-badge-opacity-hover);
+}
+
+/* Idle and paused timers step back; only a live countdown is tinted. */
+.taskpro-timer-badge[data-state='idle'],
+.taskpro-timer-badge[data-state='paused'] {
+  color: var(--text-muted);
+  background: transparent;
+  border-color: var(--background-modifier-border);
+}
+
+.taskpro-timer-badge[data-state='done'] {
+  color: var(--taskpro-timer-overrun-color);
+  background: color-mix(in srgb, var(--taskpro-timer-overrun-color) 12%, transparent);
+  border-color: color-mix(in srgb, var(--taskpro-timer-overrun-color) 40%, transparent);
+}
+
+/* A running timer breathes just enough to read as live at a glance. */
+.taskpro-timer-badge[data-state='running'] .taskpro-chip__icon {
+  animation: taskpro-timer-pulse 2s ease-in-out infinite;
+}
+@keyframes taskpro-timer-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .taskpro-timer-badge[data-state='running'] .taskpro-chip__icon { animation: none; }
+}
+
+/* ==========================================================================
+   Repeat chip
+   ========================================================================== */
+.taskpro-repeat-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  color: var(--taskpro-repeat-color);
+  background: transparent;
+  border-color: color-mix(in srgb, var(--taskpro-repeat-color) 45%, transparent);
+  white-space: nowrap;
+}
+.taskpro-repeat-badge:hover,
+.taskpro-repeat-badge:focus-visible {
+  background: var(--background-modifier-hover);
+}
+
+/* ==========================================================================
+   Status-bar readout for the running focus timer
+   ========================================================================== */
+.taskpro-status-timer {
+  display: none;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+}
+.taskpro-status-timer.is-active { display: inline-flex; }
+.taskpro-status-timer:hover { color: var(--text-normal); }
+.taskpro-status-timer__icon { display: grid; place-items: center; }
+.taskpro-status-timer__icon .svg-icon { width: 14px; height: 14px; }
+.taskpro-status-timer__text {
+  max-width: 22ch;
+  overflow: hidden;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Settings-screen bits that used to be styled from TypeScript. */
+.taskpro-settings-path {
+  margin-bottom: 20px;
+  color: var(--text-muted);
+}
+.taskpro-settings-number-input { width: 72px; }

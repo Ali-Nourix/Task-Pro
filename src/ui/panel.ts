@@ -21,7 +21,21 @@ export function openTaskProPanel(title: string): TaskProPanelHandles {
 
   document.body.appendChild(overlay);
 
-  const close = () => overlay.remove();
+  const close = () => {
+    document.removeEventListener('keydown', onKeyDown, true);
+    overlay.remove();
+  };
+
+  // Escape closes the panel, matching every other dialog in Obsidian. Captured
+  // on document so it works wherever focus happens to be inside the panel.
+  const onKeyDown = (event: KeyboardEvent) => {
+    if (event.key !== 'Escape') return;
+    event.preventDefault();
+    event.stopPropagation();
+    close();
+  };
+  document.addEventListener('keydown', onKeyDown, true);
+
   overlay.addEventListener('click', (e) => {
     if (e.target === overlay) close();
   });
