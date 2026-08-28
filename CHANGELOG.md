@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+- Fixed chip text direction. `.taskpro-badge-container` reversed the chip row
+  with `direction: rtl` and `.taskpro-chip` tried to opt out with
+  `direction: auto`, which is not a valid value for that property and was
+  silently dropped — so every chip inherited RTL. In an English vault
+  "3 Days Left" rendered as "Days Left 3" and each chip's icon sat to the right
+  of its label. The row is now reversed with `flex-direction: row-reverse`,
+  which leaves text direction inherited from the note.
+- Added `test/chips-preview.html`, an offline harness that renders the real
+  `styles.css` over Obsidian's theme variables, plus
+  `test/render-previews.mjs` to screenshot it. The bug above is what the
+  harness found.
+- Rewrote the README: corrected the task-toggle cycle (four states, not three),
+  the deadline syntax, and the missing `[!]` status; documented priority, the
+  Jalali calendar, the command list, requirements and the build.
+
+
 ## 1.2.0 - Focus timers and repeating tasks
 
 Every task can now carry two more capabilities beside its progress bar, added
