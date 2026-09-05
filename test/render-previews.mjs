@@ -25,6 +25,7 @@ const SHOTS = [
   { file: 'chips-preview.html', query: '', selector: '.note', out: 'task-chips-dark.png' },
   { file: 'chips-preview.html', query: '?light', selector: '.note', out: 'task-chips-light.png' },
   { file: 'chips-preview.html', query: '', selector: '#states', out: 'chip-states.png' },
+  { file: 'chips-preview.html', query: '', selector: '#checkboxes', out: 'task-checkboxes.png' },
   { file: 'chips-preview.html', query: '', selector: '.statusbar', out: 'status-bar-timer.png' },
   // Same chips under a real community theme, to prove they follow the vault
   // rather than the plugin's own idea of what a colour should be.

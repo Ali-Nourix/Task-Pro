@@ -265,6 +265,10 @@ settings:
   --taskpro-menu-disabled-color: var(--text-faint);
   --taskpro-menu-disabled-opacity: 0.55;
 
+  /* The exclamation drawn into the [!] checkbox, as a mask so it composes with
+     a theme rather than competing with one. */
+  --taskpro-check-mask-bang: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="3.25" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v9"/><path d="M12 19h.01"/></svg>');
+
   /* Focus timer + repeat chips */
   --taskpro-timer-color: var(--taskpro-accent-timer);
   --taskpro-timer-bg: color-mix(in srgb, var(--taskpro-accent-timer) var(--taskpro-chip-fill), transparent);
@@ -560,153 +564,57 @@ body.taskpro-hide-badges-in-embeds .markdown-embed .taskpro-badge-container {
   align-items: center;
 }
 
-.markdown-source-view.mod-cm6 .task-list-item-checkbox[data-task="/"],
-.markdown-source-view.mod-cm6 .HyperMD-task-line[data-task="/"] input[type="checkbox"] {
-  background: linear-gradient(to right, var(--text-accent) 50%, transparent 50%);
-  border-color: var(--text-accent);
-}
+/* --- Custom task statuses -------------------------------------------------
+   How a checkbox looks is really a theme's job, and these rules are only a
+   floor: they draw [/] and [!] on a theme that ignores them, and a theme that
+   does style them is expected to win.
 
+   They are deliberately NOT wrapped in :where(). Zero specificity sounds like
+   the polite answer, but it loses to Obsidian's own `input[type=checkbox]`
+   base rule too, so the states end up drawn by nobody — which the preview
+   harness showed immediately. Plain selectors it is, with no !important, so a
+   theme needs nothing more than its own ordinary rule to take over.
+   ------------------------------------------------------------------------- */
+.markdown-source-view.mod-cm6 .task-list-item-checkbox[data-task="/"],
+.markdown-source-view.mod-cm6 .HyperMD-task-line[data-task="/"] input[type="checkbox"],
 .markdown-preview-view .task-list-item input[type="checkbox"].is-in-progress {
-  background: linear-gradient(to right, var(--text-accent) 50%, transparent 50%);
-  border-color: var(--text-accent);
+  border-color: var(--color-blue, #2f6fbd);
+  background-color: transparent;
+  background-image: linear-gradient(to right, var(--color-blue, #2f6fbd) 50%, transparent 50%);
 }
 
 .markdown-source-view.mod-cm6 .task-list-item-checkbox[data-task="!"],
 .markdown-source-view.mod-cm6 .HyperMD-task-line[data-task="!"] input[type="checkbox"],
 .markdown-preview-view .task-list-item input[type="checkbox"].is-not-done {
-  display: inline-grid;
-  place-content: center;
-  background: var(--taskpro-status-notdone-color);
-  border-color: var(--color-red, #dc3545);
   position: relative;
-  color: var(--color-red, #dc3545) !important;
-  --checkbox-marker-color: var(--color-red, #dc3545);
+  border-color: var(--color-red, #c0392b);
+  background-color: var(--color-red, #c0392b);
+  background-image: none;
 }
 
-.markdown-source-view.mod-cm6 .task-list-item-checkbox[data-task="!"]::before,
-.markdown-source-view.mod-cm6 .HyperMD-task-line[data-task="!"] input[type="checkbox"]::before,
-.markdown-preview-view .task-list-item input[type="checkbox"].is-not-done::before {
-  content: none !important;
-}
-
+/* The glyph is a mask, not a text character.
+   It used to be `content: "!"`, which only works when nothing else is drawing
+   this pseudo-element — and a theme that styles these states usually is. The
+   theme's own mask-image stayed in force and clipped the character down to a
+   speck inside an empty box. A mask composes with a theme's rules instead of
+   fighting them, and matches how Obsidian draws its own checkmark. */
 .markdown-source-view.mod-cm6 .task-list-item-checkbox[data-task="!"]::after,
 .markdown-source-view.mod-cm6 .HyperMD-task-line[data-task="!"] input[type="checkbox"]::after,
 .markdown-preview-view .task-list-item input[type="checkbox"].is-not-done::after {
-  content: "!";
-  position: static;
-  display: block;
-  margin: 0;
-  color: var(--color-red, #dc3545) !important;
-  font-weight: var(--font-bold);
-  font-size: 0.95em;
-  line-height: 1;
-  text-align: center;
-  opacity: 1;
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-color: var(--checkbox-marker-color, #fff);
+  -webkit-mask-image: var(--taskpro-check-mask-bang);
+  mask-image: var(--taskpro-check-mask-bang);
+  -webkit-mask-size: 72%;
+  mask-size: 72%;
+  -webkit-mask-position: 50% 50%;
+  mask-position: 50% 50%;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
 }
 
-/* Import / configure task modal */
-.taskpro-config-modal .modal-content {
-  padding: var(--size-4-4);
-}
-
-.taskpro-config-modal__title {
-  margin: 0 0 var(--size-4-3);
-  font-size: var(--font-ui-large);
-  font-weight: var(--font-bold);
-  color: var(--text-normal);
-}
-
-.taskpro-config-modal__preview {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: var(--size-4-3);
-  margin-bottom: var(--size-4-4);
-  border-radius: var(--radius-m);
-  background: var(--background-secondary);
-  border: 1px solid var(--background-modifier-border);
-}
-
-.taskpro-config-modal__preview-label {
-  font-size: var(--font-ui-smaller);
-  font-weight: var(--font-semibold);
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.taskpro-config-modal__preview-text {
-  font-size: var(--font-ui-medium);
-  color: var(--text-normal);
-  line-height: 1.4;
-}
-
-.taskpro-config-modal .setting-item {
-  border-top: 1px solid var(--background-modifier-border);
-  padding-top: var(--size-4-3);
-  padding-bottom: var(--size-4-3);
-}
-
-.taskpro-config-modal__date-input {
-  width: 100%;
-  max-width: 100%;
-}
-
-.taskpro-panel__input--date[type='date'] {
-  min-height: 36px;
-  cursor: pointer;
-}
-
-.taskpro-panel__input--date[type='date']::-webkit-calendar-picker-indicator {
-  cursor: pointer;
-  opacity: 0.85;
-}
-
-.taskpro-config-modal__footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: var(--size-4-4);
-  padding-top: var(--size-4-3);
-  border-top: 1px solid var(--background-modifier-border);
-}
-
-.task-preview {
-  padding: 12px;
-  background: var(--background-secondary);
-  border-radius: var(--radius-m);
-  margin-bottom: 20px;
-}
-
-.reference-note-display {
-  font-family: var(--font-monospace);
-  padding: 8px 12px;
-  background: var(--background-secondary);
-  border-radius: var(--radius-s);
-  font-size: 0.9em;
-}
-
-/* Hide tags and block IDs from inline task text in Live Preview */
-.cm-line .cm-hashtag {
-  display: none;
-}
-
-.cm-line:has(.taskpro-badge-container) .cm-formatting-link,
-.cm-line:has(.taskpro-badge-container) .cm-link-alias {
-  display: none;
-}
-
-/* Hide block IDs (^block-id) from task lines */
-.cm-line:has(.taskpro-badge-container) .cm-hmd-codeblock:has-text("^") {
-  display: none;
-}
-
-/* Hide deadline markers (⏳ YYYY-MM-DD) from task lines in Live Preview */
-.cm-line:has(.taskpro-badge-container) {
-  /* This will be handled by a more specific approach */
-}
-
-/* Hide deadline text in Reading Mode */
 .markdown-preview-view .task-list-item:has(.taskpro-badge-container) {
   /* Deadline is shown in badge, hide from text */
 }
