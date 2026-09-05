@@ -44,18 +44,41 @@ notes to make them appear, and clicking one opens the menu for that property.
 | `18:42` | A running focus timer |
 | `38%` | Progress through a set number of steps |
 
-Chips follow the vault's theme and are sized by one setting:
+### Chips that belong to your theme
+
+Every chip is a tint of **one accent colour, taken from the theme you are
+using** — nothing in the plugin is a fixed colour. So the same six chips read
+correctly on Obsidian's defaults, on a light vault, and on a community theme
+with a palette of its own:
 
 <table>
 <tr>
-<td align="center"><b>Dark</b></td>
-<td align="center"><b>Light</b></td>
+<td align="center"><b>Obsidian default · dark</b></td>
+<td align="center"><b>Obsidian default · light</b></td>
 </tr>
 <tr>
-<td><img src="docs/images/task-chips-dark.png" alt="Task chips in a dark vault" width="400"></td>
-<td><img src="docs/images/task-chips-light.png" alt="The same chips in a light vault" width="400"></td>
+<td><img src="docs/images/task-chips-dark.png" alt="Task chips on Obsidian's default dark theme" width="400"></td>
+<td><img src="docs/images/task-chips-light.png" alt="The same chips on Obsidian's default light theme" width="400"></td>
+</tr>
+<tr>
+<td align="center"><b>A community theme · dark</b></td>
+<td align="center"><b>A community theme · light</b></td>
+</tr>
+<tr>
+<td><img src="docs/images/task-chips-bookcloth-dark.png" alt="The same chips on a community theme in dark mode" width="400"></td>
+<td><img src="docs/images/task-chips-bookcloth-light.png" alt="The same chips on the same community theme in light mode" width="400"></td>
 </tr>
 </table>
+
+A label is also pulled toward the theme's own text colour, which is what keeps
+it readable in both modes from one declaration: it lightens on a dark theme and
+darkens on a light one, because that is where the theme's text colour is. Every
+chip variant is measured against WCAG AA (4.5:1) on each theme by
+[`npm run check:contrast`](#previews) — the current worst case is 4.6:1.
+
+If you want a specific hue anyway, each accent is a
+[Style Settings](https://github.com/mgmeyers/obsidian-style-settings) knob,
+along with how strongly chips tint themselves.
 
 ### Four-state task toggle
 
@@ -219,6 +242,13 @@ telling it about a completion that no longer stands.
 
 ## Reminders
 
+<table>
+<tr>
+<td><img src="docs/images/reminder-overlay-light.png" alt="The task reminder alert on a light theme" width="400"></td>
+<td><img src="docs/images/reminder-overlay-dark.png" alt="The same alert on a dark theme" width="400"></td>
+</tr>
+</table>
+
 Reminders are read from the active note plus any notes you select under
 **Settings → TaskPro → Reminders**. Every unfinished task counts; completed ones
 are skipped.
@@ -266,6 +296,13 @@ Chip colours, padding, radius and opacity are exposed to the
   decorations, so a per-second update never fights the cursor.
 - Mappings, progress and timers live in `data.json`, keyed by block ID, so the
   markdown stays clean.
+- Chip colour is one recipe — tint a background and a border out of an accent,
+  and mix the label toward the theme's text colour — so a new chip is a single
+  custom-property assignment and inherits the theme adaptivity for free.
+- No full-screen `backdrop-filter`. Blurring the window behind an overlay makes
+  the compositor re-blur everything whenever anything above it repaints, which
+  is why the reminder alert used to feel sluggish with a long task list. The
+  overlays dim instead, and `contain` keeps their repaints local.
 
 ## Development
 
@@ -280,16 +317,32 @@ The distributable files are `main.js`, `manifest.json`, and `styles.css`.
 
 ### Previews
 
-`test/chips-preview.html` loads the real `styles.css` over Obsidian's default
-theme variables (`test/obsidian-theme.css`) and reproduces the DOM the chip
-renderers build. Open it in a browser to check a style change without reloading
-Obsidian — add `?light` for the light theme — or regenerate the images in this
-README:
+`test/` holds offline harnesses that load the real `styles.css` over Obsidian's
+default theme variables (`test/obsidian-theme.css`) and reproduce the DOM the
+plugin builds. Open one in a browser to check a style change without reloading
+Obsidian:
+
+| File | Shows | Query flags |
+| --- | --- | --- |
+| `test/chips-preview.html` | Task lines with every chip, and each chip's states | `?light`, `?theme=<name>` |
+| `test/reminder-preview.html` | The reminder alert | `?light`, `?theme=<name>`, `?strict` |
+
+`?theme=<name>` stacks `test/themes/<name>.css` between Obsidian's defaults and
+the plugin's sheet, in the order Obsidian loads them — which is how the
+community-theme screenshots above were produced, and how a theme is checked
+before claiming the chips adapt to it. Drop any theme's `theme.css` into
+`test/themes/` to try it.
 
 ```bash
 npm i --no-save playwright && npx playwright install chromium
-node test/render-previews.mjs
+
+npm run previews        # regenerate the images in this README
+npm run check:contrast  # measure every chip against WCAG AA on every theme
 ```
+
+Both need Playwright, which is deliberately not a dependency — it would pull a
+browser download into every install — so `npm test` stays independent of it and
+covers the logic instead.
 
 ## Releasing
 
@@ -300,8 +353,8 @@ node test/render-previews.mjs
 4. Tag the commit with exactly the manifest version, no `v` prefix:
 
    ```bash
-   git tag 1.2.1
-   git push origin 1.2.1
+   git tag 1.3.0
+   git push origin 1.3.0
    ```
 
 The workflow checks that the tag, manifest, package, lockfile and
