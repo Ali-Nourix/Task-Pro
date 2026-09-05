@@ -4,71 +4,145 @@ name: TaskPro
 id: taskpro
 settings:
   -
-    id: taskpro-status-colors
-    title: Status Badge Colors
+    id: taskpro-chip-accents
+    title: Chip Colours
+    description: Every chip is a tint of one accent colour. Accents come from the active theme by default, so the chips follow whatever theme you use in both light and dark. Override one here only if you want a specific hue.
     type: heading
     level: 2
   -
-    id: taskpro-status-done-color
-    title: Done Status Color
-    type: variable-themed-color
+    id: taskpro-accent-done
+    title: Done
+    type: variable-color
     format: hex
-    default-light: '#d1e7dd'
-    default-dark: '#d1e7dd'
+    opacity: false
+    default: '#3aa675'
   -
-    id: taskpro-status-progress-color
-    title: In Progress Status Color
-    type: variable-themed-color
+    id: taskpro-accent-progress
+    title: In progress
+    type: variable-color
     format: hex
-    default-light: '#cfe2ff'
-    default-dark: '#cfe2ff'
+    opacity: false
+    default: '#2f6fbd'
   -
-    id: taskpro-status-notstarted-color
-    title: Not Started Status Color
-    type: variable-themed-color
+    id: taskpro-accent-notstarted
+    title: Not started
+    type: variable-color
     format: hex
-    default-light: '#e2e3e5'
-    default-dark: '#e2e3e5'
+    opacity: false
+    default: '#75726d'
   -
-    id: taskpro-status-overdue-color
-    title: Overdue Status Color
-    type: variable-themed-color
+    id: taskpro-accent-notdone
+    title: Not done
+    type: variable-color
     format: hex
-    default-light: '#f8d7da'
-    default-dark: '#f8d7da'
+    opacity: false
+    default: '#c0392b'
   -
-    id: taskpro-status-notdone-color
-    title: Not Done Status Color
-    type: variable-themed-color
+    id: taskpro-accent-overdue
+    title: Overdue deadline
+    type: variable-color
     format: hex
-    default-light: '#f8d7da'
-    default-dark: '#f8d7da'
+    opacity: false
+    default: '#c0392b'
+  -
+    id: taskpro-accent-today
+    title: Deadline today
+    type: variable-color
+    format: hex
+    opacity: false
+    default: '#c1741f'
+  -
+    id: taskpro-accent-soon
+    title: Deadline soon
+    type: variable-color
+    format: hex
+    opacity: false
+    default: '#a8860a'
+  -
+    id: taskpro-accent-week
+    title: Deadline this week
+    type: variable-color
+    format: hex
+    opacity: false
+    default: '#1e8a9c'
+  -
+    id: taskpro-accent-progressbar
+    title: Progress bar
+    type: variable-color
+    format: hex
+    opacity: false
+    default: '#1e8a9c'
+  -
+    id: taskpro-accent-timer
+    title: Focus timer, running
+    type: variable-color
+    format: hex
+    opacity: false
+    default: '#3aa675'
+  -
+    id: taskpro-accent-timer-done
+    title: Focus timer, finished
+    type: variable-color
+    format: hex
+    opacity: false
+    default: '#c0392b'
+  -
+    id: taskpro-accent-repeat
+    title: Repeat
+    type: variable-color
+    format: hex
+    opacity: false
+    default: '#7048b6'
+  -
+    id: taskpro-chip-strength
+    title: Chip Strength
+    description: How strongly a chip tints itself out of its accent colour, and how far its label is pulled toward the body text colour. The label mix is what keeps chips readable on both light and dark themes, so lowering it a long way will cost contrast.
+    type: heading
+    level: 2
+  -
+    id: taskpro-chip-fill
+    title: Background tint
+    type: variable-number
+    default: 13
+    format: '%'
+  -
+    id: taskpro-chip-stroke
+    title: Border tint
+    type: variable-number
+    default: 32
+    format: '%'
+  -
+    id: taskpro-chip-ink-mix
+    title: Label colour mix
+    type: variable-number
+    default: 78
+    format: '%'
   -
     id: taskpro-widgets
-    title: Widgets & Panels
+    title: Chip Geometry
     type: heading
     level: 2
   -
     id: taskpro-badge-padding-y
-    title: Badge padding (vertical)
+    title: Chip vertical padding
     type: variable-number
     default: 2
     format: px
   -
     id: taskpro-badge-padding-x
-    title: Badge padding (horizontal)
+    title: Chip horizontal padding
     type: variable-number
     default: 8
     format: px
   -
     id: taskpro-badge-radius
-    title: Badge corner radius
+    title: Chip corner radius
     type: variable-number
     default: 12
     format: px
   -
     id: taskpro-badge-font-size
-    title: Badge font size
+    title: Chip font size
     type: variable-number
     default: 12
     format: px
@@ -79,19 +153,10 @@ settings:
     default: 22
     format: px
   -
-    id: taskpro-progress-bg
-    title: Progress chip background
-    type: variable-themed-color
-    format: hex
-    default-light: '#E8F4F8'
-    default-dark: '#2A3F47'
-  -
-    id: taskpro-progress-color
-    title: Progress chip text color
-    type: variable-themed-color
-    format: hex
-    default-light: '#1E88A8'
-    default-dark: '#7DD3FC'
+    id: taskpro-panels
+    title: Panels and Menus
+    type: heading
+    level: 2
   -
     id: taskpro-panel-padding
     title: Panel padding
@@ -111,81 +176,70 @@ settings:
     default: 2
     format: px
   -
-    id: taskpro-menu-disabled-color
-    title: Disabled menu item color
-    type: variable-themed-color
-    format: hex
-    default-light: '#9ca3af'
-    default-dark: '#6b7280'
-  -
     id: taskpro-menu-info-color
-    title: Info menu item color (read-only headers)
+    title: Info menu row colour
     type: variable-themed-color
     format: hex
     default-light: '#1E88A8'
     default-dark: '#7DD3FC'
-  -
-    id: taskpro-capability-chips
-    title: Focus Timer & Repeat Chips
-    type: heading
-    level: 2
-  -
-    id: taskpro-timer-color
-    title: Focus timer chip color (running)
-    type: variable-themed-color
-    format: hex
-    default-light: '#0f766e'
-    default-dark: '#5eead4'
-  -
-    id: taskpro-timer-bg
-    title: Focus timer chip background (running)
-    type: variable-themed-color
-    format: hex
-    default-light: '#e6f7f5'
-    default-dark: '#1f3b39'
-  -
-    id: taskpro-timer-overrun-color
-    title: Focus timer chip color (finished)
-    type: variable-themed-color
-    format: hex
-    default-light: '#b42318'
-    default-dark: '#fda4a4'
-  -
-    id: taskpro-repeat-color
-    title: Repeat chip color
-    type: variable-themed-color
-    format: hex
-    default-light: '#6941c6'
-    default-dark: '#c4b0ff'
 
 */
 
 :root {
-  --taskpro-status-done-color: #d1e7dd;
-  --taskpro-status-progress-color: #cfe2ff;
-  --taskpro-status-notstarted-color: #e2e3e5;
-  --taskpro-status-overdue-color: #f8d7da;
-  --taskpro-status-notdone-color: #f8d7da;
-  --taskpro-deadline-overdue-bg: #f8d7da;
-  --taskpro-deadline-today-bg: #ffe5b4;
-  --taskpro-deadline-tomorrow-bg: #fff3cd;
-  --taskpro-deadline-soon-bg: #fff3cd;
-  --taskpro-deadline-week-bg: #d1ecf1;
-  --taskpro-deadline-normal-bg: #e2e3e5;
-  --taskpro-deadline-completed-bg: #cfe2ff;
-  --taskpro-deadline-missed-bg: #f8d7da;
-  --taskpro-deadline-text: #3a3a3a;
-  --taskpro-deadline-text-week: #055160;
-  --taskpro-deadline-border-opacity: 0.45;
+  /* ── Chip colours ────────────────────────────────────────────────────────
+     Every chip is a tint of ONE accent colour, and every accent comes from
+     the vault's own theme. Nothing here is a fixed colour, which is what lets
+     the chips sit correctly on a light theme, a dark theme, or a community
+     theme with its own palette, without the plugin knowing anything about it.
+
+     Each accent falls back to an Obsidian default only for themes old enough
+     not to define the standard palette. */
+  --taskpro-accent-done: var(--color-green, #3aa675);
+  --taskpro-accent-progress: var(--color-blue, #2f6fbd);
+  --taskpro-accent-notstarted: var(--text-muted, #75726d);
+  --taskpro-accent-notdone: var(--color-red, #c0392b);
+  --taskpro-accent-overdue: var(--color-red, #c0392b);
+  --taskpro-accent-today: var(--color-orange, #c1741f);
+  --taskpro-accent-tomorrow: var(--color-yellow, #a8860a);
+  --taskpro-accent-soon: var(--color-yellow, #a8860a);
+  --taskpro-accent-week: var(--color-cyan, #1e8a9c);
+  --taskpro-accent-normal: var(--text-muted, #75726d);
+  --taskpro-accent-progressbar: var(--color-cyan, #1e8a9c);
+  --taskpro-accent-timer: var(--color-green, #3aa675);
+  --taskpro-accent-timer-done: var(--color-red, #c0392b);
+  --taskpro-accent-repeat: var(--color-purple, #7048b6);
+
+  /* How far a chip tints its own background and border out of its accent.
+     Percentages, so they read the same against any backdrop. */
+  --taskpro-chip-fill: 13%;
+  --taskpro-chip-stroke: 32%;
+  /* How far a chip's label is pulled toward the body text colour. Mixing toward
+     --text-normal is what makes one declaration work in both modes: the label
+     lightens on a dark theme and darkens on a light one, because that is where
+     the theme's own text colour is.
+
+     The amount differs by mode, and measurably has to. A theme's accents are
+     picked to sit on its own background: on a dark theme they arrive light and
+     already contrast well, so little pull is needed and the hue stays vivid. On
+     a light theme the bright hues — yellow above all — start near the
+     background, and 74% left "Tomorrow" at 2.7:1. Note this is a question of
+     how far to pull, never of which colour to use, so the chips still take
+     every hue from the active theme. test/contrast-check.mjs is what these two
+     numbers were tuned against; re-run it if you change them. */
+  --taskpro-chip-ink-mix: 74%;
   
   /* Badge styling */
   --taskpro-badge-padding: 2px 8px;
   --taskpro-badge-radius: 12px;
   
   /* Legacy badge variables for compatibility */
-  --taskpro-badge-bg: #E8F4F8;
-  --taskpro-badge-color: #1E88A8;
-  --taskpro-badge-opacity-normal: 0.86;
+  --taskpro-badge-bg: transparent;
+  --taskpro-badge-color: var(--text-muted);
+  /* Was 0.86. Fading the whole chip faded its label too, which is the last
+     thing a 12px label on a tinted pill can spare — most of all on a completed
+     task, where Obsidian already dims the line. Emphasis now comes from the
+     background lift on hover instead. */
+  --taskpro-badge-opacity-normal: 1;
   --taskpro-badge-opacity-hover: 1;
   --taskpro-badge-opacity-active: 0.72;
   --taskpro-badge-padding-y: 2px;
@@ -199,8 +253,8 @@ settings:
   /* Chip padding is defined once here; see the chip geometry rules below. */
   --taskpro-chip-padding-block: 3px;
   --taskpro-chip-padding-inline: 8px;
-  --taskpro-progress-bg: #E8F4F8;
-  --taskpro-progress-color: #1E88A8;
+  --taskpro-progress-bg: color-mix(in srgb, var(--taskpro-accent-progressbar) var(--taskpro-chip-fill), transparent);
+  --taskpro-progress-color: var(--taskpro-accent-progressbar);
   --taskpro-panel-border-color: var(--background-modifier-border);
   --taskpro-panel-padding: 20px;
   --taskpro-panel-radius: 10px;
@@ -208,25 +262,22 @@ settings:
   --taskpro-panel-min-width: 320px;
   --taskpro-panel-gap: 12px;
   --taskpro-menu-info-color: var(--text-accent);
-  --taskpro-menu-disabled-color: #9ca3af;
+  --taskpro-menu-disabled-color: var(--text-faint);
   --taskpro-menu-disabled-opacity: 0.55;
 
   /* Focus timer + repeat chips */
-  --taskpro-timer-color: #0f766e;
-  --taskpro-timer-bg: #e6f7f5;
-  --taskpro-timer-overrun-color: #b42318;
-  --taskpro-repeat-color: #6941c6;
+  --taskpro-timer-color: var(--taskpro-accent-timer);
+  --taskpro-timer-bg: color-mix(in srgb, var(--taskpro-accent-timer) var(--taskpro-chip-fill), transparent);
+  --taskpro-timer-overrun-color: var(--taskpro-accent-timer-done);
+  --taskpro-repeat-color: var(--taskpro-accent-repeat);
 }
 
-.theme-dark {
-  --taskpro-badge-bg: #2A3F47;
-  --taskpro-badge-color: #7DD3FC;
-  --taskpro-progress-bg: #2A3F47;
-  --taskpro-progress-color: #7DD3FC;
-  --taskpro-timer-color: #5eead4;
-  --taskpro-timer-bg: #1f3b39;
-  --taskpro-timer-overrun-color: #fda4a4;
-  --taskpro-repeat-color: #c4b0ff;
+/* The only mode-aware declaration in the plugin, and it names no colour: see
+   --taskpro-chip-ink-mix above. Obsidian always puts .theme-light or
+   .theme-dark on <body>, and Style Settings writes to a more specific selector
+   than this, so a user override still wins. */
+.theme-light {
+  --taskpro-chip-ink-mix: 46%;
 }
 
 .taskpro-badge-container {
@@ -275,65 +326,42 @@ settings:
   unicode-bidi: isolate;
 }
 
+/* The shared recipe: a chip states one accent, and colour, fill and stroke all
+   follow from it. Every variant below is a single custom-property assignment. */
+.taskpro-chip {
+  --taskpro-chip-accent: var(--text-muted);
+  color: color-mix(in srgb, var(--taskpro-chip-accent) var(--taskpro-chip-ink-mix), var(--text-normal));
+  background: color-mix(in srgb, var(--taskpro-chip-accent) var(--taskpro-chip-fill), transparent);
+  border-color: color-mix(in srgb, var(--taskpro-chip-accent) var(--taskpro-chip-stroke), transparent);
+}
+
 .taskpro-interactive-badge {
   cursor: pointer;
-  color: var(--taskpro-badge-color);
-  background: var(--taskpro-badge-bg);
   opacity: var(--taskpro-badge-opacity-normal);
-  transition: opacity 140ms ease, border-color 140ms ease;
+  transition: background-color 140ms ease, border-color 140ms ease;
 }
 
-/* Status-specific badge colors using pastel palette */
+/* Status */
 .taskpro-interactive-badge[data-status="done"],
-.taskpro-interactive-badge[data-status="[x]"] {
-  background: var(--taskpro-status-done-color);
-  color: #0f5132;
-  border-color: #badbcc;
-}
+.taskpro-interactive-badge[data-status="[x]"] { --taskpro-chip-accent: var(--taskpro-accent-done); }
 
 .taskpro-interactive-badge[data-status="in-progress"],
-.taskpro-interactive-badge[data-status="[/]"] {
-  background: var(--taskpro-status-progress-color);
-  color: #084298;
-  border-color: #b6d4fe;
-}
+.taskpro-interactive-badge[data-status="[/]"] { --taskpro-chip-accent: var(--taskpro-accent-progress); }
 
 .taskpro-interactive-badge[data-status="not-started"],
-.taskpro-interactive-badge[data-status="[ ]"] {
-  background: var(--taskpro-status-notstarted-color);
-  color: #41464b;
-  border-color: #c4c8cb;
-}
+.taskpro-interactive-badge[data-status="[ ]"] { --taskpro-chip-accent: var(--taskpro-accent-notstarted); }
 
-.taskpro-interactive-badge[data-status="overdue"] {
-  background: var(--taskpro-status-overdue-color);
-  color: #842029;
-  border-color: #f5c2c7;
-}
+.taskpro-interactive-badge[data-status="overdue"] { --taskpro-chip-accent: var(--taskpro-accent-overdue); }
 
-.taskpro-interactive-badge[data-status="[!]"] {
-  background: var(--taskpro-status-notdone-color);
-  color: #842029;
-  border-color: #f5c2c7;
-}
+.taskpro-interactive-badge[data-status="[!]"] { --taskpro-chip-accent: var(--taskpro-accent-notdone); }
 
 .taskpro-progress-badge {
+  --taskpro-chip-accent: var(--taskpro-accent-progressbar);
   cursor: pointer;
   user-select: none;
-  color: var(--taskpro-progress-color);
-  background: var(--taskpro-progress-bg);
-  opacity: var(--taskpro-badge-opacity-normal);
-  transition: opacity 140ms ease;
 }
 
-.taskpro-progress-badge:hover {
-  opacity: var(--taskpro-badge-opacity-hover);
-}
-
-.taskpro-deadline-badge {
-  font-size: var(--taskpro-badge-font-size);
-  opacity: var(--taskpro-badge-opacity-normal);
-}
+.taskpro-deadline-badge { font-size: var(--taskpro-badge-font-size); }
 
 /* Informational menu rows (read-only header) — accent blue */
 .menu .menu-item.taskpro-menu-item--info {
@@ -363,15 +391,20 @@ settings:
 .taskpro-panel-overlay {
   position: fixed;
   inset: 0;
-  z-index: 10000;
+  /* Above Obsidian's own modals, below nothing that matters. Was 10000, which
+     is outside the layer scale for no reason. */
+  z-index: var(--layer-modal, 100);
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.35);
-  backdrop-filter: blur(2px);
+  /* Full-screen backdrop-filter removed for the same reason as the reminder
+     overlay: it re-blurs the whole window whenever anything above it repaints,
+     including every keystroke in the number field inside the panel. */
+  background: rgba(0, 0, 0, 0.45);
 }
 
 .taskpro-panel {
+  contain: layout paint style;
   min-width: var(--taskpro-panel-min-width);
   max-width: 92vw;
   padding: var(--taskpro-panel-padding);
@@ -456,60 +489,23 @@ settings:
   border: none;
 }
 
-.taskpro-deadline-badge[data-state="overdue"] {
-  background: var(--taskpro-deadline-overdue-bg);
-  color: #842029;
-  border-color: rgba(132, 32, 41, var(--taskpro-deadline-border-opacity));
+/* Deadline, by urgency */
+.taskpro-deadline-badge[data-state="overdue"] { --taskpro-chip-accent: var(--taskpro-accent-overdue); }
+.taskpro-deadline-badge[data-state="missed"] { --taskpro-chip-accent: var(--taskpro-accent-overdue); }
+.taskpro-deadline-badge[data-state="completed"] { --taskpro-chip-accent: var(--taskpro-accent-done); }
+.taskpro-deadline-badge[data-state="today"] { --taskpro-chip-accent: var(--taskpro-accent-today); }
+.taskpro-deadline-badge[data-state="tomorrow"] { --taskpro-chip-accent: var(--taskpro-accent-tomorrow); }
+.taskpro-deadline-badge[data-state="soon"] { --taskpro-chip-accent: var(--taskpro-accent-soon); }
+.taskpro-deadline-badge[data-state="week"] { --taskpro-chip-accent: var(--taskpro-accent-week); }
+.taskpro-deadline-badge[data-state="normal"] { --taskpro-chip-accent: var(--taskpro-accent-normal); }
+
+.taskpro-chip[role="button"]:hover,
+.taskpro-chip[role="button"]:focus-visible {
+  background: color-mix(in srgb, var(--taskpro-chip-accent) calc(var(--taskpro-chip-fill) * 2), transparent);
+  border-color: color-mix(in srgb, var(--taskpro-chip-accent) calc(var(--taskpro-chip-stroke) * 1.5), transparent);
 }
 
-.taskpro-deadline-badge[data-state="completed"] {
-  background: var(--taskpro-deadline-completed-bg);
-  color: #084298;
-  border-color: rgba(8, 66, 152, var(--taskpro-deadline-border-opacity));
-}
-
-.taskpro-deadline-badge[data-state="missed"] {
-  background: var(--taskpro-deadline-missed-bg);
-  color: #842029;
-  border-color: rgba(132, 32, 41, var(--taskpro-deadline-border-opacity));
-}
-
-.taskpro-deadline-badge[data-state="today"] {
-  background: var(--taskpro-deadline-today-bg);
-  color: #664d03;
-  border-color: rgba(102, 77, 3, var(--taskpro-deadline-border-opacity));
-}
-
-.taskpro-deadline-badge[data-state="tomorrow"] {
-  background: var(--taskpro-deadline-tomorrow-bg);
-  color: #664d03;
-  border-color: rgba(102, 77, 3, var(--taskpro-deadline-border-opacity));
-}
-
-.taskpro-deadline-badge[data-state="soon"] {
-  background: var(--taskpro-deadline-soon-bg);
-  color: #664d03;
-  border-color: rgba(102, 77, 3, var(--taskpro-deadline-border-opacity));
-}
-
-.taskpro-deadline-badge[data-state="week"] {
-  background: var(--taskpro-deadline-week-bg);
-  color: var(--taskpro-deadline-text-week);
-  border-color: rgba(13, 110, 137, var(--taskpro-deadline-border-opacity));
-}
-
-.taskpro-deadline-badge[data-state="normal"] {
-  background: var(--taskpro-deadline-normal-bg);
-  color: var(--taskpro-deadline-text);
-  border-color: rgba(73, 80, 87, var(--taskpro-deadline-border-opacity));
-}
-
-.taskpro-interactive-badge:hover {
-  opacity: var(--taskpro-badge-opacity-hover);
-  border-color: var(--taskpro-badge-color);
-}
-
-.taskpro-interactive-badge:active {
+.taskpro-chip[role="button"]:active {
   opacity: var(--taskpro-badge-opacity-active);
 }
 
@@ -581,10 +577,10 @@ body.taskpro-hide-badges-in-embeds .markdown-embed .taskpro-badge-container {
   display: inline-grid;
   place-content: center;
   background: var(--taskpro-status-notdone-color);
-  border-color: #dc3545;
+  border-color: var(--color-red, #dc3545);
   position: relative;
-  color: #dc3545 !important;
-  --checkbox-marker-color: #dc3545;
+  color: var(--color-red, #dc3545) !important;
+  --checkbox-marker-color: var(--color-red, #dc3545);
 }
 
 .markdown-source-view.mod-cm6 .task-list-item-checkbox[data-task="!"]::before,
@@ -600,7 +596,7 @@ body.taskpro-hide-badges-in-embeds .markdown-embed .taskpro-badge-container {
   position: static;
   display: block;
   margin: 0;
-  color: #dc3545 !important;
+  color: var(--color-red, #dc3545) !important;
   font-weight: var(--font-bold);
   font-size: 0.95em;
   line-height: 1;
@@ -728,28 +724,21 @@ li.task-list-item {
 
 /* ── Priority badges ─────────────────────────────────────────────────────── */
 
+/* Priority. This chip already worked from theme colours; it now uses the same
+   recipe as the rest so all six chips are tinted identically. */
 .taskpro-priority-badge {
-  --taskpro-priority-color: var(--text-muted);
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  color: var(--taskpro-priority-color);
-  border: 1px solid var(--taskpro-priority-color);
-  background: transparent;
   cursor: pointer;
   white-space: nowrap;
 }
 
-.taskpro-priority-badge:hover,
-.taskpro-priority-badge:focus-visible {
-  background: var(--background-modifier-hover);
-}
-
-.taskpro-priority-badge[data-priority='highest'] { --taskpro-priority-color: var(--color-red, #e03131); }
-.taskpro-priority-badge[data-priority='high']    { --taskpro-priority-color: var(--color-orange, #f76707); }
-.taskpro-priority-badge[data-priority='medium']  { --taskpro-priority-color: var(--color-yellow, #f59f00); }
-.taskpro-priority-badge[data-priority='low']     { --taskpro-priority-color: var(--color-blue, #1c7ed6); }
-.taskpro-priority-badge[data-priority='lowest']  { --taskpro-priority-color: var(--text-faint); }
+.taskpro-priority-badge[data-priority='highest'] { --taskpro-chip-accent: var(--color-red, #c0392b); }
+.taskpro-priority-badge[data-priority='high']    { --taskpro-chip-accent: var(--color-orange, #c1741f); }
+.taskpro-priority-badge[data-priority='medium']  { --taskpro-chip-accent: var(--color-yellow, #a8860a); }
+.taskpro-priority-badge[data-priority='low']     { --taskpro-chip-accent: var(--color-blue, #2f6fbd); }
+.taskpro-priority-badge[data-priority='lowest']  { --taskpro-chip-accent: var(--text-muted); }
 
 /* Priority picker inside the shared TaskPro panel */
 .taskpro-priority-options {
@@ -774,13 +763,20 @@ li.task-list-item {
   align-items: center;
   justify-content: center;
   padding: 24px;
-  background: rgba(0, 0, 0, 0.55);
-  backdrop-filter: blur(3px);
+  /* No backdrop-filter here, deliberately.
+     This element covers the whole window, so `backdrop-filter: blur(3px)` made
+     the compositor snapshot and re-blur the entire vault behind it — and it was
+     doing that again on every frame of the fade below, and again whenever
+     anything inside the dialog repainted: a hover, a focus ring, the one-second
+     strict-mode countdown, or scrolling a list of twenty-odd tasks. That is
+     what made the alert feel sluggish. The scrim alone separates the dialog
+     from the note perfectly well, and costs one flat fill. */
+  background: rgba(0, 0, 0, 0.62);
   animation: taskpro-reminder-fade 160ms ease-out;
 }
 
 .taskpro-reminder-overlay[data-strictness='strict'] {
-  background: rgba(0, 0, 0, 0.78);
+  background: rgba(0, 0, 0, 0.82);
 }
 
 @keyframes taskpro-reminder-fade {
@@ -792,6 +788,10 @@ li.task-list-item {
   width: min(680px, 100%);
   max-height: 84vh;
   overflow-y: auto;
+  /* Keeps a repaint inside the dialog inside the dialog, instead of
+     invalidating the full-screen scrim behind it. */
+  contain: layout paint style;
+  overscroll-behavior: contain;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -848,19 +848,25 @@ li.task-list-item {
   background: var(--background-secondary);
 }
 
+/* Same recipe as the editor chips: tint from one accent, pull the label toward
+   the theme's text colour. Was `color` plus a currentColor border, which on a
+   light theme left the yellow and green pills washed out. */
 .taskpro-reminder-priority {
+  --taskpro-chip-accent: var(--text-muted);
   flex: 0 0 auto;
   font-size: 0.8em;
   padding: 2px 8px;
   border-radius: 999px;
-  border: 1px solid currentColor;
+  border: 1px solid color-mix(in srgb, var(--taskpro-chip-accent) var(--taskpro-chip-stroke), transparent);
+  color: color-mix(in srgb, var(--taskpro-chip-accent) var(--taskpro-chip-ink-mix), var(--text-normal));
+  background: color-mix(in srgb, var(--taskpro-chip-accent) var(--taskpro-chip-fill), transparent);
 }
 
-.taskpro-reminder-priority[data-priority='highest'] { color: var(--color-red, #e03131); }
-.taskpro-reminder-priority[data-priority='high']    { color: var(--color-orange, #f76707); }
-.taskpro-reminder-priority[data-priority='medium']  { color: var(--color-yellow, #f59f00); }
-.taskpro-reminder-priority[data-priority='low']     { color: var(--color-blue, #1c7ed6); }
-.taskpro-reminder-priority[data-priority='lowest']  { color: var(--text-faint); }
+.taskpro-reminder-priority[data-priority='highest'] { --taskpro-chip-accent: var(--color-red, #c0392b); }
+.taskpro-reminder-priority[data-priority='high']    { --taskpro-chip-accent: var(--color-orange, #c1741f); }
+.taskpro-reminder-priority[data-priority='medium']  { --taskpro-chip-accent: var(--color-yellow, #a8860a); }
+.taskpro-reminder-priority[data-priority='low']     { --taskpro-chip-accent: var(--color-blue, #2f6fbd); }
+.taskpro-reminder-priority[data-priority='lowest']  { --taskpro-chip-accent: var(--text-muted); }
 
 .taskpro-reminder-text {
   flex: 1 1 220px;
@@ -1149,33 +1155,18 @@ li.task-list-item {
    second — no decoration rebuild, no cursor churn.
    ========================================================================== */
 .taskpro-timer-badge {
+  --taskpro-chip-accent: var(--taskpro-accent-timer);
   cursor: pointer;
   user-select: none;
-  color: var(--taskpro-timer-color);
-  background: var(--taskpro-timer-bg);
-  border-color: color-mix(in srgb, var(--taskpro-timer-color) 35%, transparent);
-  opacity: var(--taskpro-badge-opacity-normal);
   font-variant-numeric: tabular-nums;
-  transition: opacity 140ms ease, border-color 140ms ease;
-}
-.taskpro-timer-badge:hover,
-.taskpro-timer-badge:focus-visible {
-  opacity: var(--taskpro-badge-opacity-hover);
 }
 
-/* Idle and paused timers step back; only a live countdown is tinted. */
+/* Idle and paused timers step back to neutral; only a live countdown is green
+   and only a finished one is red. */
 .taskpro-timer-badge[data-state='idle'],
-.taskpro-timer-badge[data-state='paused'] {
-  color: var(--text-muted);
-  background: transparent;
-  border-color: var(--background-modifier-border);
-}
+.taskpro-timer-badge[data-state='paused'] { --taskpro-chip-accent: var(--text-muted); }
 
-.taskpro-timer-badge[data-state='done'] {
-  color: var(--taskpro-timer-overrun-color);
-  background: color-mix(in srgb, var(--taskpro-timer-overrun-color) 12%, transparent);
-  border-color: color-mix(in srgb, var(--taskpro-timer-overrun-color) 40%, transparent);
-}
+.taskpro-timer-badge[data-state='done'] { --taskpro-chip-accent: var(--taskpro-accent-timer-done); }
 
 /* A running timer breathes just enough to read as live at a glance. */
 .taskpro-timer-badge[data-state='running'] .taskpro-chip__icon {
@@ -1193,18 +1184,12 @@ li.task-list-item {
    Repeat chip
    ========================================================================== */
 .taskpro-repeat-badge {
+  --taskpro-chip-accent: var(--taskpro-accent-repeat);
   display: inline-flex;
   align-items: center;
   gap: 4px;
   cursor: pointer;
-  color: var(--taskpro-repeat-color);
-  background: transparent;
-  border-color: color-mix(in srgb, var(--taskpro-repeat-color) 45%, transparent);
   white-space: nowrap;
-}
-.taskpro-repeat-badge:hover,
-.taskpro-repeat-badge:focus-visible {
-  background: var(--background-modifier-hover);
 }
 
 /* ==========================================================================
