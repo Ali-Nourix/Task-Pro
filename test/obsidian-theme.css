@@ -25,6 +25,8 @@
   --background-modifier-hover: rgba(255, 255, 255, 0.06);
   --interactive-accent: #7f6df2;
   --interactive-accent-hover: #9586f8;
+  --interactive-normal: #2a2a2a;
+  --interactive-hover: #333333;
   --interactive-success: #55b982;
   --text-normal: #e6e6e6;
   --text-muted: #9a9a9a;
@@ -37,7 +39,11 @@
   --color-red: #e5534b;
   --color-orange: #d98b3a;
   --color-yellow: #d4b02a;
+  --color-green: #4bb87c;
+  --color-cyan: #4bb5c4;
   --color-blue: #4b8cd6;
+  --color-purple: #a37bd6;
+  --color-pink: #d670a8;
 
   --radius-s: 6px;
   --radius-m: 10px;
@@ -57,6 +63,8 @@ body.theme-light {
   --background-modifier-hover: rgba(0, 0, 0, 0.045);
   --interactive-accent: #6a58e8;
   --interactive-accent-hover: #5847d6;
+  --interactive-normal: #f2f1ef;
+  --interactive-hover: #e6e4e1;
   --interactive-success: #2f9e68;
   --text-normal: #2c2c2b;
   --text-muted: #75726d;
@@ -68,10 +76,31 @@ body.theme-light {
   --color-red: #c0392b;
   --color-orange: #c1741f;
   --color-yellow: #a8860a;
+  --color-green: #2f9e68;
+  --color-cyan: #1e8a9c;
   --color-blue: #2f6fbd;
+  --color-purple: #7048b6;
+  --color-pink: #b83280;
   --shadow-s: 0 1px 2px rgba(0, 0, 0, 0.07);
   --shadow-l: 0 12px 36px rgba(0, 0, 0, 0.14);
 }
+
+/* Obsidian's own button styling, so a plugin button in a harness looks like a
+   plugin button in the app rather than a raw browser control. */
+button {
+  padding: 5px 14px;
+  border: 0;
+  border-radius: var(--radius-s, 6px);
+  color: var(--text-normal);
+  background: var(--interactive-normal);
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.1);
+  font-family: inherit;
+  font-size: var(--font-ui-small, 13px);
+  cursor: pointer;
+}
+button:hover { background: var(--interactive-hover); }
+button.mod-cta { color: var(--text-on-accent); background: var(--interactive-accent); }
+button.mod-cta:hover { background: var(--interactive-accent-hover); }
 
 /* setIcon() emits <svg class="svg-icon">; the harnesses do the same. */
 .svg-icon {

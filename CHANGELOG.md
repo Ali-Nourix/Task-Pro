@@ -1,5 +1,57 @@
 # Changelog
 
+## 1.3.0 - Chips that follow your theme, and a reminder alert that is not sluggish
+
+### Chips adapt to any theme, in both modes
+
+The chip palette was 87 hardcoded colours: pastel backgrounds with fixed dark
+text, designed for a light vault. On a dark theme they sat on top of the note
+like stickers, and on a community theme with its own palette they matched
+nothing. Completed tasks made it worse, because Obsidian dims the whole line and
+the chip's own `opacity: 0.86` dimmed it again.
+
+- Every chip is now a tint of **one accent colour taken from the active theme**
+  (`--color-green`, `--color-red`, `--color-blue` and friends). There is no
+  fixed colour left in the stylesheet — only `var(--…, #fallback)` pairs for
+  themes too old to define the standard palette.
+- One recipe does the work: tint a background and a border out of the accent,
+  and mix the label toward `--text-normal`. That last part is what makes a
+  single declaration work in both modes — the label lightens on a dark theme and
+  darkens on a light one, because that is where the theme's text colour is.
+- Dropped the chip-wide `opacity`, which faded labels along with everything
+  else. Emphasis now comes from the hover fill.
+- `--text-faint` is no longer used as a chip accent; it is designed to be too
+  quiet to read.
+- Added `npm run check:contrast`, which measures every chip variant against
+  WCAG AA on every theme in `test/themes/`. All 27 variants pass on Obsidian's
+  defaults and on a community theme, in both modes; worst case 4.6:1. The two
+  mix amounts in the stylesheet were tuned against it rather than by eye.
+- Style Settings now exposes the twelve accents and the three tint strengths,
+  replacing knobs for variables that no longer exist.
+
+### The reminder alert
+
+- Removed `backdrop-filter: blur()` from the reminder overlay and the shared
+  dialog panel. Both cover the whole window, so the compositor was snapshotting
+  and re-blurring the entire vault behind them — on every frame of the fade-in,
+  and again on any repaint above: a hover, a focus ring, the one-second
+  strict-mode countdown, or scrolling a list of twenty-odd tasks. That is what
+  made the alert feel slow. They dim instead, which costs one flat fill.
+- Added `contain` and `overscroll-behavior` to both dialogs so a repaint or a
+  scroll inside them stays inside them.
+- The overlay's priority pills use the same colour recipe as the editor chips;
+  they were washed out on light themes.
+- The panel overlay's `z-index: 10000` is now `var(--layer-modal)`.
+
+### Previews
+
+- `test/chips-preview.html` and the new `test/reminder-preview.html` can stack
+  any community theme with `?theme=<name>`, in the order Obsidian loads them.
+  Drop a `theme.css` into `test/themes/` to check the plugin against it.
+- `npm run previews` regenerates the README images, now including the same
+  chips under a community theme in both modes.
+
+
 ## 1.2.1 - Chip text direction fix
 
 - Fixed chip text direction. `.taskpro-badge-container` reversed the chip row

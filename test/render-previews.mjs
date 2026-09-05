@@ -15,7 +15,7 @@
 import { chromium } from 'playwright';
 import { fileURLToPath } from 'url';
 import path from 'path';
-import { mkdir } from 'fs/promises';
+import { mkdir, access } from 'fs/promises';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const outDir = path.resolve(here, '..', 'docs', 'images');
@@ -26,9 +26,28 @@ const SHOTS = [
   { file: 'chips-preview.html', query: '?light', selector: '.note', out: 'task-chips-light.png' },
   { file: 'chips-preview.html', query: '', selector: '#states', out: 'chip-states.png' },
   { file: 'chips-preview.html', query: '', selector: '.statusbar', out: 'status-bar-timer.png' },
+  // Same chips under a real community theme, to prove they follow the vault
+  // rather than the plugin's own idea of what a colour should be.
+  { file: 'chips-preview.html', query: '?theme=bookcloth', selector: '.note', out: 'task-chips-bookcloth-dark.png' },
+  { file: 'chips-preview.html', query: '?theme=bookcloth&light', selector: '.note', out: 'task-chips-bookcloth-light.png' },
+  { file: 'reminder-preview.html', query: '?theme=bookcloth', selector: 'body', out: 'reminder-overlay-dark.png' },
+  { file: 'reminder-preview.html', query: '?theme=bookcloth&light', selector: 'body', out: 'reminder-overlay-light.png' },
 ];
 
 await mkdir(outDir, { recursive: true });
+
+/** Shots that need a theme in test/themes/ are skipped when it is not there. */
+const themeOf = (query) => query.match(/[?&]theme=([a-z0-9-]+)/)?.[1] ?? null;
+const available = async (query) => {
+  const theme = themeOf(query);
+  if (!theme) return true;
+  try {
+    await access(path.join(here, 'themes', `${theme}.css`));
+    return true;
+  } catch {
+    return false;
+  }
+};
 
 const browser = await chromium.launch({
   // Set PW_CHROMIUM to reuse a browser that is already on the machine.
@@ -37,7 +56,11 @@ const browser = await chromium.launch({
 
 try {
   for (const shot of SHOTS) {
-    const page = await browser.newPage({ deviceScaleFactor: 2, viewport: { width: 900, height: 900 } });
+    if (!(await available(shot.query))) {
+      console.log(`skipped ${shot.out} — test/themes/${themeOf(shot.query)}.css is not present`);
+      continue;
+    }
+    const page = await browser.newPage({ deviceScaleFactor: 2, viewport: { width: 900, height: 820 } });
     await page.goto(`file://${path.join(here, shot.file)}${shot.query}`);
     await page.waitForTimeout(250);
     const target = await page.locator(shot.selector).first();
