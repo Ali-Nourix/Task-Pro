@@ -4,6 +4,14 @@
   <meta charset="utf-8">
   <title>TaskPro chip preview</title>
   <link rel="stylesheet" href="obsidian-theme.css">
+  <!-- ?theme=<name> stacks test/themes/<name>.css between Obsidian's defaults
+       and the plugin's own sheet, which is the order Obsidian itself loads. -->
+  <script>
+    const themeName = new URLSearchParams(location.search).get('theme');
+    if (themeName && /^[a-z0-9-]+$/.test(themeName)) {
+      document.write('<link rel="stylesheet" href="themes/' + themeName + '.css">');
+    }
+  </script>
   <link rel="stylesheet" href="../styles.css">
   <style>
     /* Only the fake note and status bar are styled here. Every chip is rendered

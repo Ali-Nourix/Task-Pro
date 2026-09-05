@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>TaskPro reminder overlay preview</title>
+  <link rel="stylesheet" href="obsidian-theme.css">
+  <script>
+    const themeName = new URLSearchParams(location.search).get('theme');
+    if (themeName && /^[a-z0-9-]+$/.test(themeName)) {
+      document.write('<link rel="stylesheet" href="themes/' + themeName + '.css">');
+    }
+  </script>
+  <link rel="stylesheet" href="../styles.css">
+  <style>
+    /* Only the fake vault behind the overlay is styled here. */
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      height: 760px;
+      background: var(--background-primary);
+      color: var(--text-normal);
+      font-family: var(--font-ui);
+      overflow: hidden;
+    }
+    .vault { padding: 28px 34px; font-family: var(--font-text); }
+    .vault h2 { margin: 0 0 12px; }
+    .vault p { max-width: 52ch; color: var(--text-muted); line-height: 1.7; }
+    /* The overlay is position:fixed in the plugin; the shot is the page. */
+    .taskpro-reminder-overlay { animation: none; }
+  </style>
+</head>
+<body class="theme-dark">
+  <main class="vault">
+    <h2>Weekly Tasks</h2>
+    <p>A note behind the alert, so the scrim can be judged on something rather
+      than on an empty page. The overlay used to blur all of this on every
+      repaint; now it only dims it.</p>
+  </main>
+
+  <div class="taskpro-reminder-overlay" data-strictness="normal" role="dialog" aria-modal="true">
+    <div class="taskpro-reminder-dialog">
+      <div class="taskpro-reminder-header">
+        <h2 class="taskpro-reminder-title">Task reminders</h2>
+        <div class="taskpro-reminder-message">6 tasks need attention</div>
+      </div>
+
+      <ul class="taskpro-reminder-list" id="list"></ul>
+      <div class="taskpro-reminder-more">and 16 more</div>
+
+      <div class="taskpro-reminder-actions">
+        <button class="taskpro-reminder-snooze">Snooze 10 min</button>
+        <button class="taskpro-reminder-primary mod-cta">Got it</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const PRIORITY_ICONS = {
+      highest: '<svg class="svg-icon" viewBox="0 0 24 24"><path d="m17 11-5-5-5 5M17 18l-5-5-5 5"/></svg>',
+      high: '<svg class="svg-icon" viewBox="0 0 24 24"><path d="m18 15-6-6-6 6"/></svg>',
+      medium: '<svg class="svg-icon" viewBox="0 0 24 24"><path d="M5 9h14M5 15h14"/></svg>',
+      low: '<svg class="svg-icon" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>',
+      lowest: '<svg class="svg-icon" viewBox="0 0 24 24"><path d="m7 6 5 5 5-5M7 13l5 5 5-5"/></svg>',
+    };
+    const LABELS = { highest: 'Highest', high: 'High', medium: 'Medium', low: 'Low', lowest: 'Lowest' };
+    const TASKS = [
+      ['highest', 'Chase the missing invoice', 'Overdue by 3 days'],
+      ['high', 'Promote myself so the work gets seen', 'Due today'],
+      ['high', 'Draft the launch post', 'Due in 3 days'],
+      ['medium', 'Publish the motion design samples', 'Due in 5 days'],
+      ['low', 'Update the portfolio', 'No deadline'],
+      ['lowest', 'Water the plants', 'Due tomorrow'],
+    ];
+    document.getElementById('list').innerHTML = TASKS.map(([p, text, meta]) => `
+      <li class="taskpro-reminder-item">
+        <span class="taskpro-reminder-priority" data-priority="${p}">
+          <span class="taskpro-chip__icon" aria-hidden="true">${PRIORITY_ICONS[p]}</span>
+          <span class="taskpro-chip__label">${LABELS[p]}</span>
+        </span>
+        <span class="taskpro-reminder-text">${text}</span>
+        <span class="taskpro-reminder-meta">${meta}</span>
+        <button class="taskpro-reminder-open">Open</button>
+      </li>`).join('');
+
+    const params = new URLSearchParams(location.search);
+    if (params.has('light')) document.body.className = 'theme-light';
+    if (params.has('strict')) {
+      const o = document.querySelector('.taskpro-reminder-overlay');
+      o.dataset.strictness = 'strict';
+      o.querySelector('.taskpro-reminder-header').insertAdjacentHTML('beforeend',
+        '<div class="taskpro-reminder-hint">This alert has to be acknowledged.</div>');
+    }
+  </script>
+</body>
+</html>

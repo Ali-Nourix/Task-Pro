@@ -3,3 +3,6 @@ main.js
 *.map
 .DS_Store
 stats/
+
+# Community themes copied in for the preview harnesses (see test/themes/README.md).
+test/themes/*.css
