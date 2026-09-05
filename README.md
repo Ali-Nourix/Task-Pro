@@ -80,6 +80,18 @@ If you want a specific hue anyway, each accent is a
 [Style Settings](https://github.com/mgmeyers/obsidian-style-settings) knob,
 along with how strongly chips tint themselves.
 
+### Custom task statuses
+
+`[/]` and `[!]` are drawn so they read at a glance, in Live Preview and Reading
+Mode alike:
+
+![The in-progress and not-done checkboxes](docs/images/task-checkboxes.png)
+
+These are a floor, not a ceiling. Styling a checkbox is really a theme's job, so
+the plugin uses plain selectors and no `!important` — a theme that styles these
+states takes over with an ordinary rule, and one that ignores them still gets a
+sensible default.
+
 ### Four-state task toggle
 
 `Ctrl+T` cycles the task under the cursor through all four states:

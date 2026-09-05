@@ -80,6 +80,30 @@
     /* The container is direction:rtl in the plugin; a lone chip needs no order. */
     .cell .taskpro-badge-container { margin-inline-start: 0; }
 
+    /* Obsidian's own checkbox, mirroring its mask implementation. */
+    input[type="checkbox"] {
+      appearance: none; -webkit-appearance: none;
+      width: 16px; height: 16px; margin: 0; position: relative;
+      border: 1px solid var(--text-faint); border-radius: 3px;
+      background-color: transparent; cursor: pointer;
+    }
+    input[type="checkbox"]:checked {
+      background-color: var(--interactive-accent); border-color: var(--interactive-accent);
+    }
+    input[type="checkbox"]:checked::after {
+      content: ""; position: absolute; inset: 0;
+      background-color: var(--text-on-accent);
+      -webkit-mask-image: var(--taskpro-preview-check); mask-image: var(--taskpro-preview-check);
+      -webkit-mask-size: 70%; mask-size: 70%;
+      -webkit-mask-position: 50% 50%; mask-position: 50% 50%;
+      -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
+    }
+    :root {
+      --taskpro-preview-check: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="3.25" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>');
+      --checkbox-marker-color: var(--text-on-accent);
+    }
+    #checkboxes .cell { align-items: center; }
+
     /* Faux status bar */
     .statusbar {
       display: flex; align-items: center; gap: 18px;
@@ -140,6 +164,23 @@
       </span>
     </div>
   </main>
+
+  <section class="strip" id="checkboxes">
+    <h3>Custom task statuses</h3>
+    <p style="margin:0 0 10px;color:var(--text-faint);font:400 11px/1.5 var(--font-ui);max-width:60ch">
+      A floor, not a ceiling: the plugin draws these so a theme that ignores
+      [/] and [!] still shows them, using plain selectors and no !important so
+      any theme that does style them takes over. Obsidian marks the state in
+      three places, so all three are shown.
+    </p>
+    <div class="row">
+      <div class="cell"><span class="markdown-source-view mod-cm6"><input class="task-list-item-checkbox" type="checkbox" data-task="/"></span><small>[/] input</small></div>
+      <div class="cell"><span class="markdown-source-view mod-cm6"><input class="task-list-item-checkbox" type="checkbox" data-task="!"></span><small>[!] input</small></div>
+      <div class="cell"><span class="markdown-preview-view"><span class="task-list-item"><input class="task-list-item-checkbox is-in-progress" type="checkbox"></span></span><small>.is-in-progress</small></div>
+      <div class="cell"><span class="markdown-preview-view"><span class="task-list-item"><input class="task-list-item-checkbox is-not-done" type="checkbox"></span></span><small>.is-not-done</small></div>
+      <div class="cell"><input type="checkbox" checked><small>[x] for scale</small></div>
+    </div>
+  </section>
 
   <section class="strip" id="states">
     <h3>Focus timer states</h3>

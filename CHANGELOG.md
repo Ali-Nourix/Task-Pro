@@ -29,6 +29,22 @@ the chip's own `opacity: 0.86` dimmed it again.
 - Style Settings now exposes the twelve accents and the three tint strengths,
   replacing knobs for variables that no longer exist.
 
+### Custom task statuses
+
+- Fixed the `[!]` checkbox, which lost its fill in this release's palette
+  rewrite: the rule still pointed at `--taskpro-status-notdone-color`, one of
+  the variables that rewrite deleted.
+- Its glyph is now a mask rather than the text character `"!"`. A text glyph
+  only works if nothing else is drawing that pseudo-element, and a theme that
+  styles these states usually is — the theme's own `mask-image` stayed in force
+  and clipped the character down to a speck inside an empty box. A mask
+  composes instead of competing, and matches how Obsidian draws its checkmark.
+- Both states take their colour from `--color-blue` / `--color-red` instead of
+  `--text-accent` and a fixed red, and carry no `!important`, so a theme that
+  styles `[/]` or `[!]` takes over with an ordinary rule.
+- `test/chips-preview.html` covers all three DOM shapes Obsidian uses for these
+  states, plus the two classes the plugin adds in Reading View.
+
 ### The reminder alert
 
 - Removed `backdrop-filter: blur()` from the reminder overlay and the shared
