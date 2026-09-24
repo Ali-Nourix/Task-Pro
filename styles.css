@@ -265,6 +265,10 @@ settings:
   --taskpro-menu-disabled-color: var(--text-faint);
   --taskpro-menu-disabled-opacity: 0.55;
 
+  /* The exclamation drawn into the [!] checkbox, as a mask so it composes with
+     a theme rather than competing with one. */
+  --taskpro-check-mask-bang: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="3.25" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v9"/><path d="M12 19h.01"/></svg>');
+
   /* Focus timer + repeat chips */
   --taskpro-timer-color: var(--taskpro-accent-timer);
   --taskpro-timer-bg: color-mix(in srgb, var(--taskpro-accent-timer) var(--taskpro-chip-fill), transparent);
@@ -560,153 +564,57 @@ body.taskpro-hide-badges-in-embeds .markdown-embed .taskpro-badge-container {
   align-items: center;
 }
 
-.markdown-source-view.mod-cm6 .task-list-item-checkbox[data-task="/"],
-.markdown-source-view.mod-cm6 .HyperMD-task-line[data-task="/"] input[type="checkbox"] {
-  background: linear-gradient(to right, var(--text-accent) 50%, transparent 50%);
-  border-color: var(--text-accent);
-}
+/* --- Custom task statuses -------------------------------------------------
+   How a checkbox looks is really a theme's job, and these rules are only a
+   floor: they draw [/] and [!] on a theme that ignores them, and a theme that
+   does style them is expected to win.
 
+   They are deliberately NOT wrapped in :where(). Zero specificity sounds like
+   the polite answer, but it loses to Obsidian's own `input[type=checkbox]`
+   base rule too, so the states end up drawn by nobody — which the preview
+   harness showed immediately. Plain selectors it is, with no !important, so a
+   theme needs nothing more than its own ordinary rule to take over.
+   ------------------------------------------------------------------------- */
+.markdown-source-view.mod-cm6 .task-list-item-checkbox[data-task="/"],
+.markdown-source-view.mod-cm6 .HyperMD-task-line[data-task="/"] input[type="checkbox"],
 .markdown-preview-view .task-list-item input[type="checkbox"].is-in-progress {
-  background: linear-gradient(to right, var(--text-accent) 50%, transparent 50%);
-  border-color: var(--text-accent);
+  border-color: var(--color-blue, #2f6fbd);
+  background-color: transparent;
+  background-image: linear-gradient(to right, var(--color-blue, #2f6fbd) 50%, transparent 50%);
 }
 
 .markdown-source-view.mod-cm6 .task-list-item-checkbox[data-task="!"],
 .markdown-source-view.mod-cm6 .HyperMD-task-line[data-task="!"] input[type="checkbox"],
 .markdown-preview-view .task-list-item input[type="checkbox"].is-not-done {
-  display: inline-grid;
-  place-content: center;
-  background: var(--taskpro-status-notdone-color);
-  border-color: var(--color-red, #dc3545);
   position: relative;
-  color: var(--color-red, #dc3545) !important;
-  --checkbox-marker-color: var(--color-red, #dc3545);
+  border-color: var(--color-red, #c0392b);
+  background-color: var(--color-red, #c0392b);
+  background-image: none;
 }
 
-.markdown-source-view.mod-cm6 .task-list-item-checkbox[data-task="!"]::before,
-.markdown-source-view.mod-cm6 .HyperMD-task-line[data-task="!"] input[type="checkbox"]::before,
-.markdown-preview-view .task-list-item input[type="checkbox"].is-not-done::before {
-  content: none !important;
-}
-
+/* The glyph is a mask, not a text character.
+   It used to be `content: "!"`, which only works when nothing else is drawing
+   this pseudo-element — and a theme that styles these states usually is. The
+   theme's own mask-image stayed in force and clipped the character down to a
+   speck inside an empty box. A mask composes with a theme's rules instead of
+   fighting them, and matches how Obsidian draws its own checkmark. */
 .markdown-source-view.mod-cm6 .task-list-item-checkbox[data-task="!"]::after,
 .markdown-source-view.mod-cm6 .HyperMD-task-line[data-task="!"] input[type="checkbox"]::after,
 .markdown-preview-view .task-list-item input[type="checkbox"].is-not-done::after {
-  content: "!";
-  position: static;
-  display: block;
-  margin: 0;
-  color: var(--color-red, #dc3545) !important;
-  font-weight: var(--font-bold);
-  font-size: 0.95em;
-  line-height: 1;
-  text-align: center;
-  opacity: 1;
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-color: var(--checkbox-marker-color, #fff);
+  -webkit-mask-image: var(--taskpro-check-mask-bang);
+  mask-image: var(--taskpro-check-mask-bang);
+  -webkit-mask-size: 72%;
+  mask-size: 72%;
+  -webkit-mask-position: 50% 50%;
+  mask-position: 50% 50%;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
 }
 
-/* Import / configure task modal */
-.taskpro-config-modal .modal-content {
-  padding: var(--size-4-4);
-}
-
-.taskpro-config-modal__title {
-  margin: 0 0 var(--size-4-3);
-  font-size: var(--font-ui-large);
-  font-weight: var(--font-bold);
-  color: var(--text-normal);
-}
-
-.taskpro-config-modal__preview {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: var(--size-4-3);
-  margin-bottom: var(--size-4-4);
-  border-radius: var(--radius-m);
-  background: var(--background-secondary);
-  border: 1px solid var(--background-modifier-border);
-}
-
-.taskpro-config-modal__preview-label {
-  font-size: var(--font-ui-smaller);
-  font-weight: var(--font-semibold);
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.taskpro-config-modal__preview-text {
-  font-size: var(--font-ui-medium);
-  color: var(--text-normal);
-  line-height: 1.4;
-}
-
-.taskpro-config-modal .setting-item {
-  border-top: 1px solid var(--background-modifier-border);
-  padding-top: var(--size-4-3);
-  padding-bottom: var(--size-4-3);
-}
-
-.taskpro-config-modal__date-input {
-  width: 100%;
-  max-width: 100%;
-}
-
-.taskpro-panel__input--date[type='date'] {
-  min-height: 36px;
-  cursor: pointer;
-}
-
-.taskpro-panel__input--date[type='date']::-webkit-calendar-picker-indicator {
-  cursor: pointer;
-  opacity: 0.85;
-}
-
-.taskpro-config-modal__footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: var(--size-4-4);
-  padding-top: var(--size-4-3);
-  border-top: 1px solid var(--background-modifier-border);
-}
-
-.task-preview {
-  padding: 12px;
-  background: var(--background-secondary);
-  border-radius: var(--radius-m);
-  margin-bottom: 20px;
-}
-
-.reference-note-display {
-  font-family: var(--font-monospace);
-  padding: 8px 12px;
-  background: var(--background-secondary);
-  border-radius: var(--radius-s);
-  font-size: 0.9em;
-}
-
-/* Hide tags and block IDs from inline task text in Live Preview */
-.cm-line .cm-hashtag {
-  display: none;
-}
-
-.cm-line:has(.taskpro-badge-container) .cm-formatting-link,
-.cm-line:has(.taskpro-badge-container) .cm-link-alias {
-  display: none;
-}
-
-/* Hide block IDs (^block-id) from task lines */
-.cm-line:has(.taskpro-badge-container) .cm-hmd-codeblock:has-text("^") {
-  display: none;
-}
-
-/* Hide deadline markers (⏳ YYYY-MM-DD) from task lines in Live Preview */
-.cm-line:has(.taskpro-badge-container) {
-  /* This will be handled by a more specific approach */
-}
-
-/* Hide deadline text in Reading Mode */
 .markdown-preview-view .task-list-item:has(.taskpro-badge-container) {
   /* Deadline is shown in badge, hide from text */
 }
@@ -1219,3 +1127,1298 @@ li.task-list-item {
   color: var(--text-muted);
 }
 .taskpro-settings-number-input { width: 72px; }
+
+/* ==========================================================================
+   Tags
+
+   A tag chip is the shared chip recipe with the tag's own accent, set inline
+   as --taskpro-chip-accent (a theme variable for palette colours), so it reads
+   as the theme's blue or green in light and dark mode alike.
+   ========================================================================== */
+.taskpro-tag-chip {
+  border-radius: var(--taskpro-tag-radius);
+  cursor: pointer;
+  font-weight: var(--font-medium);
+}
+
+/* A key in a note that is not in the tag list: still shown, visibly undefined. */
+.taskpro-tag-chip.is-unknown {
+  border-style: dashed;
+}
+
+/* Chips rendered as <button> must shed Obsidian's button chrome.
+
+   The tint is painted as a background *image*. Obsidian loads a theme's
+   stylesheet after a plugin's, and a theme's hover rule for buttons usually
+   sets background-color at a specificity no single class can beat
+   (Bookcloth's is (0,4,1)). An image sits on top of whatever colour that rule
+   picks, so the chip keeps its colour on hover in any theme. */
+button.taskpro-chip {
+  height: auto;
+  min-height: 0;
+  margin: 0;
+  box-shadow: none;
+  font-family: inherit;
+  cursor: pointer;
+  background-color: transparent;
+  background-image: linear-gradient(
+    color-mix(in srgb, var(--taskpro-chip-accent) var(--taskpro-chip-fill), transparent),
+    color-mix(in srgb, var(--taskpro-chip-accent) var(--taskpro-chip-fill), transparent)
+  );
+}
+button.taskpro-chip:hover,
+button.taskpro-chip:focus-visible {
+  background-image: linear-gradient(
+    color-mix(in srgb, var(--taskpro-chip-accent) calc(var(--taskpro-chip-fill) * 2), transparent),
+    color-mix(in srgb, var(--taskpro-chip-accent) calc(var(--taskpro-chip-fill) * 2), transparent)
+  );
+  border-color: color-mix(in srgb, var(--taskpro-chip-accent) calc(var(--taskpro-chip-stroke) * 1.5), transparent);
+  box-shadow: none;
+}
+
+/* ── Tag picker ──────────────────────────────────────────────────────────── */
+.taskpro-panel.taskpro-tag-picker {
+  width: min(440px, 92vw);
+}
+
+.taskpro-panel .taskpro-tag-picker__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 240px;
+  overflow: auto;
+  padding: 2px;
+}
+
+/* Nothing to list and nothing to say: the create row speaks for itself. */
+.taskpro-panel .taskpro-tag-picker__list.is-empty:not(:has(*)) {
+  display: none;
+}
+
+.taskpro-panel .taskpro-tag-picker__empty {
+  color: var(--text-faint);
+  font-size: var(--font-ui-small);
+}
+
+.taskpro-panel button.taskpro-tag-option.is-selected {
+  background: color-mix(in srgb, var(--taskpro-chip-accent) calc(var(--taskpro-chip-fill) * 2.2), transparent);
+  border-color: color-mix(in srgb, var(--taskpro-chip-accent) 64%, transparent);
+}
+
+.taskpro-panel button.taskpro-tag-option.is-active {
+  outline: 2px solid color-mix(in srgb, var(--taskpro-chip-accent) 55%, transparent);
+  outline-offset: 1px;
+}
+
+.taskpro-panel .taskpro-tag-picker__create {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.taskpro-panel .taskpro-tag-picker__create:empty {
+  display: none;
+}
+
+.taskpro-panel button.taskpro-tag-picker__create-btn {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  width: 100%;
+  height: auto;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--radius-s);
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  cursor: pointer;
+}
+.taskpro-panel button.taskpro-tag-picker__create-btn:hover,
+.taskpro-panel button.taskpro-tag-picker__create-btn.is-active {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+.taskpro-panel .taskpro-tag-picker__create-icon {
+  display: inline-flex;
+}
+.taskpro-panel .taskpro-tag-picker__create-icon .svg-icon {
+  width: 14px;
+  height: 14px;
+}
+
+/* The footer holds a "Manage tags" link on the start side and the buttons on the end side. */
+.taskpro-panel__footer:has(.taskpro-panel__link) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.taskpro-panel button.taskpro-panel__link {
+  height: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  color: var(--text-accent);
+  font-size: var(--font-ui-small);
+  cursor: pointer;
+}
+.taskpro-panel button.taskpro-panel__link:hover {
+  background: none;
+  text-decoration: underline;
+}
+
+.taskpro-panel.taskpro-panel--wide {
+  width: min(640px, 94vw);
+}
+
+.taskpro-panel .taskpro-panel__text {
+  margin: 0;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+/* ── Colour swatches ─────────────────────────────────────────────────────── */
+.taskpro-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+:is(.taskpro-panel, .taskpro-color-popover, .taskpro-tag-manager) .taskpro-swatch,
+:is(.taskpro-panel, .taskpro-color-popover, .taskpro-tag-manager) button.taskpro-swatch {
+  position: relative;
+  box-sizing: border-box;
+  width: 20px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--taskpro-swatch, var(--text-muted));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text-normal) 14%, transparent);
+  cursor: pointer;
+}
+:is(.taskpro-panel, .taskpro-color-popover, .taskpro-tag-manager) button.taskpro-swatch:hover {
+  background: var(--taskpro-swatch, var(--text-muted));
+  transform: scale(1.08);
+}
+:is(.taskpro-panel, .taskpro-color-popover, .taskpro-tag-manager) .taskpro-swatch.is-selected,
+:is(.taskpro-panel, .taskpro-color-popover, .taskpro-tag-manager) button.taskpro-swatch.is-selected {
+  box-shadow: 0 0 0 2px var(--background-primary), 0 0 0 4px var(--taskpro-swatch, var(--text-muted));
+}
+:is(.taskpro-panel, .taskpro-color-popover, .taskpro-tag-manager) .taskpro-swatch:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 3px;
+}
+
+/* The custom swatch is a hue wheel until a custom colour is chosen. */
+:is(.taskpro-panel, .taskpro-color-popover, .taskpro-tag-manager) .taskpro-swatch--custom {
+  display: inline-block;
+  background: conic-gradient(#e5484d, #e8b02d, #3aa675, #1e8a9c, #2f6fbd, #7048b6, #c2407f, #e5484d);
+}
+:is(.taskpro-panel, .taskpro-color-popover, .taskpro-tag-manager) .taskpro-swatch--custom.is-selected {
+  background: var(--taskpro-swatch);
+}
+:is(.taskpro-panel, .taskpro-color-popover, .taskpro-tag-manager) .taskpro-swatch--custom input[type="color"] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.taskpro-color-popover {
+  position: fixed;
+  top: var(--taskpro-popover-top, 0);
+  left: var(--taskpro-popover-left, 0);
+  /* Menus sit above modals in Obsidian's layer scale, and this is a menu. */
+  z-index: var(--layer-menu, 65);
+  max-width: 260px;
+  padding: 10px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  background: var(--background-primary);
+  box-shadow: var(--shadow-s);
+}
+
+/* ── Tag manager ─────────────────────────────────────────────────────────── */
+.taskpro-tag-manager {
+  container-type: inline-size;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-block: 8px 16px;
+}
+
+.taskpro-tag-manager .taskpro-tag-manager__list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.taskpro-tag-manager .taskpro-tag-manager__row,
+.taskpro-tag-manager .taskpro-tag-manager__add {
+  display: grid;
+  grid-template-columns: 22px minmax(120px, 1fr) auto auto 5ch 28px;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: var(--radius-m);
+}
+.taskpro-tag-manager .taskpro-tag-manager__add {
+  grid-template-columns: 22px minmax(120px, 1fr) auto;
+  border: 1px dashed var(--background-modifier-border);
+}
+.taskpro-tag-manager .taskpro-tag-manager__row:hover {
+  background: var(--background-modifier-hover);
+}
+
+.taskpro-tag-manager .taskpro-tag-manager__name,
+.taskpro-tag-manager input.taskpro-tag-manager__name {
+  width: 100%;
+  height: 28px;
+  padding: 0 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-normal);
+  font-size: var(--font-ui-medium);
+}
+.taskpro-tag-manager .taskpro-tag-manager__add input.taskpro-tag-manager__name,
+.taskpro-tag-manager input.taskpro-tag-manager__name:hover,
+.taskpro-tag-manager input.taskpro-tag-manager__name:focus {
+  border-color: var(--background-modifier-border);
+  background: var(--background-primary);
+}
+
+.taskpro-tag-manager button.taskpro-tag-manager__key {
+  height: auto;
+  padding: 2px 4px;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  color: var(--text-faint);
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-smaller);
+  cursor: pointer;
+}
+.taskpro-tag-manager button.taskpro-tag-manager__key:hover {
+  background: none;
+  color: var(--text-muted);
+}
+
+.taskpro-tag-manager .taskpro-tag-manager__usage {
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+  white-space: nowrap;
+}
+
+.taskpro-tag-manager .taskpro-tag-manager__empty {
+  padding: 8px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+@container (max-width: 520px) {
+  .taskpro-tag-manager .taskpro-tag-manager__row {
+    grid-template-columns: 22px minmax(100px, 1fr) auto 28px;
+  }
+  .taskpro-tag-manager .taskpro-tag-manager__key,
+.taskpro-tag-manager .taskpro-tag-manager__usage {
+    display: none;
+  }
+}
+
+/* ==========================================================================
+   Task board
+
+   A workspace tab listing every task. Colours come from the same theme
+   variables as the chips; structure follows Obsidian's own surfaces
+   (background-primary for the page, background-secondary for board columns).
+   ========================================================================== */
+.workspace-leaf-content .view-content.taskpro-board-view {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+}
+
+.taskpro-board {
+  --taskpro-board-surface: var(--background-primary);
+  --taskpro-board-gutter: clamp(12px, 3vw, 28px);
+  --taskpro-board-row-line: color-mix(in srgb, var(--background-modifier-border) 72%, transparent);
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+}
+
+.taskpro-board .svg-icon {
+  width: 14px;
+  height: 14px;
+}
+
+/* ── Holding our own against a theme's generic controls ─────────────────────
+   Obsidian loads a theme's stylesheet after every plugin's, so a theme rule
+   wins any specificity tie. Every rule in this block is therefore scoped
+   under .taskpro-board, one class above the theme's bare `button.x` and
+   `input[type="text"]` rules, and the few theme rules that go higher are met
+   here explicitly. */
+
+/* A theme's text-button sizing (min-height, weight) reaches every <button>,
+   and inside a modal (the floating board) Bookcloth adds Notion's 32px
+   control height to all of them. The board's controls size themselves. */
+.taskpro-board button:not(.mod-cta) {
+  min-height: 0;
+  font-weight: inherit;
+}
+
+/* And inside a modal a theme typically rings every button that has no icon
+   ("the ring" in Bookcloth, at (0,4,2)). This one is (0,5,2). */
+.modal .taskpro-board button:not(.mod-cta):not(.mod-warning):not(.clickable-icon):not(:has(svg)),
+.modal .taskpro-board button:not(.mod-cta):not(.mod-warning):not(.clickable-icon):not(:has(svg)):hover {
+  box-shadow: none;
+}
+
+/* Chips that are buttons (filter pills) keep chip geometry and weight. */
+.taskpro-board button.taskpro-chip {
+  padding-block: var(--taskpro-chip-padding-block);
+  padding-inline: var(--taskpro-chip-padding-inline);
+  font-size: var(--taskpro-badge-font-size);
+  font-weight: var(--font-semibold);
+}
+
+/* ── Header ──────────────────────────────────────────────────────────────── */
+.taskpro-board .taskpro-board__header {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 22px var(--taskpro-board-gutter) 10px;
+}
+
+.taskpro-board .taskpro-board__heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.taskpro-board .taskpro-board__heading-icon {
+  display: inline-flex;
+  color: var(--text-muted);
+}
+.taskpro-board .taskpro-board__heading-icon .svg-icon {
+  width: 22px;
+  height: 22px;
+}
+
+.taskpro-board .taskpro-board__title-text {
+  margin: 0;
+  font-size: 1.6em;
+  font-weight: var(--font-bold);
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+}
+
+.taskpro-board .taskpro-board__summary {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.taskpro-board .taskpro-board__heading-actions {
+  display: flex;
+  gap: 2px;
+  margin-inline-start: auto;
+}
+
+.taskpro-board .taskpro-board__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Segmented control: scope and layout. */
+.taskpro-board .taskpro-segmented {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--radius-m);
+  background: var(--background-modifier-hover);
+}
+
+.taskpro-board button.taskpro-segmented__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  max-width: 22ch;
+  padding: 0 10px;
+  border: 0;
+  border-radius: calc(var(--radius-m) - 2px);
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  cursor: pointer;
+}
+.taskpro-board button.taskpro-segmented__item:hover {
+  background: color-mix(in srgb, var(--background-primary) 50%, transparent);
+  color: var(--text-normal);
+}
+.taskpro-board button.taskpro-segmented__item.is-active {
+  /* An image, so a theme's button:hover colour cannot replace it. */
+  background-image: linear-gradient(var(--background-primary), var(--background-primary));
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--text-normal) 16%, transparent);
+  color: var(--text-normal);
+  font-weight: var(--font-medium);
+}
+.taskpro-board button.taskpro-segmented__item.is-disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.taskpro-board .taskpro-segmented__icon {
+  display: inline-flex;
+}
+.taskpro-board .taskpro-segmented__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.taskpro-board .taskpro-board__search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1 1 180px;
+  max-width: 320px;
+}
+.taskpro-board .taskpro-board__search input {
+  /* Border, fill and focus ring are left to Obsidian and the theme, so the
+     field looks like every other search field in the vault. */
+  width: 100%;
+  height: 30px;
+  padding-inline: 30px 10px;
+  font-size: var(--font-ui-small);
+}
+.taskpro-board .taskpro-board__search-icon {
+  position: absolute;
+  inset-inline-start: 10px;
+  display: inline-flex;
+  color: var(--text-faint);
+  pointer-events: none;
+}
+
+.taskpro-board .taskpro-board__controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin-inline-start: auto;
+}
+
+.taskpro-board button.taskpro-board__control {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--radius-s);
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  cursor: pointer;
+}
+.taskpro-board button.taskpro-board__control:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+.taskpro-board .taskpro-board__control-icon {
+  display: inline-flex;
+}
+.taskpro-board .taskpro-board__control-value {
+  color: var(--text-normal);
+  font-weight: var(--font-medium);
+}
+.taskpro-board button.taskpro-board__control.is-active,
+.taskpro-board button.taskpro-board__control.is-active .taskpro-board__control-value {
+  color: var(--text-accent);
+}
+
+.taskpro-board .taskpro-board__filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.taskpro-board .taskpro-board__filters.is-empty {
+  display: none;
+}
+.taskpro-board .taskpro-board__filter-x {
+  display: inline-flex;
+  margin-inline-start: 2px;
+  opacity: 0.6;
+}
+.taskpro-board .taskpro-board__filter-x .svg-icon {
+  width: 11px;
+  height: 11px;
+}
+.taskpro-board button.taskpro-board__clear {
+  height: auto;
+  padding: 2px 6px;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+  cursor: pointer;
+}
+.taskpro-board button.taskpro-board__clear:hover {
+  background: none;
+  color: var(--text-muted);
+}
+
+/* ── Quick add ───────────────────────────────────────────────────────────── */
+.taskpro-board .taskpro-board__add {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 var(--taskpro-board-gutter) 4px;
+  padding: 4px 6px 4px 10px;
+  border: 1px dashed var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  color: var(--text-faint);
+}
+.taskpro-board .taskpro-board__add:focus-within {
+  border-style: solid;
+  border-color: var(--interactive-accent);
+}
+.taskpro-board .taskpro-board__add-icon {
+  display: inline-flex;
+}
+.taskpro-board input.taskpro-board__add-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-normal);
+  font-size: var(--font-ui-medium);
+}
+.taskpro-board input.taskpro-board__add-input:focus {
+  box-shadow: none;
+  outline: none;
+}
+.taskpro-board button.taskpro-board__inbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 40%;
+  height: 26px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--radius-s);
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  cursor: pointer;
+}
+.taskpro-board button.taskpro-board__inbox:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+.taskpro-board .taskpro-board__inbox-icon {
+  display: inline-flex;
+}
+.taskpro-board .taskpro-board__inbox-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Body ────────────────────────────────────────────────────────────────── */
+.taskpro-board .taskpro-board__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 6px var(--taskpro-board-gutter) 40px;
+}
+
+.taskpro-board .taskpro-board__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 64px 16px;
+  color: var(--text-faint);
+  font-size: var(--font-ui-medium);
+  text-align: center;
+}
+.taskpro-board .taskpro-board__empty-icon .svg-icon {
+  width: 30px;
+  height: 30px;
+}
+
+.taskpro-board button.taskpro-board__icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+}
+
+/* ── Table ───────────────────────────────────────────────────────────────── */
+.taskpro-board .taskpro-table {
+  width: 100%;
+  min-width: 880px;
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: fixed;
+}
+
+.taskpro-board .taskpro-table__col--check { width: 34px; }
+.taskpro-board .taskpro-table__col--status { width: 136px; }
+.taskpro-board .taskpro-table__col--tags { width: 180px; }
+.taskpro-board .taskpro-table__col--priority { width: 112px; }
+.taskpro-board .taskpro-table__col--deadline { width: 196px; }
+.taskpro-board .taskpro-table__col--progress { width: 112px; }
+.taskpro-board .taskpro-table__col--note { width: 150px; }
+.taskpro-board .taskpro-table__col--more { width: 36px; }
+
+.taskpro-board .taskpro-table th {
+  position: sticky;
+  top: -6px;
+  z-index: 1;
+  padding: 8px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  background: var(--taskpro-board-surface);
+  color: var(--text-muted);
+  font-weight: var(--font-medium);
+  text-align: start;
+  white-space: nowrap;
+}
+.taskpro-board .taskpro-table__th {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.taskpro-board .taskpro-table__th-icon {
+  display: inline-flex;
+  color: var(--text-faint);
+}
+.taskpro-board .taskpro-table__th-icon .svg-icon {
+  width: 13px;
+  height: 13px;
+}
+.taskpro-board .taskpro-table th.is-sortable {
+  cursor: pointer;
+  user-select: none;
+}
+.taskpro-board .taskpro-table th.is-sortable:hover {
+  background: var(--background-primary-alt);
+  color: var(--text-normal);
+}
+.taskpro-board .taskpro-table th.is-sorted {
+  color: var(--text-normal);
+}
+.taskpro-board .taskpro-table__sort {
+  display: inline-flex;
+  color: var(--text-accent);
+}
+.taskpro-board .taskpro-table__sort .svg-icon {
+  width: 12px;
+  height: 12px;
+}
+
+.taskpro-board .taskpro-table td {
+  overflow: hidden;
+  padding: 7px 8px;
+  border-bottom: 1px solid var(--taskpro-board-row-line);
+  vertical-align: middle;
+}
+
+.taskpro-board .taskpro-table__row:hover td {
+  background: var(--background-modifier-hover);
+}
+
+.taskpro-board .taskpro-table td.is-editable {
+  cursor: pointer;
+}
+.taskpro-board .taskpro-table__row td.is-editable:hover {
+  box-shadow: inset 0 0 0 1px var(--background-modifier-border);
+}
+
+.taskpro-board .taskpro-table td.taskpro-table__more {
+  text-align: end;
+}
+.taskpro-board .taskpro-table__more .taskpro-board__icon-btn,
+.taskpro-board .taskpro-board__open {
+  opacity: 0;
+}
+.taskpro-board .taskpro-table__row:hover .taskpro-table__more .taskpro-board__icon-btn,
+.taskpro-board .taskpro-table__row:hover .taskpro-board__open,
+.taskpro-board .taskpro-table__row:focus-within .taskpro-board__open,
+.taskpro-board .taskpro-card:hover .taskpro-board__open,
+.taskpro-board .taskpro-card:hover .taskpro-card__more,
+.taskpro-board .taskpro-board__icon-btn:focus-visible {
+  opacity: 1;
+}
+
+/* Group header rows */
+.taskpro-board .taskpro-table__group td {
+  padding: 18px 2px 6px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  background: transparent;
+}
+.taskpro-board .taskpro-table__group:first-child td {
+  padding-top: 10px;
+}
+.taskpro-board button.taskpro-table__group-toggle {
+  max-width: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: auto;
+  padding: 2px 4px;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-semibold);
+  cursor: pointer;
+}
+.taskpro-board button.taskpro-table__group-toggle:hover {
+  background: none;
+  color: var(--text-normal);
+}
+.taskpro-board .taskpro-table__caret {
+  display: inline-flex;
+  color: var(--text-faint);
+  transition: transform 120ms ease;
+}
+.taskpro-board .taskpro-table__group.is-collapsed .taskpro-table__caret {
+  transform: rotate(-90deg);
+}
+.taskpro-board[dir="rtl"] .taskpro-table__group.is-collapsed .taskpro-table__caret {
+  transform: rotate(90deg);
+}
+.taskpro-board .taskpro-table__group-count {
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--font-normal);
+}
+.taskpro-board .taskpro-board__group-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-normal);
+}
+.taskpro-board .taskpro-board__group-note-name,
+.taskpro-board .taskpro-board__group-folder {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.taskpro-board .taskpro-board__group-note-name {
+  flex: 0 1 auto;
+}
+.taskpro-board .taskpro-board__group-folder {
+  flex: 0 3 auto;
+}
+.taskpro-board .taskpro-board__group-note-icon {
+  display: inline-flex;
+  color: var(--text-faint);
+}
+.taskpro-board .taskpro-board__group-folder {
+  color: var(--text-faint);
+  font-weight: var(--font-normal);
+}
+
+/* A chip in a cell or a card never runs past its box; its label gives way
+   first. Block, not flex, because text-overflow only applies to a block's
+   own line, and a line height with room for Persian descenders. */
+.taskpro-board .taskpro-table td .taskpro-chip,
+.taskpro-board .taskpro-card .taskpro-chip,
+.taskpro-board .taskpro-kanban__header .taskpro-chip {
+  max-width: 100%;
+  min-width: 0;
+}
+.taskpro-board .taskpro-table td .taskpro-chip__label,
+.taskpro-board .taskpro-card .taskpro-chip__label,
+.taskpro-board .taskpro-kanban__header .taskpro-chip__label {
+  display: block;
+  height: auto;
+  min-width: 0;
+  overflow: hidden;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.taskpro-board .taskpro-table__more-row td {
+  padding: 8px;
+  border-bottom: 0;
+}
+.taskpro-board .taskpro-table__more-row button,
+.taskpro-board button.taskpro-kanban__more {
+  height: auto;
+  padding: 4px 8px;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  color: var(--text-accent);
+  font-size: var(--font-ui-small);
+  cursor: pointer;
+}
+
+/* ── Cells ───────────────────────────────────────────────────────────────── */
+.taskpro-board button.taskpro-board__check {
+  /* Icon-free on purpose. A theme's icon-button rules key on an <svg> inside
+     a <button>: Bookcloth turns any such button into a 28px square and forces
+     its icon to 18px with !important, which is what made a done task's
+     circle a big green tile. The tick and the cross are masks on ::after,
+     and the fills are background images, which a theme's button:hover
+     (background-color only) paints underneath rather than over. */
+  position: relative;
+  display: inline-block;
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  width: 16px;
+  min-width: 16px;
+  height: 16px;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 1.5px solid var(--text-faint);
+  border-radius: 50%;
+  background-color: transparent;
+  box-shadow: none;
+  color: var(--text-on-accent, #fff);
+  cursor: pointer;
+}
+.taskpro-board button.taskpro-board__check:hover {
+  border-color: var(--text-muted);
+}
+/* Only the two states with a glyph draw one: an unset mask is no mask at
+   all, which would paint the whole box. */
+.taskpro-board button.taskpro-board__check[data-status="[x]"]::after,
+.taskpro-board button.taskpro-board__check[data-status="[!]"]::after {
+  content: "";
+  position: absolute;
+  inset: 1.5px;
+  background-color: currentColor;
+  -webkit-mask: var(--taskpro-board-check-glyph) center / contain no-repeat;
+  mask: var(--taskpro-board-check-glyph) center / contain no-repeat;
+}
+.taskpro-board button.taskpro-board__check[data-status="[x]"] {
+  --taskpro-board-check-glyph: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>');
+  border-color: var(--taskpro-accent-done);
+  background-image: linear-gradient(var(--taskpro-accent-done), var(--taskpro-accent-done));
+}
+.taskpro-board button.taskpro-board__check[data-status="[/]"] {
+  border-color: var(--taskpro-accent-progress);
+  background-image: linear-gradient(to right, var(--taskpro-accent-progress) 50%, transparent 50%);
+}
+.taskpro-board[dir="rtl"] button.taskpro-board__check[data-status="[/]"] {
+  background-image: linear-gradient(to left, var(--taskpro-accent-progress) 50%, transparent 50%);
+}
+.taskpro-board button.taskpro-board__check[data-status="[!]"] {
+  --taskpro-board-check-glyph: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="3.6" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>');
+  border-color: var(--taskpro-accent-notdone);
+  color: var(--taskpro-accent-notdone);
+}
+
+.taskpro-board .taskpro-board__title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.taskpro-board .taskpro-table.is-document-order .taskpro-board__title-wrap.is-subtask {
+  padding-inline-start: calc(var(--taskpro-depth, 0) * 18px);
+}
+.taskpro-board .taskpro-board__title {
+  min-width: 0;
+  margin: -2px -4px;
+  padding: 2px 4px;
+  overflow: hidden;
+  border-radius: 4px;
+  color: var(--text-normal);
+  font-size: var(--font-ui-medium);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: text;
+  unicode-bidi: plaintext;
+}
+.taskpro-board .taskpro-board__title:hover {
+  background: var(--background-modifier-hover);
+}
+.taskpro-board .taskpro-board__title:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+}
+.taskpro-board [data-status="[x]"] .taskpro-board__title {
+  color: var(--text-faint);
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in srgb, var(--text-faint) 70%, transparent);
+}
+.taskpro-board input.taskpro-board__title-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 26px;
+  padding: 2px 6px;
+  font-size: var(--font-ui-medium);
+}
+.taskpro-board .taskpro-board__repeat {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--taskpro-accent-repeat);
+}
+.taskpro-board .taskpro-board__repeat .svg-icon {
+  width: 12px;
+  height: 12px;
+}
+.taskpro-board .taskpro-board__open {
+  flex: 0 0 auto;
+  margin-inline-start: auto;
+}
+
+.taskpro-board .taskpro-board__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-height: 3.6em;
+  overflow: hidden;
+}
+.taskpro-board .taskpro-board__tags .taskpro-chip,
+.taskpro-board .taskpro-card__props .taskpro-chip {
+  min-height: 20px;
+}
+
+.taskpro-board .taskpro-board__placeholder {
+  display: inline-flex;
+  color: var(--text-faint);
+  opacity: 0;
+}
+.taskpro-board .taskpro-table__row:hover .taskpro-board__placeholder {
+  opacity: 1;
+}
+
+.taskpro-board .taskpro-board__deadline {
+  /* Wraps rather than clips: with a larger theme font the date used to be
+     cut off at the cell edge ("405/07/08"). */
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 6px;
+  min-width: 0;
+}
+.taskpro-board .taskpro-board__date {
+  color: var(--text-faint);
+  white-space: nowrap;
+  font-size: var(--font-ui-smaller);
+  font-variant-numeric: tabular-nums;
+}
+
+.taskpro-board button.taskpro-board__progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: auto;
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  cursor: pointer;
+}
+.taskpro-board button.taskpro-board__progress:hover {
+  background: none;
+}
+.taskpro-board .taskpro-board__progress-bar {
+  flex: 1 1 auto;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--taskpro-accent-progressbar) 16%, var(--background-modifier-border));
+}
+.taskpro-board .taskpro-board__progress-fill {
+  display: block;
+  width: var(--taskpro-progress, 0%);
+  height: 100%;
+  border-radius: inherit;
+  background: var(--taskpro-accent-progressbar);
+}
+.taskpro-board .taskpro-board__progress-text {
+  min-width: 3.5ch;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+}
+
+.taskpro-board button.taskpro-board__note {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  height: auto;
+  margin-inline-start: -6px;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  box-shadow: none;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  cursor: pointer;
+}
+.taskpro-board button.taskpro-board__note:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+.taskpro-board .taskpro-board__note-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--text-faint);
+}
+.taskpro-board .taskpro-board__note-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Kanban ──────────────────────────────────────────────────────────────── */
+.taskpro-board .taskpro-kanban {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-height: 100%;
+  padding-block: 4px 12px;
+}
+
+.taskpro-board .taskpro-kanban__column {
+  --taskpro-column-accent: var(--text-faint);
+  display: flex;
+  flex: 0 0 272px;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 100%;
+  padding: 8px;
+  border-radius: var(--radius-l);
+  background: color-mix(in srgb, var(--taskpro-column-accent) 6%, var(--background-secondary));
+}
+.taskpro-board .taskpro-kanban__column.is-drop-target {
+  outline: 2px dashed color-mix(in srgb, var(--taskpro-column-accent) 60%, var(--interactive-accent));
+  outline-offset: -2px;
+}
+
+.taskpro-board .taskpro-kanban__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 2px 4px;
+}
+.taskpro-board .taskpro-kanban__header .taskpro-board__group-note {
+  flex: 0 1 auto;
+}
+.taskpro-board .taskpro-kanban__count {
+  flex: 0 0 auto;
+}
+/* A column is tinted and, in dark themes, lighter than the page; the header
+   chip is laid over the page colour instead, so it keeps the contrast it has
+   everywhere else rather than losing it to the tint behind it. */
+.taskpro-board .taskpro-kanban__header .taskpro-chip {
+  background: color-mix(in srgb, var(--taskpro-chip-accent) var(--taskpro-chip-fill), var(--background-primary));
+}
+
+.taskpro-board .taskpro-kanban__count {
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.taskpro-board .taskpro-kanban__cards {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 6px;
+}
+
+.taskpro-board .taskpro-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 9px 10px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  background: var(--background-primary);
+  box-shadow: 0 1px 1px color-mix(in srgb, var(--text-normal) 5%, transparent);
+  cursor: grab;
+}
+.taskpro-board .taskpro-card:hover {
+  border-color: var(--background-modifier-border-hover, var(--background-modifier-border));
+  box-shadow: var(--shadow-s);
+}
+.taskpro-board .taskpro-card.is-dragging {
+  opacity: 0.45;
+  cursor: grabbing;
+}
+.taskpro-board .taskpro-card__top {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.taskpro-board .taskpro-card__top .taskpro-board__check {
+  margin-top: 2px;
+}
+.taskpro-board .taskpro-card__top .taskpro-board__title-wrap {
+  flex: 1 1 auto;
+  align-items: flex-start;
+}
+.taskpro-board .taskpro-card .taskpro-board__title {
+  display: -webkit-box;
+  overflow: hidden;
+  line-height: 1.35;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+.taskpro-board .taskpro-card .taskpro-board__open {
+  display: none;
+}
+.taskpro-board .taskpro-card__more {
+  opacity: 0;
+}
+.taskpro-board .taskpro-card__props {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+.taskpro-board .taskpro-card__props > .is-editable {
+  display: inline-flex;
+  cursor: pointer;
+}
+.taskpro-board .taskpro-card__props .taskpro-board__date {
+  display: none;
+}
+.taskpro-board .taskpro-card__props .taskpro-board__progress {
+  flex: 1 1 100%;
+}
+.taskpro-board .taskpro-card__foot {
+  display: flex;
+  min-width: 0;
+  font-size: var(--font-ui-smaller);
+}
+
+.taskpro-board button.taskpro-kanban__add {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  height: 30px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--radius-s);
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-faint);
+  font-size: var(--font-ui-small);
+  cursor: pointer;
+}
+.taskpro-board button.taskpro-kanban__add:hover {
+  background: color-mix(in srgb, var(--text-normal) 6%, transparent);
+  color: var(--text-muted);
+}
+.taskpro-board .taskpro-kanban__add-icon {
+  display: inline-flex;
+}
+.taskpro-board input.taskpro-kanban__add-input {
+  width: 100%;
+  height: 32px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .taskpro-board .taskpro-table__caret { transition: none; }
+  button.taskpro-swatch:hover { transform: none; }
+}
+
+/* ==========================================================================
+   Floating board
+
+   The board over the whole app, from "Toggle Floating Task Board". The plugin
+   sizes the window and leaves the rest of the look to Obsidian and the theme:
+   what is behind it is dimmed by Obsidian's own .modal-bg, and a theme that
+   wants it blurred keys off the two classes the plugin adds while it is open,
+   `body.taskpro-board-is-floating` and `.modal-container.taskpro-board-float`.
+   ========================================================================== */
+.modal-container.taskpro-board-float .modal.taskpro-board-modal {
+  --taskpro-float-inset: clamp(12px, 4.5vmin, 56px);
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  width: min(calc(100vw - 2 * var(--taskpro-float-inset)), var(--taskpro-float-max-width, 1560px));
+  height: calc(100vh - 2 * var(--taskpro-float-inset));
+  max-width: none;
+  max-height: none;
+  padding: 0;
+  overflow: hidden;
+}
+
+/* The board draws its own close button in its header, where it can sit in
+   the reading direction beside the other actions. Obsidian 1.13 calls its
+   own .modal-header-button; older versions .modal-close-button. */
+.modal-container.taskpro-board-float .modal.taskpro-board-modal > .modal-header-button,
+.modal-container.taskpro-board-float .modal.taskpro-board-modal > .modal-close-button,
+.modal-container.taskpro-board-float .modal.taskpro-board-modal > .modal-header,
+.modal-container.taskpro-board-float .modal.taskpro-board-modal > .modal-title {
+  display: none;
+}
+
+.modal-container.taskpro-board-float .modal.taskpro-board-modal > .modal-content {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+/* Sticky headers and opaque chips paint the surface they sit on; in the
+   float that surface is the modal's, not the page's. */
+.modal-container.taskpro-board-float .taskpro-board {
+  --taskpro-board-surface: var(--modal-background, var(--background-primary));
+}
+
+.is-phone .modal-container.taskpro-board-float .modal.taskpro-board-modal {
+  --taskpro-float-inset: 0px;
+  width: 100vw;
+  height: 100%;
+  border-radius: 0;
+}

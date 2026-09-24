@@ -3,6 +3,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { TaskCreationIndex } from './task-registry';
+import type { TaskTag } from './tags';
 
 export type TaskStatus = '[ ]' | '[/]' | '[x]' | '[!]';
 export type Language = 'en' | 'fa';
@@ -73,6 +74,7 @@ export const CHIP_ICON_NAMES = {
   timerPaused: 'pause',
   timerDone: 'timer-off',
   repeat: 'repeat',
+  tag: 'tag',
 } as const;
 
 export const PRIORITY_LABELS: Record<Language, Record<TaskPriority, string>> = {
@@ -299,6 +301,48 @@ export const REPEAT_PRESETS: ReadonlyArray<TaskRepeat> = [
   { every: 1, unit: 'month' },
 ] as const;
 
+// ── Task board ─────────────────────────────────────────────────────────────
+// The all-tasks view. Its preferences are remembered between sessions, so the
+// board reopens exactly as it was left.
+export type BoardScope = 'target' | 'vault';
+export type BoardLayout = 'table' | 'board';
+export type BoardGroupBy = 'none' | 'status' | 'tag' | 'priority' | 'deadline' | 'note';
+export type BoardSortKey = 'document' | 'title' | 'status' | 'priority' | 'deadline' | 'progress' | 'note';
+export type BoardSortDir = 'asc' | 'desc';
+/** A priority filter entry: a level, or tasks that have none. */
+export type BoardPriorityFilter = TaskPriority | 'none';
+
+export interface BoardPreferences {
+  scope: BoardScope;
+  layout: BoardLayout;
+  groupBy: BoardGroupBy;
+  sortKey: BoardSortKey;
+  sortDir: BoardSortDir;
+  /** Statuses shown. Empty means every status. */
+  statuses: TaskStatus[];
+  /** Priorities shown. Empty means every priority. */
+  priorities: BoardPriorityFilter[];
+  /** Tag keys shown (a task matches if it has any). `''` is "no tag". Empty means all. */
+  tags: string[];
+  /** Group keys the user folded away, per grouping. */
+  collapsedGroups: string[];
+  /** Note that the quick-add row writes new tasks into. */
+  inboxPath: string;
+}
+
+export const DEFAULT_BOARD_PREFERENCES: BoardPreferences = {
+  scope: 'target',
+  layout: 'table',
+  groupBy: 'status',
+  sortKey: 'document',
+  sortDir: 'asc',
+  statuses: [],
+  priorities: [],
+  tags: [],
+  collapsedGroups: [],
+  inboxPath: '',
+};
+
 export interface TaskMapping {
   linked: boolean; // Whether sync is enabled for this task
   importedFilePath: string;
@@ -346,6 +390,11 @@ export interface TaskProSettings {
   taskTimers: TaskTimerEntry[]; // Focus timers, stored per task like progress
   showTimerBadges: boolean; // Toggle focus-timer chip rendering
   showRepeatBadges: boolean; // Toggle recurrence chip rendering
+  showTagBadges: boolean; // Toggle tag chip rendering
+  /** User-defined tags: key written into notes, name and colour kept here. */
+  tags: TaskTag[];
+  /** How the all-tasks board was last left. */
+  board: BoardPreferences;
   /** Minutes offered when a focus timer is first added to a task. */
   defaultTimerMinutes: number;
   /** Post a desktop (Windows / macOS / Linux) notification when a timer ends. */
@@ -380,6 +429,9 @@ export const DEFAULT_SETTINGS: TaskProSettings = {
   taskTimers: [],
   showTimerBadges: true,
   showRepeatBadges: true,
+  showTagBadges: true,
+  tags: [],
+  board: DEFAULT_BOARD_PREFERENCES,
   defaultTimerMinutes: DEFAULT_TIMER_MINUTES,
   timerSystemNotification: true,
   timerSound: true,

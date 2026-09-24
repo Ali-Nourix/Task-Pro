@@ -18,15 +18,17 @@ import {
   TaskStatus,
 } from './types';
 import { ReminderSoundPlayer } from './reminders/reminder-sound';
+import { renderTagManager } from './ui/tag-manager';
 import { NoteSelectionModal } from './note-selector-modal';
 
 /** Tabs shown at the top of the settings screen. */
-type SettingsTabId = 'general' | 'appearance' | 'capabilities' | 'reminders' | 'tasks';
+type SettingsTabId = 'general' | 'appearance' | 'capabilities' | 'tags' | 'reminders' | 'tasks';
 
 const SETTINGS_TABS: Array<{ id: SettingsTabId; label: string; icon: string }> = [
   { id: 'general', label: 'General', icon: 'settings' },
   { id: 'appearance', label: 'Badges', icon: 'palette' },
   { id: 'capabilities', label: 'Capabilities', icon: 'sparkles' },
+  { id: 'tags', label: 'Tags', icon: 'tags' },
   { id: 'reminders', label: 'Reminders', icon: 'bell-ring' },
   { id: 'tasks', label: 'Internal Tasks', icon: 'list-checks' },
 ];
@@ -151,6 +153,9 @@ export class TaskProSettingTab extends PluginSettingTab {
       case 'capabilities':
         this.renderCapabilitiesTab(containerEl);
         return;
+      case 'tags':
+        this.renderTagsTab(containerEl);
+        return;
       case 'reminders':
         this.renderReminderSettings(containerEl);
         return;
@@ -204,6 +209,7 @@ export class TaskProSettingTab extends PluginSettingTab {
         .onChange(async (value) => {
           this.plugin.settings.targetFolder = value.trim();
           await this.plugin.saveSettings();
+          this.plugin.refreshBoards();
           new Notice(value.trim() ? `Plugin restricted to: ${value.trim()}` : 'Plugin active in entire vault');
         }));
 
@@ -241,6 +247,7 @@ export class TaskProSettingTab extends PluginSettingTab {
           this.plugin.settings.badgeLanguage = value as 'en' | 'fa';
           await this.plugin.saveSettings();
           this.plugin.refreshDecorations();
+          this.plugin.refreshBoards();
         }));
 
     // Calendar System
@@ -434,6 +441,48 @@ export class TaskProSettingTab extends PluginSettingTab {
           await navigator.clipboard.writeText('@repeat(1w)');
           new Notice('Copied @repeat(1w)');
         }));
+  }
+
+  /**
+   * The tag list. A note stores only a tag's key, so everything edited here
+   * (name, colour) shows up on every task at once without touching a note.
+   */
+  private renderTagsTab(containerEl: HTMLElement): void {
+    this.renderSectionHeader(
+      containerEl,
+      'tags',
+      'Tags',
+      'Your own labels for tasks, each with a name and a colour. A task stores only the tag\u2019s key, written as @tag(key), so renaming or recolouring a tag here updates every task that carries it. Add a tag to a task from its status chip, with "Set Tags on Current Task", or from the task board.'
+    );
+
+    new Setting(containerEl)
+      .setName('Show Tag Chips')
+      .setDesc('Display a coloured chip for each tag and hide the raw @tag marker')
+      .addToggle(toggle => toggle
+        .setValue(this.plugin.settings.showTagBadges)
+        .onChange(async (value) => {
+          this.plugin.settings.showTagBadges = value;
+          await this.plugin.saveSettings();
+          this.plugin.refreshDecorations();
+          this.plugin.refreshReadingViews();
+        }));
+
+    renderTagManager(containerEl.createDiv(), this.plugin.tagManagerHost());
+
+    this.renderSectionHeader(
+      containerEl,
+      'list-checks',
+      'Task Board',
+      'Every task in one place, as a table or a board, grouped and filtered by status, tag, priority, deadline or note. Choose the whole vault or only the target folder from the board itself.'
+    );
+
+    new Setting(containerEl)
+      .setName('Open the Task Board')
+      .setDesc('Also available from the ribbon and as "Open Task Board" in the Command Palette.')
+      .addButton(button => button
+        .setButtonText('Open')
+        .setCta()
+        .onClick(() => void this.plugin.activateBoard()));
   }
 
   private renderInternalTasksTab(containerEl: HTMLElement): void {

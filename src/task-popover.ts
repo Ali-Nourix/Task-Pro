@@ -23,10 +23,11 @@ import {
 } from './types';
 import { getRepeatLabels, getTimerLabels } from './timer-localization';
 import { showTimerEditor } from './timer-popover';
-import { jalaliToGregorian, gregorianToJalali } from './date-utils';
-import { pickDateWithCalendar, isCalendarPluginAvailable } from './calendar-integration';
 import { addPanelButtonRow, addPanelField, openTaskProPanel } from './ui/panel';
 import { styleTaskProMenu } from './ui/menu-styling';
+import { pickDeadline } from './ui/deadline-editor';
+import { ResolvedTag } from './tags';
+import { getTagLabels } from './tag-localization';
 
 export interface PopoverOptions {
   app: App;
@@ -37,7 +38,10 @@ export interface PopoverOptions {
   status: TaskStatus;
   language?: Language;
   blockId?: string;
+  /** Native `#tags` in the task text, shown as an info row. */
   tags?: string[];
+  /** TaskPro tags on the task, resolved against the tag list. */
+  customTags?: ResolvedTag[];
   progress?: TaskProgress;
   priority?: TaskPriority;
   timer?: TaskTimer;
@@ -53,6 +57,8 @@ export interface PopoverOptions {
   onTimerStart?: () => void;
   onTimerPause?: () => void;
   onRepeatChange?: (repeat: TaskRepeat | null) => void;
+  /** Opens the tag picker for this task. */
+  onEditTags?: () => void;
   calendarSystem?: 'gregorian' | 'jalali';
 }
 
@@ -68,7 +74,7 @@ export class TaskPopover {
   }
 
   private buildMenu() {
-    const { taskMapping, deadline, status, blockId, tags, progress, priority, timer, repeat, showSourceLink = false } = this.options;
+    const { taskMapping, deadline, status, blockId, tags, customTags, progress, priority, timer, repeat, showSourceLink = false } = this.options;
     const language = this.options.language || 'en';
     const labels = this.getLabels(language);
     this.infoMenuTitles = [];
@@ -224,6 +230,21 @@ export class TaskPopover {
       this.menu.addSeparator();
     }
 
+    // Tags section (only while the task has tags)
+    const tagLabels = getTagLabels(language);
+    if (customTags?.length && this.options.onEditTags) {
+      const tagsTitle = `${tagLabels.tags}: ${customTags.map((tag) => tag.name).join(language === 'fa' ? '، ' : ', ')}`;
+      this.infoMenuTitles.push(tagsTitle);
+      this.menu.addItem((item) => item.setTitle(tagsTitle).setIcon('tags').setDisabled(true));
+      this.menu.addItem((item) =>
+        item
+          .setTitle(tagLabels.editTags)
+          .setIcon('edit')
+          .onClick(() => this.options.onEditTags?.())
+      );
+      this.menu.addSeparator();
+    }
+
     // Deadline section
     if (deadline) {
       const remainingTime = this.calculateRemainingTime(deadline, status);
@@ -267,8 +288,9 @@ export class TaskPopover {
     const missingProgress = !progress?.enabled;
     const missingTimer = !timer?.enabled && !!this.options.onTimerChange;
     const missingRepeat = !repeat && !!this.options.onRepeatChange;
+    const missingTags = !customTags?.length && !!this.options.onEditTags;
 
-    if (missingProgress || missingTimer || missingRepeat) {
+    if (missingProgress || missingTimer || missingRepeat || missingTags) {
       this.infoMenuTitles.push(labels.addCapability);
       this.menu.addItem((item) => {
         item.setTitle(labels.addCapability).setIcon('plus-circle').setDisabled(true);
@@ -304,6 +326,15 @@ export class TaskPopover {
             .onClick(() => {
               this.showRepeatPicker(undefined);
             });
+        });
+      }
+
+      if (missingTags) {
+        this.menu.addItem((item) => {
+          item
+            .setTitle(`  ${tagLabels.addTags}`)
+            .setIcon('tag')
+            .onClick(() => this.options.onEditTags?.());
         });
       }
 
@@ -377,123 +408,17 @@ export class TaskPopover {
   }
 
   private async showDeadlinePicker() {
-    const labels = this.getLabels(this.options.language || 'en');
-    
-    // Try to use Calendar plugin first
-    if (isCalendarPluginAvailable(this.options.app)) {
-      try {
-        const selectedDate = await pickDateWithCalendar(this.options.app, {
-          calendarSystem: this.options.calendarSystem || 'gregorian',
-          initialDate: this.options.deadline,
-          title: this.options.deadline ? labels.changeDeadline : labels.setDeadline,
-          language: this.options.language,
-        });
-
-        // User cancelled
-        if (selectedDate === null) {
-          return;
-        }
-
-        // User selected a date
-        if (selectedDate && this.options.onDeadlineChange) {
-          await this.options.onDeadlineChange(selectedDate);
-          new Notice(`${labels.deadlineUpdated} ${selectedDate}`);
-        }
-        return;
-      } catch (error) {
-        console.warn('TaskPro: Calendar plugin failed, falling back to native input:', error);
-        // Fall through to native input
-      }
-    }
-
-    // Fallback to native input if Calendar plugin is not available
-    this.showNativeDeadlinePicker();
-  }
-
-  /**
-   * Native deadline picker (fallback when Calendar plugin is not available)
-   */
-  private showNativeDeadlinePicker() {
-    const labels = this.getLabels(this.options.language || 'en');
-    const { body, footer, close } = openTaskProPanel(labels.setDeadline);
-
-    let useJalali = this.options.calendarSystem === 'jalali';
-
-    if (this.options.calendarSystem === 'jalali') {
-      const calendarToggle = body.createDiv({ cls: 'taskpro-panel__toggle-row' });
-
-      const jalaliBtn = calendarToggle.createEl('button', { text: labels.jalali, cls: useJalali ? 'mod-cta' : '' });
-      const gregorianBtn = calendarToggle.createEl('button', { text: labels.gregorian, cls: !useJalali ? 'mod-cta' : '' });
-
-      jalaliBtn.addEventListener('click', () => {
-        useJalali = true;
-        jalaliBtn.addClass('mod-cta');
-        gregorianBtn.removeClass('mod-cta');
-        input.type = 'text';
-        input.placeholder = labels.jalaliPlaceholder;
-      });
-
-      gregorianBtn.addEventListener('click', () => {
-        useJalali = false;
-        gregorianBtn.addClass('mod-cta');
-        jalaliBtn.removeClass('mod-cta');
-        input.type = 'date';
-        input.placeholder = '';
-      });
-    }
-
-    const input = addPanelField(body, labels.setDeadline, useJalali ? 'text' : 'date');
-    input.classList.add('taskpro-panel__input--date');
-    if (useJalali) {
-      input.placeholder = labels.jalaliPlaceholder;
-    }
-
-    if (this.options.deadline) {
-      if (useJalali) {
-        const [y, m, d] = this.options.deadline.split('-').map(Number);
-        const [jy, jm, jd] = gregorianToJalali(y, m, d);
-        input.value = `${jy}/${String(jm).padStart(2, '0')}/${String(jd).padStart(2, '0')}`;
-      } else {
-        input.value = this.options.deadline;
-      }
-    }
-
-    addPanelButtonRow(footer, {
-      cancelLabel: labels.cancel,
-      saveLabel: labels.save,
-      clearLabel: this.options.deadline ? labels.clear : undefined,
-      onCancel: close,
-      onClear: this.options.deadline
-        ? async () => {
-            if (this.options.onDeadlineChange) {
-              await this.options.onDeadlineChange(null);
-              new Notice(labels.deadlineCleared);
-            }
-            close();
-          }
-        : undefined,
-      onSave: async () => {
-        if (input.value && this.options.onDeadlineChange) {
-          let gregorianDate = input.value;
-          if (useJalali) {
-            const jalaliMatch = input.value.match(/(\d{4})\/(\d{1,2})\/(\d{1,2})/);
-            if (jalaliMatch) {
-              const [, jy, jm, jd] = jalaliMatch.map(Number);
-              const [gy, gm, gd] = jalaliToGregorian(jy, jm, jd);
-              gregorianDate = `${gy}-${String(gm).padStart(2, '0')}-${String(gd).padStart(2, '0')}`;
-            } else {
-              new Notice(labels.invalidJalali);
-              return;
-            }
-          }
-          await this.options.onDeadlineChange(gregorianDate);
-          new Notice(`${labels.deadlineUpdated} ${gregorianDate}`);
-        }
-        close();
-      },
+    const language = this.options.language || 'en';
+    const labels = this.getLabels(language);
+    // Calendar plugin when installed, the TaskPro panel otherwise; shared with the board.
+    const choice = await pickDeadline(this.options.app, {
+      language,
+      calendarSystem: this.options.calendarSystem || 'gregorian',
+      deadline: this.options.deadline,
     });
-
-    input.focus();
+    if (choice === undefined || !this.options.onDeadlineChange) return;
+    await this.options.onDeadlineChange(choice);
+    new Notice(choice ? `${labels.deadlineUpdated} ${choice}` : labels.deadlineCleared);
   }
 
   /** Duration picker. A brand-new timer starts counting down straight away. */
@@ -668,7 +593,7 @@ export class TaskPopover {
         syncEnabled: '🔗 همگام‌سازی فعال شد',
         syncDisabled: '🔓 همگام‌سازی غیرفعال شد',
         linkedTo: 'متصل‌شده به:',
-        tags: 'برچسب‌ها:',
+        tags: 'تگ‌های یادداشت:',
         blockId: 'شناسه بلاک:',
         clear: 'حذف سررسید',
         jalali: 'جلالی',
@@ -713,7 +638,7 @@ export class TaskPopover {
       syncEnabled: '🔗 Sync enabled',
       syncDisabled: '🔓 Sync disabled',
       linkedTo: 'Linked to:',
-      tags: 'Tags:',
+      tags: 'Note tags:',
       blockId: 'Block ID:',
       clear: 'Clear Deadline',
       jalali: 'Jalali',

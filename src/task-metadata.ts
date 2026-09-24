@@ -55,6 +55,19 @@ const PRIORITY_BY_EMOJI: Record<string, TaskPriority> = TASK_PRIORITIES.reduce(
   {} as Record<string, TaskPriority>
 );
 
+// Canonical inline form is `@tag(work, client-a)`: one marker, comma separated
+// tag keys. Several markers on one line are merged on the way in and rewritten
+// as one on the next edit. A key is what the note stores; the tag's display
+// name and colour live in the plugin's tag list, so renaming a tag or changing
+// its colour never has to touch a note. Keys accept any script, so Persian
+// keys (including the zero-width non-joiner) work as well as Latin ones.
+//
+// Built with `new RegExp` so the Unicode property classes are not compiled
+// against the ES6 target TypeScript checks regex literals with.
+const TAG_PATTERN_SOURCE = String.raw`@tag\(\s*([^()\n]*?)\s*\)`;
+const TAG_PATTERN_GLOBAL = new RegExp(TAG_PATTERN_SOURCE, 'gu');
+const TAG_KEY_DISALLOWED = new RegExp(String.raw`[^\p{L}\p{N}\p{M}_\-/\u200c]`, 'gu');
+
 function normalizeAfterMarkerRemovalPreserveIndent(line: string): string {
   const indent = line.match(LEADING_WHITESPACE_PATTERN)?.[0] ?? '';
   const withoutIndent = line.slice(indent.length);
@@ -263,6 +276,114 @@ export function setRepeat(line: string, repeat: TaskRepeat | null): string {
 }
 
 /**
+ * Reduces free text to a tag key: lowercase, spaces become hyphens, anything a
+ * marker could not hold is dropped. Used for keys typed into a note by hand as
+ * well as for keys derived from a new tag's name.
+ */
+export function normalizeTagKey(raw: string): string {
+  return raw
+    .normalize('NFC')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '-')
+    .replace(TAG_KEY_DISALLOWED, '')
+    .replace(/-{2,}/g, '-')
+    .replace(/^[-\/]+|[-\/]+$/g, '');
+}
+
+/** Tag keys on a task line, in the order they were written, without duplicates. */
+export function extractTags(line: string): string[] {
+  const keys: string[] = [];
+  TAG_PATTERN_GLOBAL.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = TAG_PATTERN_GLOBAL.exec(line)) !== null) {
+    for (const part of match[1].split(',')) {
+      const key = normalizeTagKey(part);
+      if (key && !keys.includes(key)) keys.push(key);
+    }
+  }
+  return keys;
+}
+
+/** Removes every tag marker from a task line. */
+export function stripTags(line: string): string {
+  return line.replace(TAG_PATTERN_GLOBAL, '').replace(/\s{2,}/g, ' ').trim();
+}
+
+/** Removes every tag marker while preserving leading indentation. */
+export function stripTagsPreserveIndent(line: string): string {
+  return normalizeAfterMarkerRemovalPreserveIndent(line.replace(TAG_PATTERN_GLOBAL, ''));
+}
+
+/**
+ * Replaces the line's tags with `keys`, written as a single marker before a
+ * trailing block ID. An empty list removes the marker.
+ */
+export function setTags(line: string, keys: readonly string[] | null): string {
+  const withoutTags = stripTagsPreserveIndent(line);
+  const clean: string[] = [];
+  for (const key of keys ?? []) {
+    const normalized = normalizeTagKey(key);
+    if (normalized && !clean.includes(normalized)) clean.push(normalized);
+  }
+  if (!clean.length) return withoutTags;
+
+  const marker = `@tag(${clean.join(', ')})`;
+  const blockIdMatch = withoutTags.match(/\s*\^([a-zA-Z0-9-]+)\s*$/);
+  if (blockIdMatch) {
+    return withoutTags.replace(/\s*\^([a-zA-Z0-9-]+)\s*$/, ` ${marker} ^${blockIdMatch[1]}`);
+  }
+
+  return `${withoutTags} ${marker}`;
+}
+
+/**
+ * Replaces the readable part of a task line and keeps everything TaskPro put
+ * there: the checkbox, the indentation, every marker and the block ID. The
+ * markers are hidden in the editor anyway, so they are gathered at the end in
+ * the order they were found rather than kept at their old offsets.
+ */
+export function replaceTaskText(line: string, text: string): string {
+  const match = /^(\s*)- \[([ \/xX!])\] ?(.*)$/.exec(line);
+  if (!match) return line;
+
+  const [, indent, marker, content] = match;
+  const blockId = /\s*\^([a-zA-Z0-9-]+)\s*$/.exec(content)?.[1];
+  const body = blockId ? content.replace(/\s*\^([a-zA-Z0-9-]+)\s*$/, '') : content;
+
+  const markers: Array<{ index: number; text: string }> = [];
+  for (const pattern of [
+    DEADLINE_PATTERN_GLOBAL,
+    PROGRESS_PATTERN_GLOBAL,
+    PRIORITY_PATTERN_GLOBAL,
+    REPEAT_PATTERN_GLOBAL,
+    TAG_PATTERN_GLOBAL,
+  ]) {
+    pattern.lastIndex = 0;
+    let found: RegExpExecArray | null;
+    while ((found = pattern.exec(body)) !== null) {
+      markers.push({ index: found.index, text: found[0] });
+      if (found[0].length === 0) pattern.lastIndex++;
+    }
+  }
+  markers.sort((a, b) => a.index - b.index);
+
+  const parts = [text.replace(/\s+/g, ' ').trim(), ...markers.map((m) => m.text)].filter(Boolean);
+  const tail = blockId ? ` ^${blockId}` : '';
+  return `${indent}- [${marker}] ${parts.join(' ')}${tail}`;
+}
+
+/**
+ * Every TaskPro marker removed: deadline, progress, priority, repeat and tags.
+ * The block ID and the checkbox are left alone; callers that build identity
+ * keys or titles strip those themselves. One helper, so a new marker is added
+ * in exactly one place instead of in every copy of the strip chain.
+ */
+export function stripTaskMetadata(line: string): string {
+  return stripTags(stripRepeat(stripPriority(stripProgress(stripDeadline(line)))));
+}
+
+/**
  * The next occurrence of a repeating task, as `YYYY-MM-DD`.
  *
  * Counting forward from the old deadline keeps a weekly task on its weekday
@@ -332,6 +453,12 @@ export const DEADLINE_MARKER_PATTERN = new RegExp(DEADLINE_PATTERN.source, '');
 
 /** Single-match recurrence pattern for decoration ranges. */
 export const REPEAT_MARKER_PATTERN = new RegExp(REPEAT_PATTERN.source, 'i');
+
+/**
+ * Global tag-marker pattern for decoration ranges and reading-mode stripping.
+ * A line can carry more than one marker, so callers loop over every match.
+ */
+export const TAG_MARKER_PATTERN_GLOBAL = new RegExp(TAG_PATTERN_SOURCE, 'gu');
 
 /** Single-match priority pattern (all supported forms) for decoration ranges. */
 export const PRIORITY_MARKER_PATTERN = new RegExp(
