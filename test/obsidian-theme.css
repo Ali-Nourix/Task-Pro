@@ -12,9 +12,16 @@
   --font-ui: Inter, "Segoe UI", Roboto, sans-serif;
   --font-text: Inter, "Segoe UI", Roboto, sans-serif;
   --font-monospace: "JetBrains Mono", Consolas, monospace;
+  --font-ui-medium: 15px;
   --font-ui-small: 13px;
   --font-ui-smaller: 12px;
+  --font-normal: 400;
+  --font-medium: 500;
   --font-semibold: 600;
+  --font-bold: 700;
+  --input-height: 30px;
+  --radius-l: 12px;
+  --layer-modal: 50;
 
   --background-primary: #1e1e1e;
   --background-primary-alt: #191919;
@@ -86,21 +93,77 @@ body.theme-light {
 }
 
 /* Obsidian's own button styling, so a plugin button in a harness looks like a
-   plugin button in the app rather than a raw browser control. */
+   plugin button in the app rather than a raw browser control. The selectors
+   copy app.css's, specificity included, so a plugin rule that would lose to
+   Obsidian's button chrome loses here too. */
 button {
-  padding: 5px 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: var(--input-height);
+  padding: 4px 12px;
   border: 0;
   border-radius: var(--radius-s, 6px);
   color: var(--text-normal);
-  background: var(--interactive-normal);
-  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.1);
   font-family: inherit;
   font-size: var(--font-ui-small, 13px);
+  white-space: nowrap;
   cursor: pointer;
 }
-button:hover { background: var(--interactive-hover); }
+button:not(.clickable-icon) {
+  background: var(--interactive-normal);
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.1);
+}
+button:not(.clickable-icon):hover { background: var(--interactive-hover); }
 button.mod-cta { color: var(--text-on-accent); background: var(--interactive-accent); }
 button.mod-cta:hover { background: var(--interactive-accent-hover); }
+button.mod-warning { color: var(--text-on-accent); background: var(--color-red); }
+
+.clickable-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 6px;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.clickable-icon:hover { background: var(--background-modifier-hover); color: var(--text-normal); }
+
+input[type='text'],
+input[type='search'],
+input[type='number'],
+input[type='date'] {
+  height: var(--input-height);
+  padding: 4px 8px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+  font-family: inherit;
+  font-size: var(--font-ui-small);
+  outline: none;
+}
+input:focus { box-shadow: 0 0 0 2px color-mix(in srgb, var(--interactive-accent) 45%, transparent); }
+
+/* Obsidian's context menu, for screenshots of the board's menus. */
+.menu {
+  position: fixed;
+  z-index: var(--layer-menu);
+  min-width: 180px;
+  padding: 6px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background: var(--background-secondary);
+  box-shadow: var(--shadow-l);
+  font-size: var(--font-ui-small);
+}
+.menu-item { display: flex; align-items: center; gap: 8px; padding: 5px 10px; border-radius: 4px; color: var(--text-normal); }
+.menu-item.is-label { color: var(--text-faint); font-size: var(--font-ui-smaller); font-weight: 600; }
+.menu-item-icon { display: inline-flex; width: 16px; color: var(--text-muted); }
+.menu-item-icon.mod-checked { margin-inline-start: auto; color: var(--text-accent); }
+.menu-separator { height: 1px; margin: 5px -6px; background: var(--background-modifier-border); }
 
 /* setIcon() emits <svg class="svg-icon">; the harnesses do the same. */
 .svg-icon {

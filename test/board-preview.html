@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>TaskPro board preview</title>
+  <link rel="stylesheet" href="obsidian-theme.css">
+  <!-- ?theme=<name> stacks test/themes/<name>.css between Obsidian's defaults
+       and the plugin's own sheet, which is the order Obsidian itself loads. -->
+  <script>
+    const params = new URLSearchParams(location.search);
+    const themeName = params.get('theme');
+    if (themeName && /^[a-z0-9-]+$/.test(themeName)) {
+      document.write('<link rel="stylesheet" href="themes/' + themeName + '.css">');
+    }
+  </script>
+  <link rel="stylesheet" href="../styles.css">
+  <style>
+    /* Only the page frame is styled here. The board, picker, manager and chips
+       are built by the plugin's own code (harness/board-preview.ts) and styled
+       by its own styles.css. */
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      background: var(--background-primary);
+      color: var(--text-normal);
+      font-family: var(--font-ui);
+    }
+    #root.workspace-leaf-content { display: flex; height: 100vh; }
+    #root.workspace-leaf-content > .view-content { flex: 1 1 auto; min-width: 0; }
+    #root.manager-host { width: 720px; padding: 20px 24px; }
+    #root.note-host { width: 1080px; padding: 24px 28px; font-family: var(--font-text); }
+    .note-host h2 { margin: 0 0 16px; font-size: 21px; letter-spacing: -0.01em; }
+    .line { display: flex; align-items: center; gap: 8px; min-height: 34px; padding: 3px 0; font-size: 15px; line-height: 1.6; }
+    .cb { position: relative; width: 15px; height: 15px; flex: 0 0 15px; border: 1.6px solid var(--text-faint); border-radius: 3px; }
+    .cb.done { border-color: var(--interactive-accent); background: var(--interactive-accent); }
+    .cb.doing::after { content: ""; position: absolute; inset: 3px; border-radius: 1px; background: var(--text-muted); }
+    .cb.blocked { border-color: var(--color-red); }
+    .line.done .txt { color: var(--text-muted); text-decoration: line-through; }
+  </style>
+</head>
+<body class="theme-dark">
+  <script>
+    if (params.has('light')) { document.body.classList.remove('theme-dark'); document.body.classList.add('theme-light'); }
+  </script>
+  <div id="root"></div>
+  <script src="harness/board-preview.bundle.js"></script>
+</body>
+</html>

@@ -1,18 +1,23 @@
 # TaskPro
 
 An Obsidian plugin for task management: interactive chips on every task line,
-bi-directional sync with a central task note, deadlines, priorities, and
+your own coloured tags, a task board that shows every task in the vault in one
+place, bi-directional sync with a central task note, deadlines, priorities, and
 per-task capabilities you add only where you want them.
 
 ![Task lines with status, priority, repeat, deadline, timer and progress chips](docs/images/task-chips-dark.png)
 
-<sub>Rendered from the plugin's own `styles.css` over Obsidian's default theme
-variables (see <a href="#previews">Development → Previews</a>), not screenshots
-of a live vault.</sub>
+![The task board: every task in the vault as a table, grouped by status](docs/images/task-board-table-dark.png)
+
+<sub>Rendered from the plugin's own code and `styles.css` over Obsidian's default
+theme variables (see <a href="#previews">Development → Previews</a>), not
+screenshots of a live vault.</sub>
 
 ## Contents
 
 - [Features](#features)
+- [Tags](#tags)
+- [Task board](#task-board)
 - [Per-task capabilities](#per-task-capabilities)
 - [Requirements](#requirements)
 - [Installation](#installation)
@@ -43,6 +48,7 @@ notes to make them appear, and clicking one opens the menu for that property.
 | `Tomorrow` `3 Days Left` `Not completed on time` | Deadline, coloured by urgency |
 | `18:42` | A running focus timer |
 | `38%` | Progress through a set number of steps |
+| `Work` `Client` | Your own tags, each in its own colour; click to change them |
 
 ### Chips that belong to your theme
 
@@ -80,6 +86,18 @@ If you want a specific hue anyway, each accent is a
 [Style Settings](https://github.com/mgmeyers/obsidian-style-settings) knob,
 along with how strongly chips tint themselves.
 
+### Custom task statuses
+
+`[/]` and `[!]` are drawn so they read at a glance, in Live Preview and Reading
+Mode alike:
+
+![The in-progress and not-done checkboxes](docs/images/task-checkboxes.png)
+
+These are a floor, not a ceiling. Styling a checkbox is really a theme's job, so
+the plugin uses plain selectors and no `!important` — a theme that styles these
+states takes over with an ordinary rule, and one that ignores them still gets a
+sensible default.
+
 ### Four-state task toggle
 
 `Ctrl+T` cycles the task under the cursor through all four states:
@@ -106,6 +124,126 @@ modal alongside the reference note's own.
 Every chip and menu is available in English or Persian (فارسی), with correct
 right-to-left text, and deadlines can be displayed and picked in either the
 Gregorian or the Jalali calendar.
+
+## Tags
+
+Tags are your own labels for tasks — *Work*, *Client*, *Deep work*, *Home* —
+each with a name and a colour you choose, so tasks can be told apart at a glance
+and pulled apart on the [task board](#task-board).
+
+<table>
+<tr>
+<td align="center"><b>Obsidian default · dark</b></td>
+<td align="center"><b>A community theme · light</b></td>
+</tr>
+<tr>
+<td><img src="docs/images/task-tags-dark.png" alt="Task lines with tag chips next to the other chips, dark theme" width="400"></td>
+<td><img src="docs/images/task-tags-bookcloth-light.png" alt="The same lines on a community theme in light mode" width="400"></td>
+</tr>
+</table>
+
+- **Add tags to a task** from its status chip (**Add Tags**), by clicking a tag
+  chip, with **Set Tags on Current Task**, or from the task board. The picker
+  works like a Notion multi-select: type to filter, `Enter` to toggle, and
+  typing a name that does not exist yet offers to **create it on the spot**,
+  with a colour.
+
+  <img src="docs/images/tag-picker.png" alt="The tag picker with two tags selected" width="360"> <img src="docs/images/tag-picker-create.png" alt="Creating a new tag from the picker, with a colour" width="360">
+
+- **Colours come from your theme.** The palette is the theme's own red, orange,
+  yellow, green, cyan, blue, purple and pink (plus grey), so a *blue* tag is
+  your theme's blue in light and dark mode alike; a custom colour is there for
+  anything else. Every palette colour passes WCAG AA as a chip label in both
+  modes on every theme checked.
+- **A note stores only the tag's key**, as `@tag(work, deep-work)`, hidden
+  behind the chips while they are on. The name and colour live in the plugin's
+  tag list, so renaming *Work* to *Office* or making it green updates every
+  task at once without touching a note. Keys accept any script, so Persian tags
+  (`@tag(کار)`) work as well as Latin ones.
+- **Manage tags** under **Settings → TaskPro → Tags**, from the board, or with
+  **Manage Tags**: rename, recolour, see how many tasks use each tag, and delete
+  a tag either on its own (tasks keep the marker and show a grey chip until you
+  define it again) or together with its marker in every note.
+
+  <img src="docs/images/tag-manager.png" alt="The tag manager: colour, name, preview, marker and usage count for each tag" width="560">
+
+- Tags travel with a task: they are copied into an imported task and synced from
+  a linked copy back to its source, like the other markers. Obsidian's own
+  `#tags` are left alone — they are part of the task text and still searchable
+  from the board.
+
+## Task board
+
+Every task in one place, the way a Notion database shows every row: open it from
+the ribbon or with **Open Task Board**, and it opens as a tab of its own.
+
+![The task board as a kanban board, one column per status](docs/images/task-board-kanban-dark.png)
+
+- **Scope:** the whole vault, or only the target folder set under **Settings →
+  TaskPro → General**. The switch is at the top of the board.
+- **Two layouts:** a **table** with a column per property, or a **board** with a
+  column per group. Drag a card to another column to change its status,
+  priority or tag.
+- **Group** by status, tag, priority, deadline (*Overdue*, *Today*, *Next 7
+  days*, *Later*, *Past*) or note, and fold away groups you do not need; a
+  task with two tags appears under both, as in a Notion multi-select.
+- **Sort** by title, status, priority, deadline, progress or note — click a
+  column header once, twice to reverse, a third time for note order.
+- **Filter** by status, priority and tag, and **search** titles, tag names and
+  note names. Active filters show as pills you can click away.
+- **Edit in place:** tick a task off, change its status or priority from a menu,
+  set the deadline, pick tags, or click a title to rename it. Every edit is
+  written into the note the task lives in, keeping all of its markers, and a
+  linked copy syncs to its source the same way it does from the chip menu. The
+  **⋯** button opens the task's full menu (progress, focus timer, repeat,
+  sync), and **↗** opens the note with the cursor on the task.
+- **Add tasks** from the row at the top, or from a board column's **New**
+  button. A new task goes into the note of your choice and takes on the active
+  filters (or the column it was added to), so it does not vanish from the view
+  the moment it is created.
+- The board remembers its layout, grouping, sort and filters between sessions,
+  follows your notes live, and reads right to left in Persian:
+
+  ![The task board in Persian, right to left, on a community theme](docs/images/task-board-kanban-fa.png)
+
+### Floating over everything
+
+Press **`Ctrl+Shift+B`** (`Cmd+Shift+B` on macOS), or run **Toggle Floating
+Task Board**, from anywhere — a note, the graph, another plugin's view — and
+the board opens as a large floating window over the whole app. The same keys
+close it again, as does `Esc`; the search field has focus as soon as it
+appears, so you can start typing to find a task. **Open in a tab** in its
+header sends it back to a workspace tab, and **Float over Obsidian** on the
+tab's header does the reverse.
+
+![The task board floating over Obsidian, with the rest of the app blurred behind it](docs/images/task-board-floating-light.png)
+
+![The same in dark mode, as a board](docs/images/task-board-floating-dark.png)
+
+<sub>These two are screenshots of Obsidian 1.13.7 itself, with the Bookcloth
+theme, not harness renders.</sub>
+
+The plugin sizes the window and dims what is behind it. The blur belongs to the
+theme: while the float is open the plugin puts `taskpro-board-is-floating` on
+`<body>` and `taskpro-board-float` on the modal container, and a theme blurs
+from those — [Bookcloth](https://github.com/Ali-Nourix/Obsidian-Theme) does, and
+exposes the strength as a Style Settings slider. A theme that blurs should put
+`filter: blur()` on `body > .app-container` (and `.titlebar`) rather than
+`backdrop-filter` on the modal background: measured in Obsidian with the board
+repainting every frame, `filter` holds 60 fps exactly as no blur does, while
+`backdrop-filter` drops to about 26.
+
+It stays quick on a large vault: notes the metadata cache says hold no tasks are
+never read, only the lines Obsidian itself calls task items are parsed (so a
+`- [ ]` in a code block is not a task), a changed note is re-parsed from the
+content Obsidian already has in hand, and long groups are drawn 150 rows at a
+time.
+
+<table>
+<tr>
+<td><img src="docs/images/task-board-table-bookcloth-light.png" alt="The task board table on a community theme in light mode" width="820"></td>
+</tr>
+</table>
 
 ## Per-task capabilities
 
@@ -203,6 +341,10 @@ What a planner actually needs from a task that comes back.
 | Set/Change Task Priority | `Ctrl+Shift+P` |
 | Start / Pause Focus Timer on Current Task | — |
 | Toggle Weekly Repeat on Current Task | — |
+| Set Tags on Current Task | — |
+| Manage Tags | — |
+| Open Task Board | — |
+| Toggle Floating Task Board | `Ctrl+Shift+B` |
 | Show Task Reminders Now | — |
 | Toggle Daily Task Reminders | — |
 
@@ -216,11 +358,13 @@ What a planner actually needs from a task that comes back.
 - [ ] Task with a deadline @due(2026-12-31)
 - [ ] Task with a priority @priority(high)
 - [ ] Task that repeats @repeat(1w)
-- [ ] Everything at once @priority(high) @due(2026-12-31) @repeat(2w)
+- [ ] Task with tags @tag(work, deep-work)
+- [ ] Everything at once @priority(high) @due(2026-12-31) @repeat(2w) @tag(client)
 ```
 
-`@due(...)`, `@priority(...)` and `@repeat(...)` are the canonical markers, and
-each is hidden behind its chip while that chip is on. The older `⏳ 2026-12-31`,
+`@due(...)`, `@priority(...)`, `@repeat(...)` and `@tag(...)` are the canonical
+markers, and each is hidden behind its chip while that chip is on. A tag marker
+holds tag keys, not names: the name and colour come from your tag list. The older `⏳ 2026-12-31`,
 `📅 2026-12-31`, `[due:: ...]`, `[deadline:: ...]`, `[priority:: ...]` and
 Obsidian Tasks priority emoji (`🔺⏫🔼🔽⏬`) are still read, so existing vaults
 keep working, and they are rewritten to the canonical form the next time the
@@ -233,7 +377,7 @@ without a block ID gets one the first time you attach one of them.
 ## Bi-directional sync
 
 Importing a task creates a mapping between the imported copy and the source
-line. A status, deadline, priority or progress change on either side updates the
+line. A status, deadline, priority, tag or progress change on either side updates the
 other, and each mapping can be unlinked from the task's own menu without losing
 the task.
 
@@ -277,6 +421,7 @@ alert resolves the outer note's own file, so a callout like
 | **General** | Reference note, target folder restriction |
 | **Badges** | Chip language, size, calendar system, embed visibility, and a switch per optional chip |
 | **Capabilities** | Focus-timer duration, desktop notification, sound, status-bar readout; a note on how repeat intervals are counted |
+| **Tags** | Tag chips on or off, and the tag list: create, rename, recolour, delete |
 | **Reminders** | Schedule, note sources, filters, strictness, sound |
 | **Internal Tasks** | Tasks stored in the plugin rather than a note |
 
@@ -295,7 +440,22 @@ Chip colours, padding, radius and opacity are exposed to the
   countdown chips are retargeted in place instead of by rebuilding editor
   decorations, so a per-second update never fights the cursor.
 - Mappings, progress and timers live in `data.json`, keyed by block ID, so the
-  markdown stays clean.
+  markdown stays clean. Tag names and colours live there too; a note holds only
+  the key.
+- The chip menu, the board and the commands edit a task through one path, which
+  finds the line (by the line number it was read from while that line is
+  unchanged, then by block ID, then by text), rewrites it under the vault lock,
+  and syncs a linked copy. Renaming a task moves its sync mapping with it.
+- Obsidian loads a theme's stylesheet after every plugin's, so a theme wins any
+  specificity tie. The board's controls are scoped one class above a theme's
+  generic `button` and `input` rules, its checkbox glyphs are CSS masks rather
+  than icons (so a theme's icon-button sizing never reaches them), and coloured
+  button states are background images, which a theme's `button:hover` colour
+  paints under rather than over. That is what keeps the board looking the
+  same under any theme.
+- The task board keeps an index of every task that follows the vault's metadata
+  events. It is built the first time the board (or a tag count) needs it, after
+  Obsidian's layout is ready, and costs nothing until then.
 - Chip colour is one recipe — tint a background and a border out of an accent,
   and mix the label toward the theme's text colour — so a new chip is a single
   custom-property assignment and inherits the theme adaptivity for free.
@@ -310,8 +470,14 @@ Chip colours, padding, radius and opacity are exposed to the
 npm install
 npm run dev     # watch build
 npm run build   # typecheck + production build
-npm test        # recurrence date maths and timer bookkeeping
+npm test        # markers, recurrence, timers, board data, and the plugin's edit paths
 ```
+
+`npm test` includes an integration test (`test/plugin-edits.mjs`) that loads the
+whole plugin against an in-memory vault (`test/harness/obsidian-node-mock.mjs`)
+and drives the same edit path the chip menu and the board use: status,
+priority, deadline, tags and renames, tag sync to a source note, the tag list,
+and removing a tag from every note.
 
 The distributable files are `main.js`, `manifest.json`, and `styles.css`.
 
@@ -326,6 +492,12 @@ Obsidian:
 | --- | --- | --- |
 | `test/chips-preview.html` | Task lines with every chip, and each chip's states | `?light`, `?theme=<name>` |
 | `test/reminder-preview.html` | The reminder alert | `?light`, `?theme=<name>`, `?strict` |
+| `test/board-preview.html` | The task board, tag picker, tag manager and tag chips, built by the plugin's own classes | `?light`, `?theme=<name>`, `?layout=board`, `?group=<tag\|priority\|…>`, `?lang=fa`, `?view=<picker\|manager\|note\|palette>` |
+
+`board-preview.html` loads a bundle of the real board code against a stub host
+whose edits land in in-memory notes, so it can be clicked through like the
+real thing. Build it with `node test/harness/build.mjs` (the preview and test
+scripts below do this themselves).
 
 `?theme=<name>` stacks `test/themes/<name>.css` between Obsidian's defaults and
 the plugin's sheet, in the order Obsidian loads them — which is how the
@@ -334,14 +506,16 @@ before claiming the chips adapt to it. Drop any theme's `theme.css` into
 `test/themes/` to try it.
 
 ```bash
-npm i --no-save playwright && npx playwright install chromium
+npm i --no-save playwright lucide-static && npx playwright install chromium
 
 npm run previews        # regenerate the images in this README
-npm run check:contrast  # measure every chip against WCAG AA on every theme
+npm run check:contrast  # measure every chip, board and tag colour against WCAG AA on every theme
+npm run test:ui         # click through the board in a real browser
 ```
 
-Both need Playwright, which is deliberately not a dependency — it would pull a
-browser download into every install — so `npm test` stays independent of it and
+These need Playwright, and the board harness needs Lucide's icon set (the icons
+Obsidian ships). Neither is a dependency — they would pull a browser and an
+icon set into every install — so `npm test` stays independent of them and
 covers the logic instead.
 
 ## Releasing
@@ -353,8 +527,8 @@ covers the logic instead.
 4. Tag the commit with exactly the manifest version, no `v` prefix:
 
    ```bash
-   git tag 1.3.0
-   git push origin 1.3.0
+   git tag 1.4.0
+   git push origin 1.4.0
    ```
 
 The workflow checks that the tag, manifest, package, lockfile and

@@ -12,6 +12,9 @@ import {
   extractRepeat,
   stripPriority,
   stripRepeat,
+  extractTags,
+  setTags,
+  stripTags,
 } from './task-metadata';
 
 const TASK_REGEX = /^(\s*)- \[([ /xX!])\]\s*(.*)$/;
@@ -57,6 +60,9 @@ export function parseTasksFromContent(content: string): ParsedTask[] {
     // Remove the recurrence marker from content to avoid duplication
     taskContent = stripRepeat(taskContent);
 
+   const customTags = extractTags(taskContent);
+    taskContent = stripTags(taskContent);
+
    // Extract block ID
     const blockIdMatch = taskContent.match(BLOCK_ID_REGEX);
     const blockId = blockIdMatch ? blockIdMatch[1] : undefined;
@@ -73,6 +79,7 @@ export function parseTasksFromContent(content: string): ParsedTask[] {
       progress,
       priority,
       repeat,
+      customTags: customTags.length ? customTags : undefined,
       blockId,
       lineNumber: i,
     };
@@ -120,6 +127,9 @@ export function parseTasksWithHierarchy(content: string): ParsedTask[] {
     // Remove the recurrence marker from content to avoid duplication
     taskContent = stripRepeat(taskContent);
 
+   const customTags = extractTags(taskContent);
+    taskContent = stripTags(taskContent);
+
    const blockIdMatch = taskContent.match(BLOCK_ID_REGEX);
     const blockId = blockIdMatch ? blockIdMatch[1] : undefined;
     if (blockId) {
@@ -135,6 +145,7 @@ export function parseTasksWithHierarchy(content: string): ParsedTask[] {
       progress,
       priority,
       repeat,
+      customTags: customTags.length ? customTags : undefined,
       blockId,
       lineNumber: i,
     };
@@ -185,7 +196,9 @@ export function taskToMarkdown(
   const indentStr = task.indentation || parentIndent;
   const blockIdStr = includeBlockIds && task.blockId ? ` ^${task.blockId}` : '';
 
-  let result = `${indentStr}- ${task.status} ${task.content}${blockIdStr}\n`;
+  // Tags travel with an imported copy, so the task stays recognisable there.
+  const line = setTags(`${indentStr}- ${task.status} ${task.content}`, task.customTags ?? null);
+  let result = `${line}${blockIdStr}\n`;
 
   for (const subtask of task.subtasks) {
     result += taskToMarkdown(subtask, indentStr + '  ', includeBlockIds);

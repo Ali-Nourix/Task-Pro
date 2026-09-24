@@ -2,12 +2,13 @@
 // TaskPro - Main plugin entry point
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { Plugin, Editor, MarkdownFileInfo, MarkdownView, Notice, TFile, setIcon } from 'obsidian';
+import { Plugin, Editor, Hotkey, MarkdownFileInfo, MarkdownView, Notice, TFile, setIcon } from 'obsidian';
 import { EditorView } from '@codemirror/view';
 import {
   TaskProSettings,
   DEFAULT_SETTINGS,
   DEFAULT_REMINDER_SETTINGS,
+  DEFAULT_BOARD_PREFERENCES,
   TaskStatus,
   TaskMapping,
   TaskProgress,
@@ -30,14 +31,14 @@ import {
   extractProgress,
   extractPriority,
   extractRepeat,
+  extractTags,
   nextRepeatDate,
+  replaceTaskText,
   setDeadline,
   setPriority,
   setRepeat,
-  stripDeadline,
-  stripPriority,
-  stripProgress,
-  stripRepeat,
+  setTags,
+  stripTaskMetadata,
 } from './src/task-metadata';
 import { TaskTimerService } from './src/timer-service';
 import { getRepeatLabels, getTimerLabels } from './src/timer-localization';
@@ -47,6 +48,46 @@ import { TaskIndexService } from './src/task-index-service';
 import { getReminderLabels } from './src/reminders/reminder-localization';
 import { generateBlockId } from './src/task-parser';
 import { addPanelButtonRow, addPanelField, openTaskProPanel } from './src/ui/panel';
+import { TaskTag, resolveTag, sanitizeTags } from './src/tags';
+import { getTagLabels } from './src/tag-localization';
+import { openTagPicker } from './src/ui/tag-picker';
+import { TagManagerHost, openTagManagerPanel } from './src/ui/tag-manager';
+import { pickDeadline } from './src/ui/deadline-editor';
+import { NoteSelectionModal } from './src/note-selector-modal';
+import { BoardTask, TaskStore } from './src/board/task-store';
+import { TaskBoardHost } from './src/board/task-board';
+import { TaskBoardView, VIEW_TYPE_TASK_BOARD } from './src/board/task-board-view';
+import { TaskBoardModal } from './src/board/task-board-modal';
+import { getBoardLabels } from './src/board/board-localization';
+
+/**
+ * A task as the editing API addresses it. `lineNumber` is a hint: it is used
+ * when that line still holds `lineContent`, and the usual block-ID / text
+ * lookup takes over when the note has changed underneath it.
+ */
+export interface TaskRef {
+  filePath: string;
+  lineContent: string;
+  blockId?: string;
+  lineNumber?: number;
+}
+
+/** What a chip click hands to the task menu. */
+interface TaskMenuDetail {
+  status: TaskStatus;
+  deadline?: string;
+  lineContent: string;
+  filePath?: string;
+  targetElement: HTMLElement;
+  blockId?: string;
+  tags?: string[];
+  priority?: TaskPriority;
+}
+
+const NATIVE_TAG_REGEX = /#([a-zA-Z0-9_-]+)/g;
+
+const FLOATING_BOARD_COMMAND = 'toggle-floating-task-board';
+const FLOATING_BOARD_HOTKEYS: Hotkey[] = [{ modifiers: ['Mod', 'Shift'], key: 'b' }];
 
 // Module-level regex constants — compiled once, never inside loops
 const TASK_LINE_REGEX = /^(\s*)- \[([ /xX!])\] (.+)$/;
@@ -62,6 +103,10 @@ export default class TaskProPlugin extends Plugin {
   /** Hidden index of when each task was first seen. Never rendered anywhere. */
   taskRegistry!: TaskCreationRegistry;
   taskIndexService!: TaskIndexService;
+  /** Every task in the vault, for the board and tag counts. Loaded on first use. */
+  taskStore!: TaskStore;
+  /** The board's floating window, while it is open. */
+  private floatingBoard: TaskBoardModal | null = null;
   private isProcessingSync = false;
   private syncDebounceTimers = new Map<string, NodeJS.Timeout>(); // Debounce timers per file
   private fileTaskStates = new Map<string, Map<string, TaskStatus>>(); // Track task states per file
@@ -102,6 +147,15 @@ export default class TaskProPlugin extends Plugin {
       app: this.app,
       registry: this.taskRegistry,
       getTargetFolder: () => this.settings.targetFolder,
+    });
+
+    this.taskStore = new TaskStore(
+      this.app,
+      () => new Promise((resolve) => this.app.workspace.onLayoutReady(() => resolve()))
+    );
+    this.registerView(VIEW_TYPE_TASK_BOARD, (leaf) => new TaskBoardView(leaf, this.createBoardHost()));
+    this.addRibbonIcon('list-checks', getBoardLabels(this.settings.badgeLanguage).open, () => {
+      void this.activateBoard();
     });
 
     // Apply body class for embed badge visibility
@@ -161,7 +215,7 @@ export default class TaskProPlugin extends Plugin {
     this.registerEditorExtension(
      createTaskBadgePlugin(
        this.app,
-        () => ({ enableBadges: this.settings.enableBadges, badgeLanguage: this.settings.badgeLanguage, badgeSize: this.settings.badgeSize, targetFolder: this.settings.targetFolder, calendarSystem: this.settings.calendarSystem, showPriorityBadges: this.settings.showPriorityBadges, showTimerBadges: this.settings.showTimerBadges, showRepeatBadges: this.settings.showRepeatBadges }),
+        () => ({ enableBadges: this.settings.enableBadges, badgeLanguage: this.settings.badgeLanguage, badgeSize: this.settings.badgeSize, targetFolder: this.settings.targetFolder, calendarSystem: this.settings.calendarSystem, showPriorityBadges: this.settings.showPriorityBadges, showTimerBadges: this.settings.showTimerBadges, showRepeatBadges: this.settings.showRepeatBadges, showTagBadges: this.settings.showTagBadges, tags: this.settings.tags }),
         (filePath: string, blockId?: string) => this.getTaskProgress(filePath, blockId),
         (filePath: string, blockId?: string) => this.timerService.get(filePath, blockId),
         (filePath: string, lineContent: string) => this.getStoredBlockId(filePath, lineContent)
@@ -172,7 +226,7 @@ export default class TaskProPlugin extends Plugin {
     this.registerMarkdownPostProcessor(
      createReadingModeProcessor(
        this.app,
-        () => ({ enableBadges: this.settings.enableBadges, badgeLanguage: this.settings.badgeLanguage, badgeSize: this.settings.badgeSize, showBadgesInEmbeds: this.settings.showBadgesInEmbeds, targetFolder: this.settings.targetFolder, calendarSystem: this.settings.calendarSystem, showPriorityBadges: this.settings.showPriorityBadges, showTimerBadges: this.settings.showTimerBadges, showRepeatBadges: this.settings.showRepeatBadges }),
+        () => ({ enableBadges: this.settings.enableBadges, badgeLanguage: this.settings.badgeLanguage, badgeSize: this.settings.badgeSize, showBadgesInEmbeds: this.settings.showBadgesInEmbeds, targetFolder: this.settings.targetFolder, calendarSystem: this.settings.calendarSystem, showPriorityBadges: this.settings.showPriorityBadges, showTimerBadges: this.settings.showTimerBadges, showRepeatBadges: this.settings.showRepeatBadges, showTagBadges: this.settings.showTagBadges, tags: this.settings.tags }),
         (filePath: string, blockId?: string) => this.getTaskProgress(filePath, blockId),
         (filePath: string, blockId?: string) => this.timerService.get(filePath, blockId),
         (filePath: string, lineContent: string) => this.getStoredBlockId(filePath, lineContent)
@@ -181,166 +235,29 @@ export default class TaskProPlugin extends Plugin {
 
     // Listen for badge clicks to open popover
     this.registerDomEvent(document.body, 'taskpro-badge-click' as keyof HTMLElementEventMap, (evt: Event) => {
-      const customEvt = evt as CustomEvent;
-      const { status, deadline, lineContent, filePath, targetElement, blockId, tags } = customEvt.detail;
-      // The chip may not carry the priority (e.g. status chip on an older render),
-      // so fall back to re-reading it from the line itself.
-      const priority: TaskPriority | undefined = customEvt.detail.priority ?? extractPriority(lineContent ?? '');
-     const activeFilePath = this.app.workspace.getActiveFile()?.path || '';
-     const resolvedFilePath = filePath || activeFilePath;
-     
-      // Get progress from stored data
-      const progress = this.getTaskProgress(resolvedFilePath, blockId);
-      const timer = this.timerService.get(resolvedFilePath, blockId);
-      const repeat = extractRepeat(lineContent ?? '');
-     
-      // Find task mapping if it exists
-      const mapping = resolvedFilePath
-        ? this.syncManager.findMapping(resolvedFilePath, lineContent, { scope: 'imported', blockId })
-        : undefined;
-      
-      // Import TaskPopover dynamically
-      import('./src/task-popover').then(({ TaskPopover }) => {
-        const popover = new TaskPopover({
-          app: this.app,
-          targetElement,
-          taskMapping: mapping,
-          language: this.settings.badgeLanguage,  // ← این خط رو اضافه کن
-          deadline,
-          status,
-          blockId,
-          tags,
-          progress,
-          priority,
-          timer,
-          repeat,
-          defaultTimerMinutes: this.settings.defaultTimerMinutes,
-          calendarSystem: this.settings.calendarSystem,
-          onToggleSync: async (enabled) => {
-            if (mapping) {
-              await this.syncManager.setLinkState(resolvedFilePath, lineContent, enabled, { scope: 'imported', blockId });
-            }
-          },
-          onStatusChange: async (newStatus) => {
-            const effectiveBlockId = blockId || mapping?.importedBlockId;
-            // Update status in current file
-            const file = this.app.vault.getFileByPath(resolvedFilePath);
-            if (file) {
-              const updated = await this.updateTaskLineInFile(
-                file,
-                lineContent,
-                effectiveBlockId,
-                (content) => content.replace(TASK_STATUS_REGEX, `- ${newStatus}`)
-              );
-              if (updated) {
-                if (resolvedFilePath) {
-                  this.recordTaskState(resolvedFilePath, lineContent, effectiveBlockId, newStatus);
-                }
-                this.refreshDecorations();
-              }
-            }
-
-            // Sync to source if linked
-            if (mapping && mapping.linked) {
-              await this.syncManager.syncTaskStatus(resolvedFilePath, lineContent, newStatus, { blockId: effectiveBlockId });
-            }
-          },
-          onDeadlineChange: async (newDeadline: string | null) => {
-            const effectiveBlockId = blockId || mapping?.importedBlockId;
-            // Update deadline in current file
-            const file = this.app.vault.getFileByPath(resolvedFilePath);
-            if (file) {
-              const updated = await this.updateTaskLineInFile(
-                file,
-                lineContent,
-                effectiveBlockId,
-                (content) => this.applyDeadlineToLine(content, newDeadline)
-              );
-              if (updated) {
-                this.refreshDecorations();
-              }
-            }
-
-            // Sync deadline to source if linked
-            if (mapping && mapping.linked) {
-              await this.syncManager.syncTaskDeadline(resolvedFilePath, lineContent, newDeadline, { blockId: effectiveBlockId });
-            }
-         },
-         onPriorityChange: async (newPriority) => {
-            const effectiveBlockId = blockId || mapping?.importedBlockId;
-            const file = this.app.vault.getFileByPath(resolvedFilePath);
-            if (file) {
-              const updated = await this.updateTaskLineInFile(
-                file,
-                lineContent,
-                effectiveBlockId,
-                (content) => setPriority(content, newPriority)
-              );
-              if (updated) {
-                this.refreshDecorations();
-              }
-            }
-
-            // Sync priority to source if linked
-            if (mapping && mapping.linked) {
-              await this.syncManager.syncTaskPriority(resolvedFilePath, lineContent, newPriority, { blockId: effectiveBlockId });
-            }
-          },
-         onProgressChange: async (newProgress) => {
-            await this.handleProgressUpdate(resolvedFilePath, lineContent, blockId, newProgress);
-          },
-          onTimerChange: async (newTimer) => {
-            await this.handleTimerUpdate(resolvedFilePath, lineContent, blockId, newTimer);
-          },
-          onTimerStart: async () => {
-            const effectiveBlockId = blockId || mapping?.importedBlockId;
-            if (!effectiveBlockId) return;
-            // Re-read: the menu may have been open while the timer ran out.
-            const current = this.timerService.get(resolvedFilePath, effectiveBlockId);
-            if (!current) return;
-            await this.timerService.start(resolvedFilePath, effectiveBlockId, current);
-            this.refreshDecorations();
-          },
-          onTimerPause: async () => {
-            const effectiveBlockId = blockId || mapping?.importedBlockId;
-            if (!effectiveBlockId) return;
-            const current = this.timerService.get(resolvedFilePath, effectiveBlockId);
-            if (!current) return;
-            await this.timerService.pause(resolvedFilePath, effectiveBlockId, current);
-            this.refreshDecorations();
-          },
-          onRepeatChange: async (newRepeat) => {
-            await this.handleRepeatUpdate(resolvedFilePath, lineContent, blockId, newRepeat);
-          },
-        });
-        popover.show();
-      });
+      this.showTaskMenu((evt as CustomEvent).detail as TaskMenuDetail);
     });
 
     // Listen for progress badge clicks to open progress popover
     this.registerDomEvent(document.body, 'taskpro-progress-click' as keyof HTMLElementEventMap, (evt: Event) => {
-      const customEvt = evt as CustomEvent;
-      const { lineContent, filePath, targetElement, blockId, currentSteps, totalSteps, language } = customEvt.detail;
-      const resolvedFilePath = filePath || this.app.workspace.getActiveFile()?.path || '';
-
-      const progress: TaskProgress = {
-        enabled: true,
-        currentSteps,
-        totalSteps,
-      };
-
-      import('./src/progress-popover').then(({ TaskProgressPopover }) => {
-        const popover = new TaskProgressPopover({
-          app: this.app,
-          targetElement,
-          progress,
-          language: language || this.settings.badgeLanguage,
-          onProgressChange: async (newProgress) => {
-            await this.handleProgressUpdate(resolvedFilePath, lineContent, blockId, newProgress);
-          },
-        });
-        popover.show();
+      const { lineContent, filePath, targetElement, blockId, currentSteps, totalSteps, language } = (evt as CustomEvent).detail;
+      this.showProgressMenu({
+        lineContent,
+        filePath: filePath || this.app.workspace.getActiveFile()?.path || '',
+        targetElement,
+        blockId,
+        progress: { enabled: true, currentSteps, totalSteps },
+        language,
       });
+    });
+
+    // Tag chip clicks open the tag picker for that task
+    this.registerDomEvent(document.body, 'taskpro-tags-click' as keyof HTMLElementEventMap, (evt: Event) => {
+      const { lineContent, filePath, blockId, tagKeys } = (evt as CustomEvent).detail;
+      this.openTagPickerFor(
+        { filePath: filePath || this.app.workspace.getActiveFile()?.path || '', lineContent, blockId },
+        tagKeys
+      );
     });
 
     // Listen for focus-timer chip clicks to open the timer menu
@@ -616,6 +533,47 @@ export default class TaskProPlugin extends Plugin {
       },
     });
 
+    // Command: open the all-tasks board
+    this.addCommand({
+      id: 'open-task-board',
+      name: 'Open Task Board',
+      callback: () => {
+        void this.activateBoard();
+      },
+    });
+
+    // Command: the board as a floating window over the whole app. The same
+    // hotkey closes it again; see TaskBoardModal.
+    this.addCommand({
+      id: FLOATING_BOARD_COMMAND,
+      name: 'Toggle Floating Task Board',
+      callback: () => this.toggleFloatingBoard(),
+      hotkeys: FLOATING_BOARD_HOTKEYS,
+    });
+
+    // Command: choose tags for the task under the cursor
+    this.addCommand({
+      id: 'set-task-tags',
+      name: 'Set Tags on Current Task',
+      editorCallback: (editor: Editor, ctx: MarkdownView | MarkdownFileInfo) => {
+        const context = this.taskAtCursor(editor, ctx);
+        if (!context) return;
+        this.openTagPickerFor({
+          filePath: context.filePath,
+          lineContent: context.line,
+          blockId: context.blockId,
+          lineNumber: context.lineNumber,
+        });
+      },
+    });
+
+    // Command: create, rename, recolour or delete tags
+    this.addCommand({
+      id: 'manage-task-tags',
+      name: 'Manage Tags',
+      callback: () => this.openTagManager(),
+    });
+
     // Daily / periodic reminders
     this.reminderService = new ReminderService({
       app: this.app,
@@ -631,6 +589,7 @@ export default class TaskProPlugin extends Plugin {
       this.app.vault.on('rename', (file, oldPath) => {
         if (file instanceof TFile) {
           this.taskIndexService.handleFileRenamed(file, oldPath);
+          this.taskStore.handleRenamed(file, oldPath);
         }
       })
     );
@@ -638,6 +597,7 @@ export default class TaskProPlugin extends Plugin {
       this.app.vault.on('delete', (file) => {
         if (file instanceof TFile) {
           this.taskIndexService.handleFileDeleted(file.path);
+          this.taskStore.handleDeleted(file.path);
         }
       })
     );
@@ -655,6 +615,14 @@ export default class TaskProPlugin extends Plugin {
         this.reminderService.start();
       });
     });
+
+    // The board re-reads a note once Obsidian has re-parsed it, from the
+    // content the event carries, so an edit never costs an extra disk read.
+    this.registerEvent(
+      this.app.metadataCache.on('changed', (file, data, cache) => {
+        this.taskStore.handleMetadataChanged(file, data, cache);
+      })
+    );
 
     // Listen for file modifications to detect task status changes
     this.registerEvent(
@@ -679,6 +647,10 @@ export default class TaskProPlugin extends Plugin {
     // newly added options get their defaults, and always work on a copy so the
     // shared DEFAULT_REMINDER_SETTINGS constant can never be mutated.
     this.settings.reminders = Object.assign({}, DEFAULT_REMINDER_SETTINGS, saved?.reminders);
+    // Same for the board's remembered layout, and the tag list is cleaned so a
+    // hand-edited data.json cannot break chip rendering.
+    this.settings.board = Object.assign({}, DEFAULT_BOARD_PREFERENCES, saved?.board);
+    this.settings.tags = sanitizeTags(saved?.tags);
 
     // Active-note reminders are enabled by default. Apply this once to existing
     // installs as well; after migration, the user's own toggle is respected.
@@ -721,6 +693,524 @@ export default class TaskProPlugin extends Plugin {
     }
 
     return dedupedReversed.reverse();
+  }
+
+  // ── Task menus ───────────────────────────────────────────────────────────
+
+  /**
+   * The full task menu, as opened from a status / priority / repeat chip or
+   * from a row's "more" button on the board.
+   */
+  showTaskMenu(detail: TaskMenuDetail): void {
+    const { status, deadline, lineContent, filePath, targetElement, blockId, tags } = detail;
+    // The chip may not carry the priority (e.g. status chip on an older render),
+    // so fall back to re-reading it from the line itself.
+    const priority: TaskPriority | undefined = detail.priority ?? extractPriority(lineContent ?? '');
+    const resolvedFilePath = filePath || this.app.workspace.getActiveFile()?.path || '';
+
+    // Get progress from stored data
+    const progress = this.getTaskProgress(resolvedFilePath, blockId);
+    const timer = this.timerService.get(resolvedFilePath, blockId);
+    const repeat = extractRepeat(lineContent ?? '');
+    const customTags = extractTags(lineContent ?? '').map((key) => resolveTag(key, this.settings.tags));
+
+    // Find task mapping if it exists
+    const mapping = resolvedFilePath
+      ? this.syncManager.findMapping(resolvedFilePath, lineContent, { scope: 'imported', blockId })
+      : undefined;
+    const ref: TaskRef = { filePath: resolvedFilePath, lineContent, blockId };
+
+    import('./src/task-popover').then(({ TaskPopover }) => {
+      const popover = new TaskPopover({
+        app: this.app,
+        targetElement,
+        taskMapping: mapping,
+        language: this.settings.badgeLanguage,
+        deadline,
+        status,
+        blockId,
+        tags,
+        customTags,
+        progress,
+        priority,
+        timer,
+        repeat,
+        defaultTimerMinutes: this.settings.defaultTimerMinutes,
+        calendarSystem: this.settings.calendarSystem,
+        onToggleSync: async (enabled) => {
+          if (mapping) {
+            await this.syncManager.setLinkState(resolvedFilePath, lineContent, enabled, { scope: 'imported', blockId });
+          }
+        },
+        onStatusChange: (newStatus) => this.setTaskStatusFor(ref, newStatus),
+        onDeadlineChange: (newDeadline) => this.setTaskDeadlineFor(ref, newDeadline),
+        onPriorityChange: (newPriority) => this.setTaskPriorityFor(ref, newPriority),
+        onEditTags: () => this.openTagPickerFor(ref, customTags.map((tag) => tag.key)),
+        onProgressChange: async (newProgress) => {
+          await this.handleProgressUpdate(resolvedFilePath, lineContent, blockId, newProgress);
+        },
+        onTimerChange: async (newTimer) => {
+          await this.handleTimerUpdate(resolvedFilePath, lineContent, blockId, newTimer);
+        },
+        onTimerStart: async () => {
+          const effectiveBlockId = blockId || mapping?.importedBlockId;
+          if (!effectiveBlockId) return;
+          // Re-read: the menu may have been open while the timer ran out.
+          const current = this.timerService.get(resolvedFilePath, effectiveBlockId);
+          if (!current) return;
+          await this.timerService.start(resolvedFilePath, effectiveBlockId, current);
+          this.refreshDecorations();
+        },
+        onTimerPause: async () => {
+          const effectiveBlockId = blockId || mapping?.importedBlockId;
+          if (!effectiveBlockId) return;
+          const current = this.timerService.get(resolvedFilePath, effectiveBlockId);
+          if (!current) return;
+          await this.timerService.pause(resolvedFilePath, effectiveBlockId, current);
+          this.refreshDecorations();
+        },
+        onRepeatChange: async (newRepeat) => {
+          await this.handleRepeatUpdate(resolvedFilePath, lineContent, blockId, newRepeat);
+        },
+      });
+      popover.show();
+    });
+  }
+
+  /** The step-by-step progress menu, from a progress chip or a board cell. */
+  private showProgressMenu(options: {
+    lineContent: string;
+    filePath: string;
+    targetElement: HTMLElement;
+    blockId?: string;
+    progress: TaskProgress;
+    language?: 'en' | 'fa';
+  }): void {
+    import('./src/progress-popover').then(({ TaskProgressPopover }) => {
+      const popover = new TaskProgressPopover({
+        app: this.app,
+        targetElement: options.targetElement,
+        progress: options.progress,
+        language: options.language || this.settings.badgeLanguage,
+        onProgressChange: async (newProgress) => {
+          await this.handleProgressUpdate(options.filePath, options.lineContent, options.blockId, newProgress);
+        },
+      });
+      popover.show();
+    });
+  }
+
+  // ── Editing a task from anywhere ─────────────────────────────────────────
+  // The chip menu and the board both go through these, so a status change
+  // from either one records state, refreshes chips and syncs a linked copy in
+  // exactly the same way.
+
+  private resolveTaskRef(ref: TaskRef): { mapping?: TaskMapping; blockId?: string; file: TFile | null } {
+    const mapping = ref.filePath
+      ? this.syncManager.findMapping(ref.filePath, ref.lineContent, { scope: 'imported', blockId: ref.blockId })
+      : undefined;
+    return {
+      mapping,
+      blockId: ref.blockId || mapping?.importedBlockId,
+      file: ref.filePath ? this.app.vault.getFileByPath(ref.filePath) : null,
+    };
+  }
+
+  async setTaskStatusFor(ref: TaskRef, newStatus: TaskStatus): Promise<void> {
+    const { mapping, blockId, file } = this.resolveTaskRef(ref);
+    if (file) {
+      const updated = await this.updateTaskLineInFile(
+        file,
+        ref.lineContent,
+        blockId,
+        (content) => content.replace(TASK_STATUS_REGEX, `- ${newStatus}`),
+        ref.lineNumber
+      );
+      if (updated) {
+        this.recordTaskState(ref.filePath, ref.lineContent, blockId, newStatus);
+        this.refreshDecorations();
+      }
+    }
+
+    // Sync to source if linked
+    if (mapping && mapping.linked) {
+      await this.syncManager.syncTaskStatus(ref.filePath, ref.lineContent, newStatus, { blockId });
+    }
+  }
+
+  async setTaskDeadlineFor(ref: TaskRef, newDeadline: string | null): Promise<void> {
+    const { mapping, blockId, file } = this.resolveTaskRef(ref);
+    if (file) {
+      const updated = await this.updateTaskLineInFile(
+        file,
+        ref.lineContent,
+        blockId,
+        (content) => this.applyDeadlineToLine(content, newDeadline),
+        ref.lineNumber
+      );
+      if (updated) this.refreshDecorations();
+    }
+
+    if (mapping && mapping.linked) {
+      await this.syncManager.syncTaskDeadline(ref.filePath, ref.lineContent, newDeadline, { blockId });
+    }
+  }
+
+  async setTaskPriorityFor(ref: TaskRef, newPriority: TaskPriority | null): Promise<void> {
+    const { mapping, blockId, file } = this.resolveTaskRef(ref);
+    if (file) {
+      const updated = await this.updateTaskLineInFile(
+        file,
+        ref.lineContent,
+        blockId,
+        (content) => setPriority(content, newPriority),
+        ref.lineNumber
+      );
+      if (updated) this.refreshDecorations();
+    }
+
+    if (mapping && mapping.linked) {
+      await this.syncManager.syncTaskPriority(ref.filePath, ref.lineContent, newPriority, { blockId });
+    }
+  }
+
+  async setTaskTagsFor(ref: TaskRef, keys: string[]): Promise<void> {
+    const { mapping, blockId, file } = this.resolveTaskRef(ref);
+    if (file) {
+      const updated = await this.updateTaskLineInFile(
+        file,
+        ref.lineContent,
+        blockId,
+        (content) => setTags(content, keys),
+        ref.lineNumber
+      );
+      if (updated) this.refreshDecorations();
+    }
+
+    if (mapping && mapping.linked) {
+      await this.syncManager.syncTaskTags(ref.filePath, ref.lineContent, keys, { blockId });
+    }
+  }
+
+  /**
+   * Renames a task, keeping every marker and the block ID. Mappings and the
+   * block-ID cache are keyed partly by the task's text, so they are moved to
+   * the new text as well; otherwise a linked copy would stop syncing.
+   */
+  async setTaskTextFor(ref: TaskRef, text: string): Promise<void> {
+    const { mapping, blockId, file } = this.resolveTaskRef(ref);
+    if (!file) return;
+
+    let nextLine = '';
+    const updated = await this.updateTaskLineInFile(
+      file,
+      ref.lineContent,
+      blockId,
+      (content) => (nextLine = replaceTaskText(content, text)),
+      ref.lineNumber
+    );
+    if (!updated) return;
+
+    const storedId = this.getStoredBlockId(ref.filePath, ref.lineContent);
+    if (storedId) {
+      this.removeStoredBlockId(ref.filePath, ref.lineContent);
+      this.storeBlockId(ref.filePath, nextLine, storedId);
+    }
+
+    let mappingsChanged = false;
+    if (mapping) {
+      mapping.importedLineContent = nextLine.trim();
+      mappingsChanged = true;
+    }
+    const sourceMapping = this.syncManager.findMapping(ref.filePath, ref.lineContent, {
+      scope: 'source',
+      blockId: ref.blockId,
+    });
+    if (sourceMapping && sourceMapping.sourceFilePath === ref.filePath) {
+      sourceMapping.sourceLineContent = nextLine.trim();
+      mappingsChanged = true;
+    }
+    if (mappingsChanged) await this.saveSettings();
+
+    this.refreshDecorations();
+  }
+
+  // ── Tags ─────────────────────────────────────────────────────────────────
+
+  /** Opens the tag picker for one task and writes the result back to its line. */
+  openTagPickerFor(ref: TaskRef, currentKeys?: string[]): void {
+    const labels = getTagLabels(this.settings.badgeLanguage);
+    const selected = currentKeys ?? extractTags(ref.lineContent);
+    openTagPicker({
+      language: this.settings.badgeLanguage,
+      getTags: () => this.settings.tags,
+      selected,
+      onCreate: async (tag) => {
+        await this.setTagList([...this.settings.tags, tag]);
+        new Notice(labels.tagCreated(tag.name));
+      },
+      onSave: async (keys) => {
+        const unchanged = keys.length === selected.length && keys.every((key, i) => key === selected[i]);
+        if (unchanged) return;
+        await this.setTaskTagsFor(ref, keys);
+        new Notice(keys.length ? labels.tagsUpdated : labels.tagsCleared);
+      },
+      onManage: () => this.openTagManager(),
+    });
+  }
+
+  /** Replaces the tag list, saves it, and repaints everything that shows tags. */
+  async setTagList(tags: TaskTag[]): Promise<void> {
+    this.settings.tags = tags;
+    await this.saveSettings();
+    this.refreshDecorations();
+    this.refreshReadingViews();
+    this.refreshBoards();
+  }
+
+  tagManagerHost(): TagManagerHost {
+    return {
+      language: this.settings.badgeLanguage,
+      getTags: () => this.settings.tags,
+      setTags: (tags) => this.setTagList(tags),
+      countUsage: async () => {
+        await this.taskStore.ensureLoaded();
+        const counts = new Map<string, number>();
+        for (const task of this.taskStore.all()) {
+          for (const key of task.tags) counts.set(key, (counts.get(key) ?? 0) + 1);
+        }
+        return counts;
+      },
+      removeFromNotes: (key) => this.removeTagEverywhere(key),
+    };
+  }
+
+  openTagManager(): void {
+    openTagManagerPanel(this.tagManagerHost());
+  }
+
+  /** Takes one tag key off every task that carries it. Returns how many tasks changed. */
+  private async removeTagEverywhere(key: string): Promise<number> {
+    await this.taskStore.ensureLoaded();
+    const paths = new Set(this.taskStore.all().filter((task) => task.tags.includes(key)).map((task) => task.filePath));
+    let changed = 0;
+
+    for (const path of paths) {
+      const file = this.app.vault.getFileByPath(path);
+      if (!file) continue;
+      await this.app.vault.process(file, (content) => {
+        const lines = content.split('\n');
+        let touched = false;
+        for (let i = 0; i < lines.length; i++) {
+          if (!TASK_LINE_REGEX.test(lines[i])) continue;
+          const keys = extractTags(lines[i]);
+          if (!keys.includes(key)) continue;
+          lines[i] = setTags(lines[i], keys.filter((k) => k !== key));
+          touched = true;
+          changed++;
+        }
+        return touched ? lines.join('\n') : content;
+      });
+    }
+
+    this.refreshDecorations();
+    return changed;
+  }
+
+  /**
+   * Reading view is post-processed once per render, so a renamed or recoloured
+   * tag only shows there after the view renders again.
+   */
+  refreshReadingViews(): void {
+    this.app.workspace.getLeavesOfType('markdown').forEach((leaf) => {
+      const view = leaf.view;
+      if (view instanceof MarkdownView && view.getMode() === 'preview') {
+        view.previewMode.rerender(true);
+      }
+    });
+  }
+
+  // ── Task board ───────────────────────────────────────────────────────────
+
+  /** Opens the board, or brings an already open one to the front. */
+  async activateBoard(): Promise<void> {
+    const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_TASK_BOARD)[0];
+    if (existing) {
+      await this.app.workspace.revealLeaf(existing);
+      return;
+    }
+    const leaf = this.app.workspace.getLeaf('tab');
+    await leaf.setViewState({ type: VIEW_TYPE_TASK_BOARD, active: true });
+    await this.app.workspace.revealLeaf(leaf);
+  }
+
+  /** Repaints open boards after a setting they depend on changed. */
+  refreshBoards(): void {
+    for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_TASK_BOARD)) {
+      if (leaf.view instanceof TaskBoardView) leaf.view.refresh();
+    }
+    this.floatingBoard?.refresh();
+  }
+
+  /** Opens the board as a floating window, or closes it if it is already open. */
+  toggleFloatingBoard(): void {
+    if (this.floatingBoard) {
+      this.floatingBoard.close();
+      return;
+    }
+    const modal = new TaskBoardModal(this.app, this.createBoardHost(), {
+      onDock: () => void this.activateBoard(),
+      hotkeys: this.commandHotkeys(FLOATING_BOARD_COMMAND, FLOATING_BOARD_HOTKEYS),
+      onClosed: () => {
+        if (this.floatingBoard === modal) this.floatingBoard = null;
+      },
+    });
+    this.floatingBoard = modal;
+    modal.open();
+  }
+
+  /**
+   * The keys a command is bound to right now: the user's own binding when they
+   * changed it under Settings → Hotkeys, the default otherwise. Obsidian keeps
+   * both in a manager it does not document, so every step is optional and the
+   * plugin's default is the last resort.
+   */
+  private commandHotkeys(commandId: string, fallback: Hotkey[]): Hotkey[] {
+    const id = `${this.manifest.id}:${commandId}`;
+    const manager = (this.app as unknown as {
+      hotkeyManager?: {
+        getHotkeys?: (id: string) => Hotkey[] | undefined;
+        getDefaultHotkeys?: (id: string) => Hotkey[] | undefined;
+      };
+    }).hotkeyManager;
+    try {
+      return manager?.getHotkeys?.(id) ?? manager?.getDefaultHotkeys?.(id) ?? fallback;
+    } catch {
+      return fallback;
+    }
+  }
+
+  private boardTaskRef(task: BoardTask): TaskRef {
+    return {
+      filePath: task.filePath,
+      lineContent: task.line,
+      blockId: task.blockId ?? this.getStoredBlockId(task.filePath, task.line),
+      lineNumber: task.lineNumber,
+    };
+  }
+
+  private createBoardHost(): TaskBoardHost {
+    return {
+      app: this.app,
+      store: this.taskStore,
+      getSettings: () => ({
+        language: this.settings.badgeLanguage,
+        calendarSystem: this.settings.calendarSystem,
+        targetFolder: this.settings.targetFolder,
+        tags: this.settings.tags,
+        board: this.settings.board,
+        referenceNotePath: this.settings.referenceNotePath,
+      }),
+      savePreferences: () => this.saveSettings(),
+      getProgress: (task) => {
+        const ref = this.boardTaskRef(task);
+        return this.getTaskProgress(task.filePath, ref.blockId, task.line);
+      },
+      setStatus: (task, status) => this.setTaskStatusFor(this.boardTaskRef(task), status),
+      setPriority: (task, priority) => this.setTaskPriorityFor(this.boardTaskRef(task), priority),
+      setTags: (task, keys) => this.setTaskTagsFor(this.boardTaskRef(task), keys),
+      setText: (task, text) => this.setTaskTextFor(this.boardTaskRef(task), text),
+      editDeadline: async (task) => {
+        const choice = await pickDeadline(this.app, {
+          language: this.settings.badgeLanguage,
+          calendarSystem: this.settings.calendarSystem,
+          deadline: task.deadline,
+        });
+        if (choice !== undefined) await this.setTaskDeadlineFor(this.boardTaskRef(task), choice);
+      },
+      editTags: (task) => this.openTagPickerFor(this.boardTaskRef(task), task.tags),
+      editProgress: (task, anchor) => {
+        const ref = this.boardTaskRef(task);
+        const progress = this.getTaskProgress(task.filePath, ref.blockId, task.line);
+        if (progress?.enabled) {
+          this.showProgressMenu({
+            lineContent: task.line,
+            filePath: task.filePath,
+            targetElement: anchor,
+            blockId: ref.blockId,
+            progress,
+          });
+        } else {
+          this.showTaskMenu(this.boardMenuDetail(task, anchor));
+        }
+      },
+      openTaskMenu: (task, anchor) => this.showTaskMenu(this.boardMenuDetail(task, anchor)),
+      reveal: (task) => this.revealTask(this.boardTaskRef(task)),
+      addTask: (path, line) => this.appendTaskLine(path, line),
+      noteExists: (path) => !!this.app.vault.getFileByPath(path),
+      chooseNote: (onPick) => new NoteSelectionModal(this.app, (file) => onPick(file.path)).open(),
+      manageTags: () => this.openTagManager(),
+      notify: (message) => {
+        new Notice(message);
+      },
+      openFloating: () => {
+        if (!this.floatingBoard) this.toggleFloatingBoard();
+      },
+    };
+  }
+
+  private boardMenuDetail(task: BoardTask, anchor: HTMLElement): TaskMenuDetail {
+    return {
+      status: task.status,
+      deadline: task.deadline,
+      lineContent: task.line,
+      filePath: task.filePath,
+      targetElement: anchor,
+      blockId: this.boardTaskRef(task).blockId,
+      tags: Array.from(task.text.matchAll(NATIVE_TAG_REGEX), (match) => match[1]),
+      priority: task.priority,
+    };
+  }
+
+  /** Opens the task's note with the cursor on the task. Reuses a tab already showing it. */
+  async revealTask(ref: TaskRef): Promise<void> {
+    const file = this.app.vault.getFileByPath(ref.filePath);
+    if (!file) {
+      new Notice(getBoardLabels(this.settings.badgeLanguage).noteMissing);
+      return;
+    }
+
+    const leaf =
+      this.app.workspace
+        .getLeavesOfType('markdown')
+        .find((candidate) => candidate.view instanceof MarkdownView && candidate.view.file?.path === file.path) ??
+      this.app.workspace.getLeaf('tab');
+    await leaf.openFile(file, { active: true, eState: { line: ref.lineNumber } });
+    await this.app.workspace.revealLeaf(leaf);
+
+    const view = leaf.view;
+    if (!(view instanceof MarkdownView) || ref.lineNumber === undefined) return;
+    // The line may have moved since the board read it; find it again.
+    const lines = view.editor.getValue().split('\n');
+    const index =
+      lines[ref.lineNumber] === ref.lineContent
+        ? ref.lineNumber
+        : this.findTaskLineIndex(lines, ref.lineContent, ref.blockId);
+    if (index < 0) return;
+    const position = { line: index, ch: lines[index].length };
+    view.editor.setCursor(position);
+    view.editor.scrollIntoView({ from: position, to: position }, true);
+  }
+
+  /** Appends a task line at the end of a note. Resolves false when the note is gone. */
+  private async appendTaskLine(path: string, line: string): Promise<boolean> {
+    const file = this.app.vault.getFileByPath(path);
+    if (!file) return false;
+    await this.app.vault.process(file, (content) => {
+      const separator = content.length === 0 || content.endsWith('\n') ? '' : '\n';
+      return `${content}${separator}${line}\n`;
+    });
+    return true;
   }
 
   refreshDecorations() {
@@ -1200,13 +1690,19 @@ export default class TaskProPlugin extends Plugin {
     file: TFile,
     lineContent: string,
     blockId: string | undefined,
-    transformLine: (line: string) => string
+    transformLine: (line: string) => string,
+    lineHint?: number
   ): Promise<boolean> {
     let updated = false;
 
     await this.app.vault.process(file, (content) => {
       const lines = content.split('\n');
-      const lineIndex = this.findTaskLineIndex(lines, lineContent, blockId);
+      // The hint wins only while that line is still the one the caller saw,
+      // which also tells two identical task lines in one note apart.
+      const lineIndex =
+        lineHint !== undefined && lines[lineHint] === lineContent
+          ? lineHint
+          : this.findTaskLineIndex(lines, lineContent, blockId);
 
       if (lineIndex === -1) {
         return content;
@@ -1412,7 +1908,7 @@ export default class TaskProPlugin extends Plugin {
   }
 
   private normalizeTaskContent(content: string): string {
-    return stripRepeat(stripPriority(stripProgress(stripDeadline(content))))
+    return stripTaskMetadata(content)
       .replace(/^(\s*)- \[([ \/xX!])\]\s*/, '')
       .replace(/\^[a-zA-Z0-9-]+\s*$/, '')
       .trim()
@@ -1729,7 +2225,7 @@ export default class TaskProPlugin extends Plugin {
   private taskTitle(lineContent: string): string {
     const match = TASK_LINE_WITH_CONTENT_REGEX.exec(lineContent ?? '');
     const body = match ? match[3] : (lineContent ?? '').replace(/^\s*- \[[ \/xX!]\]\s*/, '');
-    return stripRepeat(stripPriority(stripProgress(stripDeadline(body))))
+    return stripTaskMetadata(body)
       .replace(BLOCK_ID_TAIL_REGEX, '')
       .trim();
   }
@@ -1838,6 +2334,10 @@ export default class TaskProPlugin extends Plugin {
     // Release the reminder ticker, overlay and audio nodes
     this.reminderService?.stop();
     this.taskIndexService?.stop();
+    // Closing the float also takes its class back off <body>, so a theme's
+    // blur never outlives the plugin.
+    this.floatingBoard?.close();
+    this.taskStore?.destroy();
     this.timerService?.destroy();
   }
 
