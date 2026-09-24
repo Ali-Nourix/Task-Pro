@@ -36,7 +36,7 @@ await esbuild.build({
   ],
 });
 
-const { App, TFile, notices } = await import(pathToFileURL(mockPath).href);
+const { App, TFile, notices, bodyElement } = await import(pathToFileURL(mockPath).href);
 const { default: TaskProPlugin } = await import(pathToFileURL(outFile).href);
 await rm(outFile, { force: true });
 
@@ -169,5 +169,21 @@ const groceries = plugin.taskStore.inFile('Life/Home.md')[0];
 await host.setTags(groceries, ['home', 'deep-work']);
 eq(note('Life/Home.md')[0], '- [ ] Groceries @tag(home, deep-work)', 'the board edits through the same path');
 
+// ── floating board ─────────────────────────────────────────────────────────
+const floatCommand = app.commands.find((c) => c.id === 'toggle-floating-task-board');
+eq(floatCommand?.hotkeys, [{ modifiers: ['Mod', 'Shift'], key: 'b' }], 'the float has a default shortcut');
+// The board inside the modal renders into the mock's inert DOM; what matters
+// here is the toggle and the hooks a theme reads.
+floatCommand.callback();
+const floating = plugin.floatingBoard;
+eq(!!floating, true, 'the command opens the float');
+eq(bodyElement.classes.has('taskpro-board-is-floating'), true, 'body carries the hook a theme blurs from');
+eq(floating.containerEl.classes.has('taskpro-board-float'), true, 'and so does the modal container');
+eq(floating.scope.registered, [['Mod+Shift', 'b']], 'the same keys close it from inside the modal');
+floatCommand.callback();
+eq([plugin.floatingBoard, bodyElement.classes.has('taskpro-board-is-floating')], [null, false], 'the command toggles it closed and the hook comes off');
+floatCommand.callback();
 plugin.onunload();
+eq(bodyElement.classes.has('taskpro-board-is-floating'), false, 'unloading the plugin never leaves the blur behind');
+
 console.log(`PLUGIN_EDITS_OK (${checked} checks)${notices.length ? ` · ${notices.length} notices` : ''}`);

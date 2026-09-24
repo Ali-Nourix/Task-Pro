@@ -80,6 +80,20 @@ export interface TaskBoardHost {
   chooseNote(onPick: (path: string) => void): void;
   manageTags(): void;
   notify(message: string): void;
+  /** Shows the board as a floating window over the whole app. */
+  openFloating?(): void;
+}
+
+export interface TaskBoardOptions {
+  /** Rendered inside the floating window rather than a workspace tab. */
+  floating?: boolean;
+  /** Closes the floating window. Only offered when floating. */
+  onClose?: () => void;
+  /**
+   * Switches between the two: floats a tab's board, or sends a floating board
+   * back to a tab. Falls back to the host's openFloating in a tab.
+   */
+  onToggleFloating?: () => void;
 }
 
 /** Strips link and emphasis syntax so a title reads as text in a cell. */
@@ -141,8 +155,13 @@ export class TaskBoard {
   private draggedFrom: string | null = null;
   private visible: BoardTask[] = [];
 
-  constructor(container: HTMLElement, private readonly host: TaskBoardHost) {
+  constructor(
+    container: HTMLElement,
+    private readonly host: TaskBoardHost,
+    private readonly options: TaskBoardOptions = {}
+  ) {
     this.el = container.createDiv({ cls: 'taskpro-board' });
+    this.el.toggleClass('is-floating', !!options.floating);
   }
 
   async mount(): Promise<void> {
@@ -223,6 +242,19 @@ export class TaskBoard {
     const actions = heading.createDiv({ cls: 'taskpro-board__heading-actions' });
     this.iconButton(actions, 'tags', labels.manageTags, () => this.host.manageTags());
     this.iconButton(actions, 'refresh-cw', labels.refresh, () => void this.host.store.reload());
+    const toggleFloating =
+      this.options.onToggleFloating ?? (this.host.openFloating ? () => this.host.openFloating?.() : null);
+    if (toggleFloating) {
+      this.iconButton(
+        actions,
+        this.options.floating ? 'minimize-2' : 'picture-in-picture-2',
+        this.options.floating ? labels.dock : labels.float,
+        () => toggleFloating()
+      ).addClass('taskpro-board__float-toggle');
+    }
+    if (this.options.floating && this.options.onClose) {
+      this.iconButton(actions, 'x', labels.close, () => this.options.onClose?.()).addClass('taskpro-board__close');
+    }
 
     this.toolbarEl = this.headerEl.createDiv({ cls: 'taskpro-board__toolbar' });
     this.renderScopeControl(this.toolbarEl);
@@ -555,7 +587,7 @@ export class TaskBoard {
     setIcon(target.createSpan({ cls: 'taskpro-board__inbox-icon' }), 'file-plus');
     target.createSpan({
       cls: 'taskpro-board__inbox-label',
-      text: inbox ? inbox.split('/').pop()!.replace(/\.md$/i, '') : labels.chooseInbox,
+      text: inbox ? inbox.split('/').pop()!.replace(/\.md$/i, '') : labels.chooseInboxShort,
       attr: { dir: 'auto' },
     });
     target.addEventListener('click', () =>
@@ -816,15 +848,34 @@ export class TaskBoard {
       }
       case 'note': {
         const name = parent.createSpan({ cls: 'taskpro-board__group-note' });
+        name.title = value;
         setIcon(name.createSpan({ cls: 'taskpro-board__group-note-icon' }), 'file-text');
-        name.createSpan({ text: value.split('/').pop()!.replace(/\.md$/i, ''), attr: { dir: 'auto' } });
-        const folder = value.includes('/') ? value.slice(0, value.lastIndexOf('/')) : '';
+        name.createSpan({
+          cls: 'taskpro-board__group-note-name',
+          text: value.split('/').pop()!.replace(/\.md$/i, ''),
+          attr: { dir: 'auto' },
+        });
+        const folder = this.folderHint(value);
         if (folder) name.createSpan({ cls: 'taskpro-board__group-folder', text: folder, attr: { dir: 'auto' } });
         return;
       }
       default:
         return;
     }
+  }
+
+  /**
+   * The folder a note group names beside the note: only the parent folder's
+   * own name, and nothing at all when that is the scope's target folder. A
+   * full path repeated on every group was most of what a column header said.
+   * The full path is still the group's tooltip.
+   */
+  private folderHint(path: string): string {
+    const folder = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
+    if (!folder) return '';
+    const target = this.settings.targetFolder.trim().replace(/^\/+|\/+$/g, '');
+    if (target && folder.toLowerCase() === target.toLowerCase()) return '';
+    return folder.split('/').pop() ?? '';
   }
 
   private renderRow(body: HTMLElement, task: BoardTask): void {
@@ -872,15 +923,15 @@ export class TaskBoard {
     button.setAttribute('role', 'checkbox');
     button.setAttribute('aria-checked', task.status === '[/]' ? 'mixed' : String(done));
     button.setAttribute('aria-label', done ? labels.markOpen : labels.markDone);
-    if (done) setIcon(button, 'check');
-    else if (task.status === '[!]') setIcon(button, 'x');
+    // No icon inside: the tick and the cross are CSS masks. A theme's rules
+    // for icon buttons key on an <svg> in a <button> and would resize it.
     button.addEventListener('click', (event) => {
       event.stopPropagation();
       void this.host.setStatus(task, done ? '[ ]' : '[x]');
     });
   }
 
-  private titleBlock(parent: HTMLElement, task: BoardTask): void {
+  private titleBlock(parent: HTMLElement, task: BoardTask, withOpen = true): void {
     const labels = this.labels;
     const wrap = parent.createDiv({ cls: 'taskpro-board__title-wrap' });
     if (task.depth > 0) {
@@ -911,6 +962,8 @@ export class TaskBoard {
       repeat.title = text;
     }
 
+    // A card already opens its note from the note link in its footer.
+    if (!withOpen) return;
     const open = this.iconButton(wrap, 'arrow-up-right', labels.openNote, (event) => {
       event.stopPropagation();
       void this.host.reveal(task);
@@ -1046,12 +1099,20 @@ export class TaskBoard {
 
   private deadlineChip(parent: HTMLElement, task: BoardTask): void {
     if (task.deadline) {
+      const labels = this.labels;
       const info = getDeadlineInfo(task.deadline, this.language, task.status);
-      const chip = buildChip('taskpro-deadline-badge', CHIP_ICON_NAMES.deadline, info.text);
+      const date = this.formatDate(task.deadline);
+      // The note chips say "Not completed on time" in full; a cell has room
+      // for a word. A past deadline on a finished task is just its date.
+      const text = info.state === 'missed' ? labels.buckets.overdue : info.state === 'completed' ? date : info.text;
+      const wrap = parent.createDiv({ cls: 'taskpro-board__deadline' });
+      const chip = buildChip('taskpro-deadline-badge', CHIP_ICON_NAMES.deadline, text);
       chip.dataset.state = info.state;
-      chip.title = this.formatDate(task.deadline);
-      parent.appendChild(chip);
-      parent.createSpan({ cls: 'taskpro-board__date', text: this.formatDate(task.deadline) });
+      chip.title = `${info.text} · ${date}`;
+      wrap.appendChild(chip);
+      if (info.state !== 'completed') {
+        wrap.createSpan({ cls: 'taskpro-board__date', text: date, attr: { dir: 'ltr' } });
+      }
     } else {
       setIcon(parent.createSpan({ cls: 'taskpro-board__placeholder' }), 'plus');
     }
@@ -1265,7 +1326,7 @@ export class TaskBoard {
 
     const top = card.createDiv({ cls: 'taskpro-card__top' });
     this.checkButton(top, task);
-    this.titleBlock(top, task);
+    this.titleBlock(top, task, false);
     const more = this.iconButton(top, 'more-horizontal', labels.more, () => this.host.openTaskMenu(task, more));
     more.addClass('taskpro-card__more');
 

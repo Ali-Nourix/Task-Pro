@@ -197,7 +197,61 @@ export class ItemView extends Component {
 export class MarkdownView {}
 export class PluginSettingTab {}
 export class Setting {}
-export class Modal {}
+
+/** Records what a modal does to its container and to <body>. */
+export const modalLog = [];
+class FakeElement {
+  constructor(name) {
+    this.name = name;
+    this.classes = new Set();
+  }
+  get ownerDocument() {
+    return { body: bodyElement };
+  }
+  addClass(...names) {
+    names.forEach((n) => this.classes.add(n));
+    modalLog.push(`${this.name} +${names.join(' +')}`);
+  }
+  removeClass(...names) {
+    names.forEach((n) => this.classes.delete(n));
+    modalLog.push(`${this.name} -${names.join(' -')}`);
+  }
+  empty() {}
+  querySelector() {
+    return null;
+  }
+  // What the board builds inside the modal is not inspected here.
+  createDiv() {
+    return inert;
+  }
+  createEl() {
+    return inert;
+  }
+  createSpan() {
+    return inert;
+  }
+}
+const bodyElement = new FakeElement('body');
+export { bodyElement };
+
+export class Modal {
+  constructor(app) {
+    this.app = app;
+    this.containerEl = new FakeElement('container');
+    this.modalEl = new FakeElement('modal');
+    this.contentEl = new FakeElement('content');
+    this.scope = { registered: [], register: (mods, key) => this.scope.registered.push([mods.join('+'), key]) };
+  }
+  open() {
+    this.isOpen = true;
+    this.onOpen();
+  }
+  close() {
+    if (!this.isOpen) return;
+    this.isOpen = false;
+    this.onClose();
+  }
+}
 export class FuzzySuggestModal {}
 export class Menu {}
 export class WorkspaceLeaf {}
