@@ -18,6 +18,7 @@ import {
   timerRemainingSeconds,
   timerState,
 } from '../types';
+import { ResolvedTag, applyTagColor } from '../tags';
 import { getDeadlineInfo } from '../widget-localization';
 import { getRepeatLabels, getTimerLabels } from '../timer-localization';
 
@@ -32,7 +33,7 @@ export function applyChipScale(container: HTMLElement, badgeSize: number): void 
  * emoji, so they follow the active theme's colour, weight and font size and
  * render identically on every platform.
  */
-function buildChip(className: string, iconName: string | null, label: string): HTMLElement {
+export function buildChip(className: string, iconName: string | null, label: string): HTMLElement {
   const badge = document.createElement('span');
   badge.className = `taskpro-chip ${className}`;
 
@@ -240,6 +241,62 @@ export function createTimerChip(options: {
   });
 
   return badge;
+}
+
+/**
+ * A user tag. Colour comes from the tag's own accent through the shared chip
+ * recipe, so a "blue" tag is the theme's blue and stays legible in both modes.
+ * Clicking it opens the tag picker for the task it sits on.
+ */
+export function createTagChip(options: {
+  tag: ResolvedTag;
+  filePath: string;
+  lineContent: string;
+  blockId?: string;
+  tagKeys: string[];
+}): HTMLElement {
+  const badge = buildChip('taskpro-tag-chip', null, options.tag.name);
+  applyTagColor(badge, options.tag.color);
+  badge.dataset.tag = options.tag.key;
+  if (options.tag.unknown) badge.classList.add('is-unknown');
+  badge.setAttribute('aria-label', options.tag.name);
+  badge.setAttribute('role', 'button');
+  badge.tabIndex = 0;
+
+  badge.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    badge.dispatchEvent(
+      new CustomEvent('taskpro-tags-click', {
+        bubbles: true,
+        detail: {
+          filePath: options.filePath,
+          lineContent: options.lineContent,
+          blockId: options.blockId,
+          tagKeys: options.tagKeys,
+          targetElement: badge,
+        },
+      })
+    );
+  });
+
+  return badge;
+}
+
+/**
+ * Appends one chip per tag. The chip row is laid out reversed (see
+ * .taskpro-badge-container), so the tags go in back to front: that way they
+ * read in note order outward from the task text, in LTR and RTL notes alike.
+ */
+export function appendTagChips(
+  container: HTMLElement,
+  tags: ResolvedTag[],
+  context: { filePath: string; lineContent: string; blockId?: string }
+): void {
+  const tagKeys = tags.map((tag) => tag.key);
+  for (const tag of [...tags].reverse()) {
+    container.appendChild(createTagChip({ tag, tagKeys, ...context }));
+  }
 }
 
 /**

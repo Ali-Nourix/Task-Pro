@@ -15,6 +15,7 @@ import { chromium } from 'playwright';
 import { fileURLToPath } from 'url';
 import path from 'path';
 import { readdir } from 'fs/promises';
+import { buildHarness } from './harness/build.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const AA = 4.5;
@@ -32,16 +33,39 @@ try {
   /* no themes folder is fine — the defaults still get checked */
 }
 
+// The board, the tag palette and the kanban columns render from the plugin's
+// own code, which needs the harness bundle (and so lucide-static) first.
+let boardSurfaces = [];
+try {
+  await buildHarness();
+  boardSurfaces = [
+    { page: 'board-preview.html', name: 'board table', extra: '' },
+    { page: 'board-preview.html', name: 'board kanban', extra: 'layout=board' },
+    { page: 'board-preview.html', name: 'tag palette', extra: 'view=palette' },
+  ];
+} catch (error) {
+  console.log(`board surfaces skipped — ${error.message}`);
+}
+
+const SURFACES = [
+  { page: 'chips-preview.html', name: 'chips', extra: '' },
+  { page: 'reminder-preview.html', name: 'reminder', extra: '' },
+  ...boardSurfaces,
+];
+
 const CASES = themes.flatMap(({ name, query }) =>
-  ['chips', 'reminder'].flatMap((surface) =>
+  SURFACES.flatMap((surface) =>
     [
-      { mode: 'dark', suffix: '' },
-      { mode: 'light', suffix: query ? '&light' : '?light' },
-    ].map(({ mode, suffix }) => ({
-      page: `${surface}-preview.html`,
-      label: `${surface} · ${name} · ${mode}`,
-      query: query + suffix,
-    }))
+      { mode: 'dark', flag: '' },
+      { mode: 'light', flag: 'light' },
+    ].map(({ mode, flag }) => {
+      const parts = [query.replace(/^\?/, ''), surface.extra, flag].filter(Boolean);
+      return {
+        page: surface.page,
+        label: `${surface.name} · ${name} · ${mode}`,
+        query: parts.length ? `?${parts.join('&')}` : '',
+      };
+    })
   )
 );
 
@@ -52,7 +76,7 @@ try {
   for (const testCase of CASES) {
     const page = await browser.newPage({ viewport: { width: 900, height: 900 } });
     await page.goto(`file://${path.join(here, testCase.page)}${testCase.query}`);
-    await page.waitForTimeout(200);
+    await page.waitForTimeout(250);
 
     const results = await page.evaluate(() => {
       // Chromium serialises a color-mix() result as `color(srgb r g b / a)`
@@ -98,10 +122,12 @@ try {
         const ink = over(parse(getComputedStyle(label).color), effectiveBg);
         const name =
           chip.dataset.status ?? chip.dataset.priority ?? chip.dataset.state ??
-          chip.dataset.repeat ?? chip.dataset.progress ?? 'chip';
-        const kind = [...chip.classList].find((c) => c.startsWith('taskpro-') && (c.endsWith('-badge') || c.endsWith('-priority')));
+          chip.dataset.repeat ?? chip.dataset.progress ?? chip.dataset.tag ?? label.textContent.trim();
+        const kind = [...chip.classList].find(
+          (c) => c.startsWith('taskpro-') && (c.endsWith('-badge') || c.endsWith('-priority') || c === 'taskpro-tag-chip')
+        );
         out.push({
-          what: `${(kind ?? 'chip').replace('taskpro-', '').replace('-badge', '')}:${name}`,
+          what: `${(kind ?? 'chip').replace('taskpro-', '').replace('-badge', '').replace('-chip', '')}:${name}`,
           text: label.textContent.trim().slice(0, 18),
           ratio: Math.round(ratio(ink, effectiveBg) * 100) / 100,
         });

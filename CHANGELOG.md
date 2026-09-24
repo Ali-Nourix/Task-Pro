@@ -1,5 +1,78 @@
 # Changelog
 
+## 1.4.0 - Your own tags, and a board of every task
+
+1.3.0 was never published as a release, so its changes (below) ship in this
+version too.
+
+### Tags
+
+- Create tags with a **name and a colour**, and give any number of them to a
+  task. They show as chips next to the task's other chips, nearest the text, in
+  the order the note lists them.
+- A note stores only the tag's key, as `@tag(work, deep-work)`, hidden behind
+  the chips while they are on. Renaming or recolouring a tag is a settings
+  change and shows on every task at once, in Live Preview and Reading View.
+  Keys accept any script, including Persian with its zero-width non-joiner.
+- Colours are the theme's own palette (`--color-red` … `--color-pink`, plus
+  grey) or a custom hex. `npm run check:contrast` now measures every palette
+  colour as a chip label: all nine pass WCAG AA in both modes on every theme
+  checked.
+- **Tag picker**, from the status chip's menu (**Add Tags** / **Edit Tags**), a
+  tag chip, the board, or **Set Tags on Current Task**: filter as you type,
+  arrow keys and `Enter` to toggle, `Backspace` on an empty field to drop the
+  last tag, and a **Create** row with a colour for a name that does not exist
+  yet.
+- **Tag manager**, under a new **Tags** settings tab, from the board, or with
+  **Manage Tags**: rename, recolour, usage counts, and delete with or without
+  removing the marker from every note. A key nobody has defined shows as a
+  dashed grey chip rather than disappearing.
+- Tags are copied into an imported task and synced from a linked copy to its
+  source, like the other markers. A tag never changes a task's identity, so it
+  does not break sync, the creation index, or the reminder age filter.
+
+### Task board
+
+- A new view, **Open Task Board** (and a ribbon icon), listing every task in the
+  **whole vault or only the target folder**, as a **table** or a **kanban
+  board**.
+- Group by status, tag, priority, deadline or note; sort from the column
+  headers; filter by status, priority and tag; search titles, tag names and
+  notes. Groups fold, and the layout, grouping, sort and filters are remembered.
+- Edit in place: tick off, status and priority menus, deadline picker, tag
+  picker, and click-to-rename that keeps every marker and the block ID. On the
+  board, drag a card to another column to change its status, priority or tag.
+  The **⋯** button opens the full task menu; **↗** opens the note at the task.
+- Quick add, from the top row or a column's **New** button, into a note you
+  choose. A new task takes on the active filters or its column, so it stays in
+  view.
+- Right-to-left in Persian, with the same labels as the rest of the plugin.
+- Built to stay quick: task-free notes are skipped using the metadata cache,
+  only real task list items are parsed, a changed note is re-parsed from the
+  content Obsidian already holds, and long groups are drawn 150 rows at a time.
+
+### Under the hood
+
+- The chip menu, the board and the commands now edit a task through one path.
+  It takes a line-number hint when the line is unchanged, which also tells two
+  identical task lines apart, and falls back to block ID and text otherwise.
+  Renaming a task moves its sync mapping and cached block ID with it.
+- Every place that stripped TaskPro's markers (sync matching, the creation
+  index, titles, the import parser) now uses one helper, so a new marker can
+  no longer be missed in one of five copies.
+- The deadline picker is shared by the chip menu and the board, and switching
+  it between Jalali and Gregorian now converts the date already typed.
+- TaskPro panels take an `onClose` hook, so Escape or a click outside is
+  reported as a cancel.
+- Tests: tag markers and the tag list (`test/tags.mjs`), board parsing,
+  filtering, sorting and grouping (`test/board.mjs`), and an integration test
+  that loads the whole plugin against an in-memory vault
+  (`test/plugin-edits.mjs`), all in `npm test`. `npm run test:ui` clicks
+  through the real board in Chromium.
+- `test/board-preview.html` renders the board, tag picker, tag manager and tag
+  chips from the plugin's own classes, for the README images and the contrast
+  check.
+
 ## 1.3.0 - Chips that follow your theme, and a reminder alert that is not sluggish
 
 ### Chips adapt to any theme, in both modes

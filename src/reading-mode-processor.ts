@@ -5,8 +5,10 @@
 import { App, MarkdownPostProcessorContext } from 'obsidian';
 import { TaskStatus, Language, CalendarSystem, TaskProgress, TaskPriority, TaskRepeat, TaskTimer } from './types';
 import { isWithinTargetFolder } from './path-utils';
-import { extractDeadline, extractProgress, extractPriority, extractRepeat } from './task-metadata';
+import { extractDeadline, extractProgress, extractPriority, extractRepeat, extractTags } from './task-metadata';
+import { ResolvedTag, TaskTag, resolveTag } from './tags';
 import {
+  appendTagChips,
   applyChipScale,
   createDeadlineChip,
   createPriorityChip,
@@ -18,6 +20,8 @@ import {
 
 /** A pattern that matches nothing, used to switch off an optional strip. */
 const NEVER_MATCHES = /(?!)/g;
+/** Same shape the parser accepts; see TAG_PATTERN_SOURCE in task-metadata. */
+const TAG_MARKER_TEXT = /@tag\(\s*[^()\n]*?\s*\)/g;
 
 /** Settings slice the reading-mode renderer depends on. */
 export interface ReadingModeSettings {
@@ -30,6 +34,8 @@ export interface ReadingModeSettings {
   showPriorityBadges: boolean;
   showTimerBadges: boolean;
   showRepeatBadges: boolean;
+  showTagBadges: boolean;
+  tags: TaskTag[];
 }
 
 /**
@@ -112,6 +118,9 @@ export function createReadingModeProcessor(
       const priority = settings.showPriorityBadges ? extractPriority(text) : undefined;
       const timer = settings.showTimerBadges ? getTimer(ctx.sourcePath, blockId) : undefined;
       const repeat = settings.showRepeatBadges ? extractRepeat(text) : undefined;
+      const tagChips = settings.showTagBadges
+        ? extractTags(text).map((key) => resolveTag(key, settings.tags))
+        : [];
 
       // Extract tags
       const tagMatches = text.matchAll(/#([a-zA-Z0-9_-]+)/g);
@@ -129,10 +138,11 @@ export function createReadingModeProcessor(
         text,
         ctx.sourcePath,
         blockId,
-        tags
+        tags,
+        tagChips
       );
       
-      hideInlineTaskMetadata(item, settings.showRepeatBadges);
+      hideInlineTaskMetadata(item, settings.showRepeatBadges, settings.showTagBadges);
       
       // Append to the list item
       item.appendChild(badgeContainer);
@@ -145,7 +155,7 @@ export function createReadingModeProcessor(
  * carry the same information. The recurrence marker is only stripped while its
  * chip is on — otherwise turning the chip off would hide the rule entirely.
  */
-function hideInlineTaskMetadata(root: Element, hideRepeat: boolean): void {
+function hideInlineTaskMetadata(root: Element, hideRepeat: boolean, hideTags: boolean): void {
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   const emptyTextNodes: Text[] = [];
 
@@ -170,6 +180,7 @@ function hideInlineTaskMetadata(root: Element, hideRepeat: boolean): void {
           : NEVER_MATCHES,
         ''
       )
+      .replace(hideTags ? TAG_MARKER_TEXT : NEVER_MATCHES, '')
       .replace(/\uD83D\uDD3A|\u23EB|\uD83D\uDD3C|\uD83D\uDD3D|\u23EC/g, '')
       .replace(/\s*\^[a-zA-Z0-9-]+\s*$/g, '')
       .replace(/\s{2,}/g, ' ');
@@ -183,6 +194,7 @@ function hideInlineTaskMetadata(root: Element, hideRepeat: boolean): void {
         || /@priority\(/i.test(textNode.textContent)
         || /\[priority::/i.test(textNode.textContent)
         || (hideRepeat && /@repeat\(/i.test(textNode.textContent))
+        || (hideTags && textNode.textContent.includes('@tag('))
         || /\uD83D\uDD3A|\u23EB|\uD83D\uDD3C|\uD83D\uDD3D|\u23EC/.test(textNode.textContent)
         || /\^[a-zA-Z0-9-]+/.test(textNode.textContent);
       if (!cleanedText.trim() && hadMetadata) {
@@ -213,7 +225,8 @@ function createInteractiveBadgeContainer(
   lineContent: string,
   filePath: string,
   blockId?: string,
-  tags?: string[]
+  tags?: string[],
+  tagChips: ResolvedTag[] = []
 ): HTMLElement {
   const container = document.createElement('span');
   container.className = 'taskpro-badge-container';
@@ -298,6 +311,10 @@ function createInteractiveBadgeContainer(
         language: settings.badgeLanguage,
       })
     );
+  }
+
+  if (tagChips.length) {
+    appendTagChips(container, tagChips, { filePath, lineContent, blockId });
   }
 
   return container;
