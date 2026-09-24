@@ -51,6 +51,42 @@ version too.
   only real task list items are parsed, a changed note is re-parsed from the
   content Obsidian already holds, and long groups are drawn 150 rows at a time.
 
+### Floating board
+
+- **Toggle Floating Task Board** (`Ctrl/Cmd+Shift+B`) opens the board as a
+  large floating window over the whole app, from anywhere. The same keys close
+  it, as does `Esc`, and search has focus on open. A header button sends it
+  back to a tab, and the tab's header can float it.
+- While it is open, `<body>` carries `taskpro-board-is-floating` and the modal
+  container `taskpro-board-float`, so a theme can blur the app behind it. The
+  plugin itself only dims. Bookcloth 3.8.0 blurs.
+
+### The board under a theme
+
+Seen in a real vault on Bookcloth, and reproduced in Obsidian 1.13.7:
+
+- A done task's round checkbox became a large green square. The theme sizes
+  any `<button>` with an `<svg>` inside as a 28px icon button and forces the
+  icon to 18px with `!important`, and a theme's rules win ties because its
+  stylesheet loads after a plugin's. The tick and the cross are now CSS masks,
+  so there is no icon for that rule to find.
+- The quick-add field drew a box inside its own dashed box, and every board
+  control inherited the theme's generic button and input styling. The board's
+  rules are now scoped one class above those, and coloured states (checkbox
+  fills, the active layout tab, tag pills) are background images that a
+  theme's hover colour cannot replace.
+- Cards showed the ↗ button meant for table rows; cards open their note from
+  the note link in their footer.
+- Note columns repeated the full folder path in every header. A header now
+  names the note and, only when it differs from the target folder, its parent
+  folder; the path is the tooltip.
+- A deadline cell cut its date off (`405/07/08`) and the long "Not completed on
+  time" chip overflowed. The date wraps under the chip, a missed deadline says
+  *Overdue*, a met one shows its date, and a chip that still does not fit
+  ends in an ellipsis instead of running past its cell.
+- "Choose the note new tasks go into" was the quick-add button's label; it is
+  its tooltip now, and the label is *Choose note*.
+
 ### Under the hood
 
 - The chip menu, the board and the commands now edit a task through one path.

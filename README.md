@@ -206,6 +206,33 @@ the ribbon or with **Open Task Board**, and it opens as a tab of its own.
 
   ![The task board in Persian, right to left, on a community theme](docs/images/task-board-kanban-fa.png)
 
+### Floating over everything
+
+Press **`Ctrl+Shift+B`** (`Cmd+Shift+B` on macOS), or run **Toggle Floating
+Task Board**, from anywhere — a note, the graph, another plugin's view — and
+the board opens as a large floating window over the whole app. The same keys
+close it again, as does `Esc`; the search field has focus as soon as it
+appears, so you can start typing to find a task. **Open in a tab** in its
+header sends it back to a workspace tab, and **Float over Obsidian** on the
+tab's header does the reverse.
+
+![The task board floating over Obsidian, with the rest of the app blurred behind it](docs/images/task-board-floating-light.png)
+
+![The same in dark mode, as a board](docs/images/task-board-floating-dark.png)
+
+<sub>These two are screenshots of Obsidian 1.13.7 itself, with the Bookcloth
+theme, not harness renders.</sub>
+
+The plugin sizes the window and dims what is behind it. The blur belongs to the
+theme: while the float is open the plugin puts `taskpro-board-is-floating` on
+`<body>` and `taskpro-board-float` on the modal container, and a theme blurs
+from those — [Bookcloth](https://github.com/Ali-Nourix/Obsidian-Theme) does, and
+exposes the strength as a Style Settings slider. A theme that blurs should put
+`filter: blur()` on `body > .app-container` (and `.titlebar`) rather than
+`backdrop-filter` on the modal background: measured in Obsidian with the board
+repainting every frame, `filter` holds 60 fps exactly as no blur does, while
+`backdrop-filter` drops to about 26.
+
 It stays quick on a large vault: notes the metadata cache says hold no tasks are
 never read, only the lines Obsidian itself calls task items are parsed (so a
 `- [ ]` in a code block is not a task), a changed note is re-parsed from the
@@ -317,6 +344,7 @@ What a planner actually needs from a task that comes back.
 | Set Tags on Current Task | — |
 | Manage Tags | — |
 | Open Task Board | — |
+| Toggle Floating Task Board | `Ctrl+Shift+B` |
 | Show Task Reminders Now | — |
 | Toggle Daily Task Reminders | — |
 
@@ -418,6 +446,13 @@ Chip colours, padding, radius and opacity are exposed to the
   finds the line (by the line number it was read from while that line is
   unchanged, then by block ID, then by text), rewrites it under the vault lock,
   and syncs a linked copy. Renaming a task moves its sync mapping with it.
+- Obsidian loads a theme's stylesheet after every plugin's, so a theme wins any
+  specificity tie. The board's controls are scoped one class above a theme's
+  generic `button` and `input` rules, its checkbox glyphs are CSS masks rather
+  than icons (so a theme's icon-button sizing never reaches them), and coloured
+  button states are background images, which a theme's `button:hover` colour
+  paints under rather than over. That is what keeps the board looking the
+  same under any theme.
 - The task board keeps an index of every task that follows the vault's metadata
   events. It is built the first time the board (or a tag count) needs it, after
   Obsidian's layout is ready, and costs nothing until then.

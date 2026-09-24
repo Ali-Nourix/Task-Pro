@@ -2,7 +2,7 @@
 // TaskPro - Main plugin entry point
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { Plugin, Editor, MarkdownFileInfo, MarkdownView, Notice, TFile, setIcon } from 'obsidian';
+import { Plugin, Editor, Hotkey, MarkdownFileInfo, MarkdownView, Notice, TFile, setIcon } from 'obsidian';
 import { EditorView } from '@codemirror/view';
 import {
   TaskProSettings,
@@ -57,6 +57,7 @@ import { NoteSelectionModal } from './src/note-selector-modal';
 import { BoardTask, TaskStore } from './src/board/task-store';
 import { TaskBoardHost } from './src/board/task-board';
 import { TaskBoardView, VIEW_TYPE_TASK_BOARD } from './src/board/task-board-view';
+import { TaskBoardModal } from './src/board/task-board-modal';
 import { getBoardLabels } from './src/board/board-localization';
 
 /**
@@ -85,6 +86,9 @@ interface TaskMenuDetail {
 
 const NATIVE_TAG_REGEX = /#([a-zA-Z0-9_-]+)/g;
 
+const FLOATING_BOARD_COMMAND = 'toggle-floating-task-board';
+const FLOATING_BOARD_HOTKEYS: Hotkey[] = [{ modifiers: ['Mod', 'Shift'], key: 'b' }];
+
 // Module-level regex constants — compiled once, never inside loops
 const TASK_LINE_REGEX = /^(\s*)- \[([ /xX!])\] (.+)$/;
 const BLOCK_ID_TAIL_REGEX = /\^([a-zA-Z0-9-]+)\s*$/;
@@ -101,6 +105,8 @@ export default class TaskProPlugin extends Plugin {
   taskIndexService!: TaskIndexService;
   /** Every task in the vault, for the board and tag counts. Loaded on first use. */
   taskStore!: TaskStore;
+  /** The board's floating window, while it is open. */
+  private floatingBoard: TaskBoardModal | null = null;
   private isProcessingSync = false;
   private syncDebounceTimers = new Map<string, NodeJS.Timeout>(); // Debounce timers per file
   private fileTaskStates = new Map<string, Map<string, TaskStatus>>(); // Track task states per file
@@ -534,6 +540,15 @@ export default class TaskProPlugin extends Plugin {
       callback: () => {
         void this.activateBoard();
       },
+    });
+
+    // Command: the board as a floating window over the whole app. The same
+    // hotkey closes it again; see TaskBoardModal.
+    this.addCommand({
+      id: FLOATING_BOARD_COMMAND,
+      name: 'Toggle Floating Task Board',
+      callback: () => this.toggleFloatingBoard(),
+      hotkeys: FLOATING_BOARD_HOTKEYS,
     });
 
     // Command: choose tags for the task under the cursor
@@ -1034,6 +1049,45 @@ export default class TaskProPlugin extends Plugin {
     for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_TASK_BOARD)) {
       if (leaf.view instanceof TaskBoardView) leaf.view.refresh();
     }
+    this.floatingBoard?.refresh();
+  }
+
+  /** Opens the board as a floating window, or closes it if it is already open. */
+  toggleFloatingBoard(): void {
+    if (this.floatingBoard) {
+      this.floatingBoard.close();
+      return;
+    }
+    const modal = new TaskBoardModal(this.app, this.createBoardHost(), {
+      onDock: () => void this.activateBoard(),
+      hotkeys: this.commandHotkeys(FLOATING_BOARD_COMMAND, FLOATING_BOARD_HOTKEYS),
+      onClosed: () => {
+        if (this.floatingBoard === modal) this.floatingBoard = null;
+      },
+    });
+    this.floatingBoard = modal;
+    modal.open();
+  }
+
+  /**
+   * The keys a command is bound to right now: the user's own binding when they
+   * changed it under Settings → Hotkeys, the default otherwise. Obsidian keeps
+   * both in a manager it does not document, so every step is optional and the
+   * plugin's default is the last resort.
+   */
+  private commandHotkeys(commandId: string, fallback: Hotkey[]): Hotkey[] {
+    const id = `${this.manifest.id}:${commandId}`;
+    const manager = (this.app as unknown as {
+      hotkeyManager?: {
+        getHotkeys?: (id: string) => Hotkey[] | undefined;
+        getDefaultHotkeys?: (id: string) => Hotkey[] | undefined;
+      };
+    }).hotkeyManager;
+    try {
+      return manager?.getHotkeys?.(id) ?? manager?.getDefaultHotkeys?.(id) ?? fallback;
+    } catch {
+      return fallback;
+    }
   }
 
   private boardTaskRef(task: BoardTask): TaskRef {
@@ -1098,6 +1152,9 @@ export default class TaskProPlugin extends Plugin {
       manageTags: () => this.openTagManager(),
       notify: (message) => {
         new Notice(message);
+      },
+      openFloating: () => {
+        if (!this.floatingBoard) this.toggleFloatingBoard();
       },
     };
   }
@@ -2277,6 +2334,9 @@ export default class TaskProPlugin extends Plugin {
     // Release the reminder ticker, overlay and audio nodes
     this.reminderService?.stop();
     this.taskIndexService?.stop();
+    // Closing the float also takes its class back off <body>, so a theme's
+    // blur never outlives the plugin.
+    this.floatingBoard?.close();
     this.taskStore?.destroy();
     this.timerService?.destroy();
   }

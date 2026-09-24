@@ -44,6 +44,7 @@ export interface BoardLabels {
   addPlaceholder: string;
   addInto: string;
   chooseInbox: string;
+  chooseInboxShort: string;
   added: (note: string) => string;
   addFailed: string;
   openNote: string;
@@ -61,6 +62,9 @@ export interface BoardLabels {
   repeats: string;
   subtask: string;
   noteMissing: string;
+  float: string;
+  dock: string;
+  close: string;
 }
 
 const EN: BoardLabels = {
@@ -128,6 +132,7 @@ const EN: BoardLabels = {
   addPlaceholder: 'Add a task…',
   addInto: 'Adds to',
   chooseInbox: 'Choose the note new tasks go into',
+  chooseInboxShort: 'Choose note',
   added: (note) => `Task added to ${note}`,
   addFailed: 'Choose a note for new tasks first',
   openNote: 'Open in note',
@@ -145,6 +150,9 @@ const EN: BoardLabels = {
   repeats: 'Repeats',
   subtask: 'Subtask',
   noteMissing: 'That note no longer exists',
+  float: 'Float over Obsidian',
+  dock: 'Open in a tab',
+  close: 'Close',
 };
 
 const FA: BoardLabels = {
@@ -210,6 +218,7 @@ const FA: BoardLabels = {
   addPlaceholder: 'افزودن تسک…',
   addInto: 'افزودن به',
   chooseInbox: 'یادداشتی که تسک‌های جدید در آن نوشته می‌شوند',
+  chooseInboxShort: 'انتخاب یادداشت',
   added: (note) => `تسک به ${note} اضافه شد`,
   addFailed: 'اول یادداشت مقصد تسک‌های جدید را انتخاب کنید',
   openNote: 'باز کردن در یادداشت',
@@ -227,6 +236,9 @@ const FA: BoardLabels = {
   repeats: 'تکرار',
   subtask: 'زیرتسک',
   noteMissing: 'این یادداشت دیگر وجود ندارد',
+  float: 'نمایش شناور روی ابسیدین',
+  dock: 'باز کردن در تب',
+  close: 'بستن',
 };
 
 export function getBoardLabels(language: Language): BoardLabels {
