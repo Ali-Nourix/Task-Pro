@@ -1,0 +1,225 @@
+// ── board/task-store.ts ───────────────────────────────────────────────────
+// Every task in the vault, kept current while the board is open.
+//
+// Cost control:
+// - Notes whose metadata cache lists no task items are never read at all.
+// - Only the lines the metadata cache calls task list items are parsed, so a
+//   `- [ ]` inside a code block or front matter is not mistaken for a task.
+// - After the first pass, a note is re-parsed only when Obsidian reports that
+//   note changed, from the content the event already carries.
+// ─────────────────────────────────────────────────────────────────────────────
+
+import { App, CachedMetadata, TFile } from 'obsidian';
+import { TaskPriority, TaskRepeat, TaskStatus } from '../types';
+import { extractDeadline, extractPriority, extractRepeat, extractTags } from '../task-metadata';
+import { parseTaskLine } from '../task-identity';
+
+export interface BoardTask {
+  /** Unique for this scan: path and line. Not stable across edits. */
+  id: string;
+  filePath: string;
+  /** Note name without the extension. */
+  fileName: string;
+  lineNumber: number;
+  /** The whole line as it is in the note. */
+  line: string;
+  /** Leading whitespace width, for showing subtasks nested. */
+  depth: number;
+  status: TaskStatus;
+  /** Readable title: TaskPro markers and the block ID removed. */
+  text: string;
+  blockId?: string;
+  deadline?: string;
+  priority?: TaskPriority;
+  repeat?: TaskRepeat;
+  /** TaskPro tag keys, in note order. */
+  tags: string[];
+}
+
+const EMBED_PATTERN = /!\[\[[^\]]+\]\]/;
+
+/** Lines the metadata cache says are task list items, or null when it does not know. */
+function taskLinesFromCache(cache: CachedMetadata | null | undefined): Set<number> | null {
+  if (!cache) return null;
+  const lines = new Set<number>();
+  for (const item of cache.listItems ?? []) {
+    if (item.task !== undefined) lines.add(item.position.start.line);
+  }
+  return lines;
+}
+
+/** Parses one note's tasks. Pure, so it can be tested without Obsidian. */
+export function parseBoardTasks(
+  filePath: string,
+  content: string,
+  onlyLines: Set<number> | null = null
+): BoardTask[] {
+  const fileName = filePath.split('/').pop()?.replace(/\.md$/i, '') ?? filePath;
+  const tasks: BoardTask[] = [];
+  const lines = content.split('\n');
+
+  for (let i = 0; i < lines.length; i++) {
+    if (onlyLines && !onlyLines.has(i)) continue;
+    const line = lines[i];
+    const parsed = parseTaskLine(line);
+    if (!parsed) continue;
+    // An embedded task is a reference to a task owned by another note.
+    if (EMBED_PATTERN.test(parsed.rawContent)) continue;
+
+    const indent = /^\s*/.exec(line)?.[0] ?? '';
+    tasks.push({
+      id: `${filePath}:${i}`,
+      filePath,
+      fileName,
+      lineNumber: i,
+      line,
+      depth: indent.replace(/\t/g, '    ').length,
+      status: parsed.status,
+      text: parsed.text,
+      blockId: parsed.blockId,
+      deadline: extractDeadline(parsed.rawContent) ?? undefined,
+      priority: extractPriority(parsed.rawContent),
+      repeat: extractRepeat(parsed.rawContent),
+      tags: extractTags(parsed.rawContent),
+    });
+  }
+
+  return tasks;
+}
+
+export class TaskStore {
+  private readonly byFile = new Map<string, BoardTask[]>();
+  private readonly listeners = new Set<() => void>();
+  private loadPromise: Promise<void> | null = null;
+  private notifyTimer: ReturnType<typeof setTimeout> | null = null;
+  private loaded = false;
+
+  /**
+   * @param whenReady Resolves once Obsidian's layout (and with it the metadata
+   *   cache) is ready. A board restored with the workspace would otherwise scan
+   *   the vault during startup, before the cache can say which notes to skip.
+   */
+  constructor(
+    private readonly app: App,
+    private readonly whenReady: () => Promise<void> = async () => undefined
+  ) {}
+
+  get isLoaded(): boolean {
+    return this.loaded;
+  }
+
+  /** First full pass. Later calls reuse it. */
+  ensureLoaded(): Promise<void> {
+    if (!this.loadPromise) {
+      this.loadPromise = this.loadAll().then(() => {
+        this.loaded = true;
+      });
+    }
+    return this.loadPromise;
+  }
+
+  /** Forgets everything and scans again. */
+  async reload(): Promise<void> {
+    this.byFile.clear();
+    this.loaded = false;
+    this.loadPromise = null;
+    await this.ensureLoaded();
+    this.emit();
+  }
+
+  private async loadAll(): Promise<void> {
+    await this.whenReady();
+    const files = this.app.vault.getMarkdownFiles();
+    for (const file of files) {
+      const cache = this.app.metadataCache.getFileCache(file);
+      const taskLines = taskLinesFromCache(cache);
+      // Indexed and task-free: nothing to read.
+      if (taskLines && taskLines.size === 0) continue;
+
+      try {
+        const content = await this.app.vault.cachedRead(file);
+        // Re-read the cache after the await: it is the one that matches `content`.
+        const fresh = taskLinesFromCache(this.app.metadataCache.getFileCache(file)) ?? taskLines;
+        this.setFile(file.path, parseBoardTasks(file.path, content, fresh));
+      } catch (error) {
+        console.error(`TaskPro: failed to read "${file.path}" for the task board`, error);
+      }
+    }
+  }
+
+  private setFile(path: string, tasks: BoardTask[]): void {
+    if (tasks.length) this.byFile.set(path, tasks);
+    else this.byFile.delete(path);
+  }
+
+  /** Every task, in vault order (note path, then line). */
+  all(): BoardTask[] {
+    const paths = Array.from(this.byFile.keys()).sort((a, b) => a.localeCompare(b));
+    const out: BoardTask[] = [];
+    for (const path of paths) out.push(...(this.byFile.get(path) ?? []));
+    return out;
+  }
+
+  /** Every task in one note. */
+  inFile(path: string): BoardTask[] {
+    return this.byFile.get(path) ?? [];
+  }
+
+  subscribe(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  /** Batches bursts of changes (a sync touching two notes) into one repaint. */
+  private emit(): void {
+    if (this.notifyTimer) clearTimeout(this.notifyTimer);
+    this.notifyTimer = setTimeout(() => {
+      this.notifyTimer = null;
+      for (const listener of this.listeners) listener();
+    }, 120);
+  }
+
+  // ── Vault events, forwarded by the plugin ────────────────────────────────
+
+  /**
+   * True once a scan has started. Changes are applied from then on, so a note
+   * edited while the first scan is still running is not left stale.
+   */
+  private get tracking(): boolean {
+    return this.loadPromise !== null;
+  }
+
+  /** metadataCache `changed`: the note was re-parsed, and `data` is its content. */
+  handleMetadataChanged(file: TFile, data: string, cache: CachedMetadata): void {
+    if (!this.tracking || file.extension !== 'md') return;
+    const before = this.byFile.get(file.path);
+    this.setFile(file.path, parseBoardTasks(file.path, data, taskLinesFromCache(cache)));
+    if (before || this.byFile.has(file.path)) this.emit();
+  }
+
+  handleRenamed(file: TFile, oldPath: string): void {
+    if (!this.tracking) return;
+    const tasks = this.byFile.get(oldPath);
+    this.byFile.delete(oldPath);
+    if (tasks && file.extension === 'md') {
+      // Re-key rather than re-read: the content did not change with the name.
+      const fileName = file.basename;
+      this.setFile(
+        file.path,
+        tasks.map((task) => ({ ...task, id: `${file.path}:${task.lineNumber}`, filePath: file.path, fileName }))
+      );
+    }
+    if (tasks) this.emit();
+  }
+
+  handleDeleted(path: string): void {
+    if (!this.tracking) return;
+    if (this.byFile.delete(path)) this.emit();
+  }
+
+  destroy(): void {
+    if (this.notifyTimer) clearTimeout(this.notifyTimer);
+    this.listeners.clear();
+    this.byFile.clear();
+  }
+}

@@ -6,3 +6,7 @@ stats/
 
 # Community themes copied in for the preview harnesses (see test/themes/README.md).
 test/themes/*.css
+
+# Built on demand by test/harness/build.mjs and test/plugin-edits.mjs.
+test/harness/board-preview.bundle.js
+test/harness/.plugin-under-test.mjs

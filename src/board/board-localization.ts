@@ -1,0 +1,234 @@
+// ── board/board-localization.ts ───────────────────────────────────────────
+// Text for the task board.
+
+import { BoardGroupBy, BoardSortKey, Language } from '../types';
+import { DeadlineBucket } from './board-query';
+
+export interface BoardLabels {
+  title: string;
+  open: string;
+  summary: (total: number, done: number, overdue: number) => string;
+  loading: string;
+  empty: string;
+  emptyFiltered: string;
+  scopeTarget: (folder: string) => string;
+  scopeVault: string;
+  scopeTargetUnset: string;
+  layoutTable: string;
+  layoutBoard: string;
+  search: string;
+  group: string;
+  groupBy: Record<BoardGroupBy, string>;
+  sort: string;
+  sortBy: Record<BoardSortKey, string>;
+  ascending: string;
+  descending: string;
+  filter: string;
+  filterStatus: string;
+  filterPriority: string;
+  filterTags: string;
+  clearFilters: string;
+  columns: {
+    task: string;
+    status: string;
+    tags: string;
+    priority: string;
+    deadline: string;
+    progress: string;
+    note: string;
+  };
+  noTag: string;
+  noPriority: string;
+  noDeadline: string;
+  buckets: Record<DeadlineBucket, string>;
+  addPlaceholder: string;
+  addInto: string;
+  chooseInbox: string;
+  added: (note: string) => string;
+  addFailed: string;
+  openNote: string;
+  more: string;
+  refresh: string;
+  manageTags: string;
+  showMore: (count: number) => string;
+  markDone: string;
+  markOpen: string;
+  editTitle: string;
+  collapse: string;
+  expand: string;
+  newInColumn: string;
+  outsideScope: string;
+  repeats: string;
+  subtask: string;
+  noteMissing: string;
+}
+
+const EN: BoardLabels = {
+  title: 'Tasks',
+  open: 'Open task board',
+  summary: (total, done, overdue) =>
+    [`${total} ${total === 1 ? 'task' : 'tasks'}`, `${done} done`, overdue ? `${overdue} overdue` : '']
+      .filter(Boolean)
+      .join(' · '),
+  loading: 'Reading your notes…',
+  empty: 'No tasks here yet. Add one above, or write “- [ ] ” in any note.',
+  emptyFiltered: 'No task matches the current search and filters.',
+  scopeTarget: (folder) => folder,
+  scopeVault: 'Whole vault',
+  scopeTargetUnset: 'Set a target folder under TaskPro → General to show only that folder.',
+  layoutTable: 'Table',
+  layoutBoard: 'Board',
+  search: 'Search tasks…',
+  group: 'Group',
+  groupBy: {
+    none: 'No grouping',
+    status: 'Status',
+    tag: 'Tag',
+    priority: 'Priority',
+    deadline: 'Deadline',
+    note: 'Note',
+  },
+  sort: 'Sort',
+  sortBy: {
+    document: 'Note order',
+    title: 'Title',
+    status: 'Status',
+    priority: 'Priority',
+    deadline: 'Deadline',
+    progress: 'Progress',
+    note: 'Note',
+  },
+  ascending: 'Ascending',
+  descending: 'Descending',
+  filter: 'Filter',
+  filterStatus: 'Status',
+  filterPriority: 'Priority',
+  filterTags: 'Tags',
+  clearFilters: 'Clear filters',
+  columns: {
+    task: 'Task',
+    status: 'Status',
+    tags: 'Tags',
+    priority: 'Priority',
+    deadline: 'Deadline',
+    progress: 'Progress',
+    note: 'Note',
+  },
+  noTag: 'No tag',
+  noPriority: 'No priority',
+  noDeadline: 'No deadline',
+  buckets: {
+    overdue: 'Overdue',
+    today: 'Today',
+    week: 'Next 7 days',
+    later: 'Later',
+    past: 'Past',
+    none: 'No deadline',
+  },
+  addPlaceholder: 'Add a task…',
+  addInto: 'Adds to',
+  chooseInbox: 'Choose the note new tasks go into',
+  added: (note) => `Task added to ${note}`,
+  addFailed: 'Choose a note for new tasks first',
+  openNote: 'Open in note',
+  more: 'More options',
+  refresh: 'Rescan notes',
+  manageTags: 'Manage tags',
+  showMore: (count) => `Show ${count} more`,
+  markDone: 'Mark done',
+  markOpen: 'Mark not started',
+  editTitle: 'Click to edit',
+  collapse: 'Collapse group',
+  expand: 'Expand group',
+  newInColumn: 'New',
+  outsideScope: 'Added — the note is outside the current scope, so it is not listed here.',
+  repeats: 'Repeats',
+  subtask: 'Subtask',
+  noteMissing: 'That note no longer exists',
+};
+
+const FA: BoardLabels = {
+  title: 'تسک‌ها',
+  open: 'باز کردن صفحه تسک‌ها',
+  summary: (total, done, overdue) =>
+    [`${total} تسک`, `${done} انجام شده`, overdue ? `${overdue} عقب افتاده` : ''].filter(Boolean).join(' · '),
+  loading: 'در حال خواندن یادداشت‌ها…',
+  empty: 'هنوز تسکی اینجا نیست. از بالا یکی اضافه کنید یا در هر یادداشتی «- [ ] » بنویسید.',
+  emptyFiltered: 'هیچ تسکی با جستجو و فیلترهای فعلی جور نیست.',
+  scopeTarget: (folder) => folder,
+  scopeVault: 'کل والت',
+  scopeTargetUnset: 'برای نمایش فقط یک پوشه، در تنظیمات TaskPro بخش General پوشه هدف را تعیین کنید.',
+  layoutTable: 'جدول',
+  layoutBoard: 'بورد',
+  search: 'جستجوی تسک‌ها…',
+  group: 'گروه‌بندی',
+  groupBy: {
+    none: 'بدون گروه‌بندی',
+    status: 'وضعیت',
+    tag: 'برچسب',
+    priority: 'اولویت',
+    deadline: 'سررسید',
+    note: 'یادداشت',
+  },
+  sort: 'مرتب‌سازی',
+  sortBy: {
+    document: 'ترتیب یادداشت',
+    title: 'عنوان',
+    status: 'وضعیت',
+    priority: 'اولویت',
+    deadline: 'سررسید',
+    progress: 'پیشرفت',
+    note: 'یادداشت',
+  },
+  ascending: 'صعودی',
+  descending: 'نزولی',
+  filter: 'فیلتر',
+  filterStatus: 'وضعیت',
+  filterPriority: 'اولویت',
+  filterTags: 'برچسب‌ها',
+  clearFilters: 'پاک کردن فیلترها',
+  columns: {
+    task: 'تسک',
+    status: 'وضعیت',
+    tags: 'برچسب‌ها',
+    priority: 'اولویت',
+    deadline: 'سررسید',
+    progress: 'پیشرفت',
+    note: 'یادداشت',
+  },
+  noTag: 'بدون برچسب',
+  noPriority: 'بدون اولویت',
+  noDeadline: 'بدون سررسید',
+  buckets: {
+    overdue: 'عقب افتاده',
+    today: 'امروز',
+    week: '۷ روز آینده',
+    later: 'بعدتر',
+    past: 'گذشته',
+    none: 'بدون سررسید',
+  },
+  addPlaceholder: 'افزودن تسک…',
+  addInto: 'افزودن به',
+  chooseInbox: 'یادداشتی که تسک‌های جدید در آن نوشته می‌شوند',
+  added: (note) => `تسک به ${note} اضافه شد`,
+  addFailed: 'اول یادداشت مقصد تسک‌های جدید را انتخاب کنید',
+  openNote: 'باز کردن در یادداشت',
+  more: 'گزینه‌های بیشتر',
+  refresh: 'خواندن دوباره یادداشت‌ها',
+  manageTags: 'مدیریت برچسب‌ها',
+  showMore: (count) => `نمایش ${count} مورد دیگر`,
+  markDone: 'انجام شد',
+  markOpen: 'شروع نشده',
+  editTitle: 'برای ویرایش کلیک کنید',
+  collapse: 'بستن گروه',
+  expand: 'باز کردن گروه',
+  newInColumn: 'جدید',
+  outsideScope: 'اضافه شد — این یادداشت بیرون از محدوده فعلی است و اینجا نمایش داده نمی‌شود.',
+  repeats: 'تکرار',
+  subtask: 'زیرتسک',
+  noteMissing: 'این یادداشت دیگر وجود ندارد',
+};
+
+export function getBoardLabels(language: Language): BoardLabels {
+  return language === 'fa' ? FA : EN;
+}

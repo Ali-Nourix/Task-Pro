@@ -6,12 +6,10 @@ import { App } from 'obsidian';
 import { TaskMapping, TaskPriority, TaskProgress } from './types';
 import {
   setDeadline as setDeadlineInLine,
-  stripDeadline,
   setProgress as setProgressInLine,
-  stripProgress,
   setPriority as setPriorityInLine,
-  stripPriority,
-  stripRepeat,
+  setTags as setTagsInLine,
+  stripTaskMetadata,
 } from './task-metadata';
 
 type MappingScope = 'either' | 'imported' | 'source';
@@ -87,6 +85,21 @@ export class SyncManager {
   ): Promise<void> {
     await this.syncTaskInSource(filePath, lineContent, options, (line) => {
       return setPriorityInLine(line, newPriority);
+    });
+  }
+
+  /**
+   * Sync tags from imported file to source file
+   * ONLY called when the user explicitly changes a task's tags
+   */
+  async syncTaskTags(
+    filePath: string,
+    lineContent: string,
+    newTags: readonly string[],
+    options: FindMappingOptions = {}
+  ): Promise<void> {
+    await this.syncTaskInSource(filePath, lineContent, options, (line) => {
+      return setTagsInLine(line, newTags);
     });
   }
 
@@ -202,7 +215,7 @@ export class SyncManager {
    * Normalize task content for comparison (removes status, deadline, block ID)
    */
   private normalizeTaskContent(line: string): string {
-    return stripRepeat(stripPriority(stripProgress(stripDeadline(line))))
+    return stripTaskMetadata(line)
       .replace(/^(\s*)- \[([ \/xX!])\]\s*/, '') // Remove task marker and status
       .replace(/\^[a-zA-Z0-9-]+\s*$/, '')
       .trim()

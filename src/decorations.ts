@@ -22,11 +22,15 @@ import {
   extractProgress,
   extractPriority,
   extractRepeat,
+  extractTags,
   DEADLINE_MARKER_PATTERN,
   PRIORITY_MARKER_PATTERN,
   REPEAT_MARKER_PATTERN,
+  TAG_MARKER_PATTERN_GLOBAL,
 } from './task-metadata';
+import { ResolvedTag, TaskTag, resolveTag } from './tags';
 import {
+  appendTagChips,
   applyChipScale,
   createDeadlineChip,
   createPriorityChip,
@@ -46,6 +50,9 @@ export interface DecorationSettings {
   showPriorityBadges: boolean;
   showTimerBadges: boolean;
   showRepeatBadges: boolean;
+  showTagBadges: boolean;
+  /** The user's tag list, read live so a rename or recolour shows at once. */
+  tags: TaskTag[];
 }
 
 // ── Module-level constants (compiled once, reused on every line) ──────────
@@ -58,6 +65,7 @@ const PROGRESS_MATCH_REGEX = /\[progress::\s*\d+\/\d+\]/;
 // Shared with the parser so the hidden range always matches what we parse.
 const PRIORITY_MATCH_REGEX = PRIORITY_MARKER_PATTERN;
 const REPEAT_MATCH_REGEX = REPEAT_MARKER_PATTERN;
+const TAG_MATCH_REGEX = TAG_MARKER_PATTERN_GLOBAL;
 
 // Pre-created stateless decorations — reused instead of allocated per line
 const HIDE_DECO = Decoration.replace({});
@@ -105,6 +113,7 @@ class TaskBadgeWidget extends WidgetType {
     filePath: string;
     blockId?: BlockId;
     tags?: string[];
+    tagChips?: ResolvedTag[];
   };
 
   constructor(
@@ -119,7 +128,8 @@ class TaskBadgeWidget extends WidgetType {
     lineContent: string,
     filePath: string,
     blockId?: BlockId,
-    tags?: string[]
+    tags?: string[],
+    tagChips?: ResolvedTag[]
   ) {
     super();
     this.widgetState = Object.freeze({
@@ -135,6 +145,7 @@ class TaskBadgeWidget extends WidgetType {
       filePath,
       blockId,
       tags,
+      tagChips,
     });
   }
 
@@ -167,6 +178,14 @@ class TaskBadgeWidget extends WidgetType {
     const repeatEq =
       (!r && !or) || (!!r && !!or && r.every === or.every && r.unit === or.unit);
 
+    // A tag's name or colour can change in settings without the line changing,
+    // so the resolved chips are compared, not just the keys in the text.
+    const tc = this.widgetState.tagChips ?? [];
+    const otc = other.widgetState.tagChips ?? [];
+    const tagsEq =
+      tc.length === otc.length &&
+      tc.every((tag, i) => tag.key === otc[i].key && tag.name === otc[i].name && tag.color === otc[i].color);
+
     return (
       this.widgetState.status === other.widgetState.status &&
       this.widgetState.deadline === other.widgetState.deadline &&
@@ -174,6 +193,7 @@ class TaskBadgeWidget extends WidgetType {
       progressEq &&
       timerEq &&
       repeatEq &&
+      tagsEq &&
       this.widgetState.language === other.widgetState.language &&
       this.widgetState.badgeSize === other.widgetState.badgeSize &&
       this.widgetState.lineContent === other.widgetState.lineContent &&
@@ -271,6 +291,15 @@ class TaskBadgeWidget extends WidgetType {
       );
     }
 
+    // Last in the DOM, so with the row reversed the tags sit nearest the text.
+    if (s.tagChips?.length) {
+      appendTagChips(container, s.tagChips, {
+        filePath: s.filePath,
+        lineContent: s.lineContent,
+        blockId: s.blockId,
+      });
+    }
+
     return container;
   }
 }
@@ -347,6 +376,9 @@ function buildDecorations(
         const priority = settings.showPriorityBadges ? extractPriority(content) : undefined;
         const timer = settings.showTimerBadges ? getTimer(filePath || '', blockId) : undefined;
         const repeat = settings.showRepeatBadges ? extractRepeat(content) : undefined;
+        const tagChips = settings.showTagBadges && content.includes('@tag(')
+          ? extractTags(content).map((key) => resolveTag(key, settings.tags))
+          : undefined;
 
         if (deadline) {
           const deadlineMatch = DEADLINE_MATCH_REGEX.exec(content);
@@ -381,6 +413,17 @@ function buildDecorations(
           addRange(repeatStart, repeatEnd, HIDE_DECO_NONINCLUSIVE);
         }
 
+        // Same rule as the repeat marker: hidden only while its chips render.
+        if (tagChips) {
+          const contentStart = line.from + (lineText.length - taskMatch[3].length);
+          TAG_MATCH_REGEX.lastIndex = 0;
+          let tagMatch: RegExpExecArray | null;
+          while ((tagMatch = TAG_MATCH_REGEX.exec(content)) !== null) {
+            const tagStart = contentStart + tagMatch.index;
+            addRange(tagStart, tagStart + tagMatch[0].length, HIDE_DECO_NONINCLUSIVE);
+          }
+        }
+
         const progressMatch = PROGRESS_MATCH_REGEX.exec(content);
         if (progressMatch) {
           const contentStart = line.from + (lineText.length - taskMatch[3].length);
@@ -412,7 +455,8 @@ function buildDecorations(
               lineText,
               filePath,
               blockId,
-              tags
+              tags,
+              tagChips
             ),
             side: 1,
           }),

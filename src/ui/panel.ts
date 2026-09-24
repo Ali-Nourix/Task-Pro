@@ -10,7 +10,10 @@ export interface TaskProPanelHandles {
   close: () => void;
 }
 
-export function openTaskProPanel(title: string): TaskProPanelHandles {
+export function openTaskProPanel(
+  title: string,
+  options: { onClose?: () => void } = {}
+): TaskProPanelHandles {
   const overlay = document.createElement('div');
   overlay.className = 'taskpro-panel-overlay';
 
@@ -21,9 +24,13 @@ export function openTaskProPanel(title: string): TaskProPanelHandles {
 
   document.body.appendChild(overlay);
 
+  let closed = false;
   const close = () => {
+    if (closed) return;
+    closed = true;
     document.removeEventListener('keydown', onKeyDown, true);
     overlay.remove();
+    options.onClose?.();
   };
 
   // Escape closes the panel, matching every other dialog in Obsidian. Captured
