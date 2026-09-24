@@ -1,9 +1,9 @@
 {
   "id": "taskpro",
   "name": "TaskPro",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "minAppVersion": "1.5.0",
-  "description": "Task management with per-task capabilities — progress bars, focus timers with desktop notifications, and repeating tasks — plus bi-directional sync, badges, and deadline tracking.",
+  "description": "Task management with your own coloured tags, a Notion-style board of every task in the vault, and per-task capabilities — progress bars, focus timers with desktop notifications, and repeating tasks — plus bi-directional sync, badges, and deadline tracking.",
   "author": "Ali",
   "isDesktopOnly": false
 }
