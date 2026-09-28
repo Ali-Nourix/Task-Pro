@@ -2,7 +2,8 @@
 
 An Obsidian plugin for task management: interactive chips on every task line,
 your own coloured tags, a task board that shows every task in the vault in one
-place, bi-directional sync with a central task note, deadlines, priorities, and
+place, a calendar to plan your days on in the Gregorian or the Jalali calendar,
+bi-directional sync with a central task note, deadlines, priorities, and
 per-task capabilities you add only where you want them.
 
 ![Task lines with status, priority, repeat, deadline, timer and progress chips](docs/images/task-chips-dark.png)
@@ -18,6 +19,7 @@ screenshots of a live vault.</sub>
 - [Features](#features)
 - [Tags](#tags)
 - [Task board](#task-board)
+- [Calendar](#calendar)
 - [Per-task capabilities](#per-task-capabilities)
 - [Requirements](#requirements)
 - [Installation](#installation)
@@ -46,6 +48,7 @@ notes to make them appear, and clicking one opens the menu for that property.
 | `Highest` … `Lowest` | Priority, five levels |
 | `Every week` | Recurrence |
 | `Tomorrow` `3 Days Left` `Not completed on time` | Deadline, coloured by urgency |
+| `Today, 09:30 – 11:00` | When you [plan](#plans) to work on it |
 | `18:42` | A running focus timer |
 | `38%` | Progress through a set number of steps |
 | `Work` `Client` | Your own tags, each in its own colour; click to change them |
@@ -245,6 +248,134 @@ time.
 </tr>
 </table>
 
+## Calendar
+
+The board's third layout, next to **Table** and **Board** (or **Open Task
+Calendar** from anywhere). It shows every task that belongs to a day — one you
+planned for it, one due that day, or one written in that day's note — so you
+can decide what to work on and when, in the Gregorian or the Jalali calendar.
+
+![The calendar's week view: planned tasks as blocks on a time grid, all-day tasks and deadlines above, and the unscheduled tasks in a sidebar](docs/images/task-calendar-week-light.png)
+
+- **Four views:** **Month**, **Week**, **Day**, and **Agenda** (the next 14
+  days as a list). With the calendar focused, `M` `W` `D` `A` switch views,
+  `T` goes to today, the arrow keys step back and forward, and `N` adds a task.
+  The keys go by position on the keyboard, so they work on a Persian layout
+  too.
+- **Gregorian or Jalali,** switched in the bar at the top. The other calendar's
+  date is shown small beside every day. A Jalali week starts on Saturday with
+  Friday as the weekend, and a Gregorian one starts on Monday (the start can
+  be changed under **Week starts on**). In Persian the calendar reads right to
+  left.
+
+  ![The month view in Persian, right to left, in the Jalali calendar](docs/images/task-calendar-month-fa-dark.png)
+
+- **Plan a block of time:** drag across the week or day grid, or click a slot.
+  A card opens on the spot: type a title and press `Enter` to create a new
+  task there, or choose one of the tasks you already have to plan it for that
+  time. The times are typed, not picked: `9`, `930`, `2:30 pm` and `21:30` all
+  work, and the arrow keys move a time by one step.
+
+  ![Planning a block from the week grid: a new task or an existing one](docs/images/task-calendar-picker-light.png)
+
+- **Move and resize** by dragging: a block to another hour or day, its bottom
+  edge to change how long it lasts, a task onto the all-day row to keep the day
+  but drop the time, and a task onto the sidebar to unplan it. `Esc` cancels a
+  drag.
+- **Unscheduled** lists the open tasks with no plan yet; drag one onto the
+  calendar to give it a time.
+- **Click a task** to open its card: rename it, change its day and time, set
+  its status, priority, deadline and tags, open the note it lives in, or remove
+  it from the calendar. **⋯** opens its full menu.
+
+  ![A task's card in the day view: date, times, status, priority, deadline and tags](docs/images/task-calendar-day-card-dark.png)
+
+- **Deadlines** show as outlined flags on the day they fall. Dragging one
+  plans it for that time and leaves the deadline where it is: the plan is when
+  you will do it, the deadline is when it is due.
+- The options button (the sliders next to the calendar switch) turns
+  deadlines, tasks from daily notes, and done tasks on or off.
+
+  ![The agenda view: the next two weeks as a list](docs/images/task-calendar-agenda-light.png)
+
+<table>
+<tr>
+<td align="center"><b>Month · Gregorian</b></td>
+<td align="center"><b>Week · Jalali, in Persian</b></td>
+</tr>
+<tr>
+<td><img src="docs/images/task-calendar-month-light.png" alt="The month view in the Gregorian calendar, light theme" width="400"></td>
+<td><img src="docs/images/task-calendar-week-fa-light.png" alt="The week view in the Jalali calendar, in Persian, right to left" width="400"></td>
+</tr>
+</table>
+
+<sub>The screenshots in this section are of Obsidian 1.13.7 itself, not harness
+renders.</sub>
+
+### Plans
+
+A plan is written into the task line: `@schedule(2026-09-28 09:30-11:00)`, or
+`@schedule(2026-09-28)` for the whole day. In Live Preview and Reading Mode it
+is hidden behind a pink chip such as `Today, 09:30 – 11:00`, which turns grey
+once the day has passed with the task still open. To plan from a note, use
+**Plan a Time…** in the task's menu (click any of its chips) or run **Plan
+Current Task…**.
+
+A plan belongs to one copy of a task. It is not synced to a linked source, and
+importing a task leaves the source's plan behind. A repeating task moves its
+plan forward along with its deadline and keeps the time of day, so a weekly
+09:00 block stays a weekly 09:00 block. A task with a plan and no deadline
+repeats by the plan and is not given a deadline.
+
+### Daily notes
+
+Every day can have a note of its own, named after its date: **in English when
+the Gregorian calendar is showing, and in Persian when the Jalali one is**. A
+task you create on a day goes into that day's note. If the note does not exist
+yet, it is created from your template, with the task already in it. Any task
+written in a day's note shows on that day, even without a plan.
+
+Set these up under **Settings → TaskPro → Calendar**:
+
+| Setting | What it does |
+| --- | --- |
+| **Folder** | Where daily notes are kept (`Daily` by default) |
+| **Gregorian name** / **Jalali name** | The name formats: `YYYY-MM-DD` and `jYYYY-jMM-jDD` by default |
+| **Name new notes with** | The calendar showing, or always Gregorian, or always Jalali |
+| **Template** | The note a new daily note starts from |
+| **Put new tasks under** | A heading such as `## Tasks`, added if the note does not have it yet; leave it empty to add tasks at the end of the note |
+| **Use Obsidian's Daily notes settings** | Copies the folder, format and template from the core Daily notes plugin |
+
+A preview under the name settings shows today's note path in both calendars as
+you type.
+
+**Name formats** use these tokens. Text in `[brackets]` is kept as it is, and a
+`/` makes subfolders, so `YYYY/MM/YYYY-MM-DD` files each day under its year and
+month:
+
+| Gregorian | Jalali | Gives |
+| --- | --- | --- |
+| `YYYY` `YY` | `jYYYY` `jYY` | Year: `2026`, `26` / `1405`, `05` |
+| `MM` `M` | `jMM` `jM` | Month number: `09`, `9` / `07`, `7` |
+| `MMMM` `MMM` | `jMMMM` `jMMM` | Month name: `September`, `Sep` / `مهر` |
+| `DD` `D` `Do` | `jDD` `jD` `jDo` | Day: `28`, `28`, `28th` / `06`, `6` |
+| `dddd` `ddd` `dd` | | Weekday name, in the naming calendar's language |
+| `W` `WW` `GGGG` | | ISO week number and ISO week year |
+
+**Templates** can use `{{title}}` (the note's name), `{{date}}` and
+`{{date:FORMAT}}` (with any token above, Jalali ones included), `{{time}}`,
+`{{weekday}}`, `{{gregorian}}` and `{{jalali}}` (the day in each calendar), and
+`{{yesterday}}` and `{{tomorrow}}` (the names of the notes on either side, so
+`[[{{yesterday}}]]` links back a day). If
+[Templater](https://github.com/SilentVoid13/Templater) is installed, its
+commands in the template run as well.
+
+A day never gets two notes. Before a note is created, the day's name in both
+calendars is checked, so a note made while the Gregorian calendar was showing
+is still found from the Jalali one. If you would rather keep planned tasks in
+one place, set **Tasks made on a day go into** to the board's inbox note; each
+task then carries the day in its `@schedule` marker.
+
 ## Per-task capabilities
 
 Three capabilities can be attached to any task, in any combination. Click a
@@ -345,6 +476,9 @@ What a planner actually needs from a task that comes back.
 | Manage Tags | — |
 | Open Task Board | — |
 | Toggle Floating Task Board | `Ctrl+Shift+B` |
+| Open Task Calendar | — |
+| Open Today's Daily Note | — |
+| Plan Current Task… | — |
 | Show Task Reminders Now | — |
 | Toggle Daily Task Reminders | — |
 
@@ -359,12 +493,16 @@ What a planner actually needs from a task that comes back.
 - [ ] Task with a priority @priority(high)
 - [ ] Task that repeats @repeat(1w)
 - [ ] Task with tags @tag(work, deep-work)
-- [ ] Everything at once @priority(high) @due(2026-12-31) @repeat(2w) @tag(client)
+- [ ] Task planned for a time @schedule(2026-12-30 09:00-10:30)
+- [ ] Task planned for a day @schedule(2026-12-30)
+- [ ] Everything at once @priority(high) @due(2026-12-31) @repeat(2w) @tag(client) @schedule(2026-12-30 14:00-16:00)
 ```
 
-`@due(...)`, `@priority(...)`, `@repeat(...)` and `@tag(...)` are the canonical
-markers, and each is hidden behind its chip while that chip is on. A tag marker
-holds tag keys, not names: the name and colour come from your tag list. The older `⏳ 2026-12-31`,
+`@due(...)`, `@priority(...)`, `@repeat(...)`, `@tag(...)` and `@schedule(...)`
+are the canonical markers, and each is hidden behind its chip while that chip is
+on. A tag marker holds tag keys, not names: the name and colour come from your
+tag list. A deadline is when a task is due; a
+[plan](#plans) is when you mean to work on it. The older `⏳ 2026-12-31`,
 `📅 2026-12-31`, `[due:: ...]`, `[deadline:: ...]`, `[priority:: ...]` and
 Obsidian Tasks priority emoji (`🔺⏫🔼🔽⏬`) are still read, so existing vaults
 keep working, and they are rewritten to the canonical form the next time the
@@ -422,6 +560,7 @@ alert resolves the outer note's own file, so a callout like
 | **Badges** | Chip language, size, calendar system, embed visibility, and a switch per optional chip |
 | **Capabilities** | Focus-timer duration, desktop notification, sound, status-bar readout; a note on how repeat intervals are counted |
 | **Tags** | Tag chips on or off, and the tag list: create, rename, recolour, delete |
+| **Calendar** | [Daily notes](#daily-notes): folder, name formats, template, heading; planning: where new tasks go, week start, 12- or 24-hour clock, the hour the grid opens at, snap, and new block length |
 | **Reminders** | Schedule, note sources, filters, strictness, sound |
 | **Internal Tasks** | Tasks stored in the plugin rather than a note |
 
@@ -459,6 +598,22 @@ Chip colours, padding, radius and opacity are exposed to the
 - Chip colour is one recipe — tint a background and a border out of an accent,
   and mix the label toward the theme's text colour — so a new chip is a single
   custom-property assignment and inherits the theme adaptivity for free.
+- The calendar is drawn from the same task index as the board, plus the tasks
+  of the daily notes in view, which are found by working each day's note path
+  out from its date rather than by searching the vault. Dates are kept as
+  `YYYY-MM-DD` keys and counted in UTC, so a daylight-saving change never
+  shifts a day. The Jalali calendar is a way of reading those keys, converted
+  with the same arithmetic the deadline picker uses, so no date library is
+  involved and a note always stores the Gregorian date.
+- Overlapping blocks share a day's column in lanes, as in a calendar app. Drags
+  are pointer events with a small threshold, so a click still opens a task and
+  a drag works the same with a mouse, a pen or a trackpad; on a touch screen a
+  tap opens the task, so scrolling is left alone. While a drag or a card is
+  open, a note change is held back and redrawn afterwards, so the calendar
+  never redraws under your pointer.
+- `Esc` goes to the innermost thing open. Obsidian handles keys before the
+  page does, so a card or a drag pushes a keymap scope of its own: the first
+  `Esc` closes the card, and only the next one closes the floating board.
 - No full-screen `backdrop-filter`. Blurring the window behind an overlay makes
   the compositor re-blur everything whenever anything above it repaints, which
   is why the reminder alert used to feel sluggish with a long task list. The
@@ -470,14 +625,16 @@ Chip colours, padding, radius and opacity are exposed to the
 npm install
 npm run dev     # watch build
 npm run build   # typecheck + production build
-npm test        # markers, recurrence, timers, board data, and the plugin's edit paths
+npm test        # markers, recurrence, timers, board data, calendar dates and daily notes, and the plugin's edit paths
 ```
 
 `npm test` includes an integration test (`test/plugin-edits.mjs`) that loads the
 whole plugin against an in-memory vault (`test/harness/obsidian-node-mock.mjs`)
 and drives the same edit path the chip menu and the board use: status,
 priority, deadline, tags and renames, tag sync to a source note, the tag list,
-and removing a tag from every note.
+removing a tag from every note, plans and how they roll forward, and daily
+notes created from a template. `test/calendar.mjs` covers the calendar's date
+arithmetic in both calendars, name formats, templates and block layout.
 
 The distributable files are `main.js`, `manifest.json`, and `styles.css`.
 
@@ -492,7 +649,7 @@ Obsidian:
 | --- | --- | --- |
 | `test/chips-preview.html` | Task lines with every chip, and each chip's states | `?light`, `?theme=<name>` |
 | `test/reminder-preview.html` | The reminder alert | `?light`, `?theme=<name>`, `?strict` |
-| `test/board-preview.html` | The task board, tag picker, tag manager and tag chips, built by the plugin's own classes | `?light`, `?theme=<name>`, `?layout=board`, `?group=<tag\|priority\|…>`, `?lang=fa`, `?view=<picker\|manager\|note\|palette>` |
+| `test/board-preview.html` | The task board, calendar, tag picker, tag manager and tag chips, built by the plugin's own classes | `?light`, `?theme=<name>`, `?layout=<board\|calendar>`, `?cal=<month\|week\|day\|agenda>`, `?system=jalali`, `?group=<tag\|priority\|…>`, `?lang=fa`, `?view=<picker\|manager\|note\|palette>` |
 
 `board-preview.html` loads a bundle of the real board code against a stub host
 whose edits land in in-memory notes, so it can be clicked through like the
@@ -510,7 +667,7 @@ npm i --no-save playwright lucide-static && npx playwright install chromium
 
 npm run previews        # regenerate the images in this README
 npm run check:contrast  # measure every chip, board and tag colour against WCAG AA on every theme
-npm run test:ui         # click through the board in a real browser
+npm run test:ui         # click and drag through the board and the calendar in a real browser
 ```
 
 These need Playwright, and the board harness needs Lucide's icon set (the icons
@@ -527,8 +684,8 @@ covers the logic instead.
 4. Tag the commit with exactly the manifest version, no `v` prefix:
 
    ```bash
-   git tag 1.4.0
-   git push origin 1.4.0
+   git tag 1.5.0
+   git push origin 1.5.0
    ```
 
 The workflow checks that the tag, manifest, package, lockfile and

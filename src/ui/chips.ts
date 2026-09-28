@@ -4,6 +4,7 @@
 
 import { setIcon } from 'obsidian';
 import {
+  CalendarSystem,
   Language,
   TaskStatus,
   STATUS_LABELS,
@@ -13,7 +14,9 @@ import {
   STATUS_ICON_NAMES,
   CHIP_ICON_NAMES,
   TaskRepeat,
+  TaskSchedule,
   TaskTimer,
+  TimeFormat,
   formatTimerClock,
   timerRemainingSeconds,
   timerState,
@@ -21,6 +24,7 @@ import {
 import { ResolvedTag, applyTagColor } from '../tags';
 import { getDeadlineInfo } from '../widget-localization';
 import { getRepeatLabels, getTimerLabels } from '../timer-localization';
+import { isSchedulePast, scheduleText } from '../calendar/schedule-text';
 
 export function applyChipScale(container: HTMLElement, badgeSize: number): void {
   container.style.setProperty('--taskpro-badge-font-size', `${badgeSize}px`);
@@ -297,6 +301,60 @@ export function appendTagChips(
   for (const tag of [...tags].reverse()) {
     container.appendChild(createTagChip({ tag, tagKeys, ...context }));
   }
+}
+
+/**
+ * When the task is planned: "Today, 09:00 – 10:30". Clicking it opens the task
+ * menu, where the plan is changed or removed beside every other edit.
+ */
+export function createScheduleChip(options: {
+  schedule: TaskSchedule;
+  language: Language;
+  calendarSystem: CalendarSystem;
+  timeFormat: TimeFormat;
+  filePath: string;
+  lineContent: string;
+  blockId?: string;
+  status: TaskStatus;
+  deadline?: string;
+  priority?: TaskPriority;
+  tags?: string[];
+}): HTMLElement {
+  const label = scheduleText(options.schedule, options);
+  const badge = buildChip(
+    'taskpro-schedule-badge',
+    options.schedule.start ? CHIP_ICON_NAMES.schedule : CHIP_ICON_NAMES.scheduleDay,
+    label
+  );
+  badge.dataset.schedule = options.schedule.date;
+  // A plan whose day went by with the task still open.
+  if (options.status !== '[x]' && isSchedulePast(options.schedule)) badge.dataset.state = 'past';
+  badge.setAttribute('aria-label', label);
+  badge.setAttribute('role', 'button');
+  badge.tabIndex = 0;
+
+  badge.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    badge.dispatchEvent(
+      new CustomEvent('taskpro-badge-click', {
+        bubbles: true,
+        detail: {
+          status: options.status,
+          deadline: options.deadline,
+          language: options.language,
+          lineContent: options.lineContent,
+          filePath: options.filePath,
+          targetElement: badge,
+          blockId: options.blockId,
+          tags: options.tags,
+          priority: options.priority,
+        },
+      })
+    );
+  });
+
+  return badge;
 }
 
 /**

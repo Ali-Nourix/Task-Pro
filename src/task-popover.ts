@@ -14,13 +14,17 @@ import {
   PRIORITY_ICON_NAMES,
   PRIORITY_LABELS,
   TaskRepeat,
+  TaskSchedule,
   TaskTimer,
+  TimeFormat,
   REPEAT_PRESETS,
   RepeatUnit,
   formatTimerClock,
   timerRemainingSeconds,
   timerState,
 } from './types';
+import { openSchedulePanel } from './ui/schedule-editor';
+import { scheduleText } from './calendar/schedule-text';
 import { getRepeatLabels, getTimerLabels } from './timer-localization';
 import { showTimerEditor } from './timer-popover';
 import { addPanelButtonRow, addPanelField, openTaskProPanel } from './ui/panel';
@@ -60,6 +64,12 @@ export interface PopoverOptions {
   /** Opens the tag picker for this task. */
   onEditTags?: () => void;
   calendarSystem?: 'gregorian' | 'jalali';
+  /** When the task is planned, from `@schedule(...)`. */
+  schedule?: TaskSchedule;
+  timeFormat?: TimeFormat;
+  /** Minutes a newly timed plan lasts. */
+  defaultDuration?: number;
+  onScheduleChange?: (schedule: TaskSchedule | null) => Promise<void> | void;
 }
 
 export class TaskPopover {
@@ -280,6 +290,33 @@ export class TaskPopover {
       });
     }
 
+    // Plan: when the task is to be worked on, which the calendar shows.
+    const { schedule, onScheduleChange } = this.options;
+    if (onScheduleChange) {
+      if (schedule) {
+        const plannedTitle = `${labels.planned}: ${this.scheduleLabel(schedule)}`;
+        this.infoMenuTitles.push(plannedTitle);
+        this.menu.addItem((item) => item.setTitle(plannedTitle).setIcon(schedule.start ? 'clock' : 'calendar').setDisabled(true));
+      }
+      this.menu.addItem((item) =>
+        item
+          .setTitle(schedule ? labels.changePlan : labels.planTime)
+          .setIcon('calendar-clock')
+          .onClick(() => void this.showSchedulePicker())
+      );
+      if (schedule) {
+        this.menu.addItem((item) =>
+          item
+            .setTitle(labels.removePlan)
+            .setIcon('calendar-x')
+            .onClick(async () => {
+              await onScheduleChange(null);
+              new Notice(labels.planRemoved);
+            })
+        );
+      }
+    }
+
     this.menu.addSeparator();
 
     // Add Capability section — each capability appears here until it is added.
@@ -419,6 +456,29 @@ export class TaskPopover {
     if (choice === undefined || !this.options.onDeadlineChange) return;
     await this.options.onDeadlineChange(choice);
     new Notice(choice ? `${labels.deadlineUpdated} ${choice}` : labels.deadlineCleared);
+  }
+
+  private scheduleLabel(schedule: TaskSchedule): string {
+    return scheduleText(schedule, {
+      language: this.options.language || 'en',
+      calendarSystem: this.options.calendarSystem || 'gregorian',
+      timeFormat: this.options.timeFormat || '24h',
+    });
+  }
+
+  private async showSchedulePicker(): Promise<void> {
+    const language = this.options.language || 'en';
+    const labels = this.getLabels(language);
+    const choice = await openSchedulePanel({
+      language,
+      calendarSystem: this.options.calendarSystem || 'gregorian',
+      schedule: this.options.schedule,
+      defaultDuration: this.options.defaultDuration,
+      timeFormat: this.options.timeFormat,
+    });
+    if (choice === undefined || !this.options.onScheduleChange) return;
+    await this.options.onScheduleChange(choice);
+    new Notice(choice ? `${labels.planUpdated} ${this.scheduleLabel(choice)}` : labels.planRemoved);
   }
 
   /** Duration picker. A brand-new timer starts counting down straight away. */
@@ -626,6 +686,12 @@ export class TaskPopover {
         clearPriority: 'حذف اولویت',
         priorityUpdated: '✓ اولویت تغییر کرد به',
         priorityCleared: '🧹 اولویت حذف شد',
+        planned: 'برنامه',
+        planTime: 'برنامه‌ریزی زمان انجام',
+        changePlan: 'تغییر برنامه',
+        removePlan: 'برداشتن از تقویم',
+        planUpdated: '✓ برنامه‌ریزی شد:',
+        planRemoved: '🧹 از تقویم برداشته شد',
       };
     }
 
@@ -671,6 +737,12 @@ export class TaskPopover {
       clearPriority: 'Clear Priority',
       priorityUpdated: '✓ Priority set to',
       priorityCleared: '🧹 Priority removed',
+      planned: 'Planned',
+      planTime: 'Plan a Time…',
+      changePlan: 'Change Plan…',
+      removePlan: 'Remove from Calendar',
+      planUpdated: '✓ Planned for',
+      planRemoved: '🧹 Taken off the calendar',
     };
   }
 

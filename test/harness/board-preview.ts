@@ -3,13 +3,33 @@
  * stub host, for test/board-preview.html. Nothing here is a mock-up of the UI:
  * the DOM comes from the same classes the plugin runs.
  *
- * Query string: ?layout=board, ?group=<none|status|tag|priority|deadline|note>,
+ * Query string: ?layout=<table|board|calendar>, ?group=<none|status|tag|priority|deadline|note>,
+ * ?cal=<month|week|day|agenda>, ?system=<gregorian|jalali>,
  * ?view=<board|picker|manager|note|palette>, ?lang=fa, plus the harness's ?light and
  * ?theme=<name>.
  */
 import { TaskBoard, TaskBoardHost } from '../../src/board/task-board';
 import { BoardTask, parseBoardTasks } from '../../src/board/task-store';
-import { BoardGroupBy, DEFAULT_BOARD_PREFERENCES, Language, TaskProgress } from '../../src/types';
+import {
+  BoardGroupBy,
+  BoardLayout,
+  CalendarSystem,
+  CalendarView,
+  DEFAULT_BOARD_PREFERENCES,
+  DEFAULT_CALENDAR_SETTINGS,
+  Language,
+  TaskProgress,
+  TaskSchedule,
+} from '../../src/types';
+import {
+  dailyNoteCandidates,
+  dailyNotePath,
+  insertTaskLine,
+  namingSystem,
+  renderDailyTemplate,
+} from '../../src/calendar/daily-notes';
+import { createScheduleChip } from '../../src/ui/chips';
+import { extractSchedule, setSchedule } from '../../src/task-metadata';
 import { TaskTag } from '../../src/tags';
 import { openTagPicker } from '../../src/ui/tag-picker';
 import { renderTagManager } from '../../src/ui/tag-manager';
@@ -46,6 +66,15 @@ function inDays(days: number): string {
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
+
+const CALENDAR = {
+  ...DEFAULT_CALENDAR_SETTINGS,
+  dailyNotesFolder: 'Daily',
+  templatePath: 'Templates/Daily.md',
+  taskHeading: '## Tasks',
+};
+const TEMPLATE = '# {{date:dddd, D MMMM YYYY}}\n\n## Tasks\n\n## Notes\n';
+const dailyPath = (days: number) => dailyNotePath(inDays(days), language === 'fa' ? 'jalali' : 'gregorian', CALENDAR);
 
 const TAGS: TaskTag[] =
   language === 'fa'
@@ -109,6 +138,33 @@ const NOTES: Record<string, string> =
         ].join('\n'),
       };
 
+/** Plans and a daily note for the calendar layout; left out elsewhere so the board's counts stay put. */
+const CALENDAR_NOTES: Record<string, string> =
+  language === 'fa'
+    ? {
+        'Planner/Focus.md': [
+          `- [/] جلسه طراحی با تیم @schedule(${inDays(0)} 09:30-11:00) @tag(work)`,
+          `- [ ] مرور ایمیل‌ها @schedule(${inDays(0)} 10:00-10:30)`,
+          `- [ ] ورزش صبحگاهی @repeat(1d) @schedule(${inDays(1)} 07:00-08:00) @tag(health)`,
+          `- [ ] نوشتن گزارش ماهانه @schedule(${inDays(2)} 14:00-16:00) @tag(deep-work)`,
+          `- [ ] تماس با حسابدار @schedule(${inDays(3)})`,
+        ].join('\n'),
+        [dailyPath(0)]: ['# امروز', '', '## Tasks', '- [ ] خرید نان', '- [x] آب دادن گلدان‌ها', ''].join('\n'),
+        'Templates/Daily.md': TEMPLATE,
+      }
+    : {
+        'Planner/Focus.md': [
+          `- [/] Design review with the team @schedule(${inDays(0)} 09:30-11:00) @tag(work)`,
+          `- [ ] Clear the inbox @schedule(${inDays(0)} 10:00-10:30)`,
+          `- [ ] Morning run @repeat(1d) @schedule(${inDays(1)} 07:00-08:00) @tag(health)`,
+          `- [ ] Write the monthly report @schedule(${inDays(2)} 14:00-16:00) @tag(deep-work)`,
+          `- [ ] Call the accountant @schedule(${inDays(3)})`,
+        ].join('\n'),
+        [dailyPath(0)]: ['# Today', '', '## Tasks', '- [ ] Buy bread', '- [x] Water the plants', ''].join('\n'),
+        'Templates/Daily.md': TEMPLATE,
+      };
+if (params.get('layout') === 'calendar') Object.assign(NOTES, CALENDAR_NOTES);
+
 const PROGRESS: Record<string, TaskProgress> = {
   launch: { enabled: true, currentSteps: 3, totalSteps: 8 },
   home: { enabled: true, currentSteps: 2, totalSteps: 5 },
@@ -145,15 +201,41 @@ const store = {
   },
 };
 
-const layout = params.get('layout') === 'board' ? 'board' : 'table';
+const layoutParam = params.get('layout');
+const layout: BoardLayout = layoutParam === 'board' || layoutParam === 'calendar' ? layoutParam : 'table';
 const groupBy = (params.get('group') ?? (layout === 'board' ? 'status' : 'status')) as BoardGroupBy;
+const calendarSystem = (params.get('system') ?? (language === 'fa' ? 'jalali' : 'gregorian')) as CalendarSystem;
 const settings = {
   language,
-  calendarSystem: language === 'fa' ? ('jalali' as const) : ('gregorian' as const),
+  calendarSystem,
   targetFolder: params.get('scope') === 'vault' ? '' : 'Planner',
   tags: TAGS,
-  board: { ...DEFAULT_BOARD_PREFERENCES, layout, groupBy, scope: 'vault' as const, inboxPath: 'Inbox.md' },
+  board: {
+    ...DEFAULT_BOARD_PREFERENCES,
+    layout,
+    groupBy,
+    scope: 'vault' as const,
+    inboxPath: 'Inbox.md',
+    calendarView: (params.get('cal') ?? 'month') as CalendarView,
+    calendarSidebar: params.get('sidebar') !== 'off',
+  },
   referenceNotePath: 'Inbox.md',
+  calendar: CALENDAR,
+};
+
+const changed = () => {
+  reparse();
+  listeners.forEach((fn) => fn());
+};
+
+/** The day's note that exists, or where one would be made: what the plugin's daily-note service answers. */
+const dayNoteTarget = (day: string, system: CalendarSystem) => {
+  const existing = dailyNoteCandidates(day, CALENDAR, system).find((path) => path in NOTES);
+  return {
+    path: existing ?? dailyNotePath(day, namingSystem(CALENDAR, system), CALENDAR),
+    exists: !!existing,
+    isDailyNote: true,
+  };
 };
 
 const noop = async () => undefined;
@@ -191,6 +273,21 @@ const host = {
   chooseNote: () => undefined,
   manageTags: () => undefined,
   notify: (message: string) => console.log(message),
+  setSchedule: (task: BoardTask, schedule: TaskSchedule | null) => edit(task, (line) => setSchedule(line, schedule)),
+  dailyNotesFor: (day: string) => dailyNoteCandidates(day, CALENDAR, 'gregorian').filter((path) => path in NOTES),
+  dayNoteTarget,
+  addTaskOnDay: async (day: string, line: string, system: CalendarSystem) => {
+    const target = dayNoteTarget(day, system);
+    const content = target.exists
+      ? NOTES[target.path]
+      : renderDailyTemplate(TEMPLATE, { day, system: namingSystem(CALENDAR, system), settings: CALENDAR, now: new Date() });
+    NOTES[target.path] = insertTaskLine(content, line, CALENDAR.taskHeading);
+    changed();
+    return target.path;
+  },
+  openDailyNote: async (day: string) => {
+    (window as unknown as { __openedDay: string }).__openedDay = day;
+  },
 } as unknown as TaskBoardHost;
 
 async function main(): Promise<void> {
@@ -232,8 +329,8 @@ async function main(): Promise<void> {
     root.addClass('note-host');
     root.setAttribute('dir', language === 'fa' ? 'rtl' : 'ltr');
     root.createEl('h2', { text: language === 'fa' ? 'این هفته' : 'This week' });
-    const [firstPath] = Object.keys(NOTES);
-    for (const task of tasks.filter((t) => t.filePath === firstPath)) {
+    const notePath = params.get('note') ?? Object.keys(NOTES)[0];
+    for (const task of tasks.filter((t) => t.filePath === notePath)) {
       const line = root.createDiv({ cls: `line${task.status === '[x]' ? ' done' : ''}` });
       line.createSpan({ cls: `cb ${{ '[x]': 'done', '[/]': 'doing', '[!]': 'blocked', '[ ]': '' }[task.status]}` });
       line.createSpan({ cls: 'txt', text: task.text });
@@ -247,6 +344,12 @@ async function main(): Promise<void> {
       if (priority) container.appendChild(createPriorityChip({ ...common, priority, status: task.status, language }));
       if (repeat) container.appendChild(createRepeatChip({ ...common, repeat, status: task.status, language }));
       if (deadline) container.appendChild(createDeadlineChip(deadline, language, task.status));
+      const schedule = extractSchedule(task.line);
+      if (schedule) {
+        container.appendChild(
+          createScheduleChip({ ...common, schedule, status: task.status, language, calendarSystem, timeFormat: '24h' })
+        );
+      }
       const progress = task.blockId ? PROGRESS[task.blockId] : undefined;
       if (progress) container.appendChild(createProgressChip({ ...common, ...progress, language }));
       appendTagChips(container, extractTags(task.line).map((key) => resolveTag(key, TAGS)), common);

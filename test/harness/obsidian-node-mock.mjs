@@ -71,6 +71,12 @@ export class Vault extends Events {
     this.files = new Map(Object.entries(files));
     this.metadataCache = metadataCache;
     this.writes = 0;
+    // Every folder the starting notes live in exists.
+    this.folders = new Set();
+    for (const path of this.files.keys()) {
+      const parts = path.split('/').slice(0, -1);
+      parts.forEach((_, i) => this.folders.add(parts.slice(0, i + 1).join('/')));
+    }
   }
   file(path) {
     return this.files.has(path) ? new TFile(path, this) : null;
@@ -79,7 +85,25 @@ export class Vault extends Events {
     return this.file(path);
   }
   getAbstractFileByPath(path) {
-    return this.file(path);
+    return this.file(path) ?? (this.folders.has(path) ? { path, children: [] } : null);
+  }
+  /** Like Obsidian: fails when the note exists or its folder does not. */
+  async create(path, content) {
+    if (this.files.has(path)) throw new Error('File already exists.');
+    const parent = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
+    if (parent && !this.folders.has(parent)) throw new Error(`Folder does not exist: ${parent}`);
+    this.files.set(path, content);
+    this.writes++;
+    const file = new TFile(path, this);
+    this.trigger('create', file);
+    this.metadataCache.trigger('changed', file, content, cacheFor(content));
+    return file;
+  }
+  async createFolder(path) {
+    if (this.folders.has(path)) throw new Error('Folder already exists.');
+    const parent = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
+    if (parent && !this.folders.has(parent)) throw new Error(`Folder does not exist: ${parent}`);
+    this.folders.add(path);
   }
   getMarkdownFiles() {
     return [...this.files.keys()].filter((p) => p.endsWith('.md')).map((p) => new TFile(p, this));
@@ -142,6 +166,16 @@ export class App {
     this.data = null;
     this.commands = [];
     this.views = {};
+    this.scope = {};
+    this.keymap = {
+      scopes: [],
+      pushScope(scope) {
+        this.scopes.push(scope);
+      },
+      popScope(scope) {
+        this.scopes = this.scopes.filter((s) => s !== scope);
+      },
+    };
   }
 }
 
@@ -253,6 +287,15 @@ export class Modal {
   }
 }
 export class FuzzySuggestModal {}
+export class Scope {
+  constructor(parent) {
+    this.parent = parent;
+    this.keys = [];
+  }
+  register(modifiers, key, handler) {
+    this.keys.push({ modifiers, key, handler });
+  }
+}
 export class Menu {}
 export class WorkspaceLeaf {}
 export const setIcon = () => {};

@@ -9,6 +9,8 @@ import {
   DEFAULT_SETTINGS,
   DEFAULT_REMINDER_SETTINGS,
   DEFAULT_BOARD_PREFERENCES,
+  DEFAULT_CALENDAR_SETTINGS,
+  CalendarSystem,
   TaskStatus,
   TaskMapping,
   TaskProgress,
@@ -17,6 +19,7 @@ import {
   PRIORITY_ICON_NAMES,
   PRIORITY_LABELS,
   TaskRepeat,
+  TaskSchedule,
   TaskTimer,
   TaskTimerEntry,
 } from './src/types';
@@ -31,12 +34,14 @@ import {
   extractProgress,
   extractPriority,
   extractRepeat,
+  extractSchedule,
   extractTags,
   nextRepeatDate,
   replaceTaskText,
   setDeadline,
   setPriority,
   setRepeat,
+  setSchedule,
   setTags,
   stripTaskMetadata,
 } from './src/task-metadata';
@@ -59,6 +64,12 @@ import { TaskBoardHost } from './src/board/task-board';
 import { TaskBoardView, VIEW_TYPE_TASK_BOARD } from './src/board/task-board-view';
 import { TaskBoardModal } from './src/board/task-board-modal';
 import { getBoardLabels } from './src/board/board-localization';
+import { DailyNoteService } from './src/calendar/daily-notes';
+import { todayKey } from './src/calendar/calendar-dates';
+import { getCalendarLabels } from './src/calendar/calendar-localization';
+import { scheduleText } from './src/calendar/schedule-text';
+import { openSchedulePanel } from './src/ui/schedule-editor';
+import { useKeymapOf } from './src/ui/escape-scope';
 
 /**
  * A task as the editing API addresses it. `lineNumber` is a hint: it is used
@@ -105,6 +116,8 @@ export default class TaskProPlugin extends Plugin {
   taskIndexService!: TaskIndexService;
   /** Every task in the vault, for the board and tag counts. Loaded on first use. */
   taskStore!: TaskStore;
+  /** One note per day, for the calendar: found, or made from the template. */
+  dailyNotes!: DailyNoteService;
   /** The board's floating window, while it is open. */
   private floatingBoard: TaskBoardModal | null = null;
   private isProcessingSync = false;
@@ -131,6 +144,8 @@ export default class TaskProPlugin extends Plugin {
 
   async onload() {
     await this.loadSettings();
+    // TaskPro's panels and calendar cards claim Escape through Obsidian's keymap.
+    useKeymapOf(this.app);
 
     // Hidden creation-time index. Created before anything can scan tasks.
     this.taskRegistry = new TaskCreationRegistry({
@@ -153,6 +168,7 @@ export default class TaskProPlugin extends Plugin {
       this.app,
       () => new Promise((resolve) => this.app.workspace.onLayoutReady(() => resolve()))
     );
+    this.dailyNotes = new DailyNoteService(this.app, () => this.settings.calendar);
     this.registerView(VIEW_TYPE_TASK_BOARD, (leaf) => new TaskBoardView(leaf, this.createBoardHost()));
     this.addRibbonIcon('list-checks', getBoardLabels(this.settings.badgeLanguage).open, () => {
       void this.activateBoard();
@@ -215,7 +231,7 @@ export default class TaskProPlugin extends Plugin {
     this.registerEditorExtension(
      createTaskBadgePlugin(
        this.app,
-        () => ({ enableBadges: this.settings.enableBadges, badgeLanguage: this.settings.badgeLanguage, badgeSize: this.settings.badgeSize, targetFolder: this.settings.targetFolder, calendarSystem: this.settings.calendarSystem, showPriorityBadges: this.settings.showPriorityBadges, showTimerBadges: this.settings.showTimerBadges, showRepeatBadges: this.settings.showRepeatBadges, showTagBadges: this.settings.showTagBadges, tags: this.settings.tags }),
+        () => ({ enableBadges: this.settings.enableBadges, badgeLanguage: this.settings.badgeLanguage, badgeSize: this.settings.badgeSize, targetFolder: this.settings.targetFolder, calendarSystem: this.settings.calendarSystem, showPriorityBadges: this.settings.showPriorityBadges, showTimerBadges: this.settings.showTimerBadges, showRepeatBadges: this.settings.showRepeatBadges, showTagBadges: this.settings.showTagBadges, showScheduleBadges: this.settings.showScheduleBadges, timeFormat: this.settings.calendar.timeFormat, tags: this.settings.tags }),
         (filePath: string, blockId?: string) => this.getTaskProgress(filePath, blockId),
         (filePath: string, blockId?: string) => this.timerService.get(filePath, blockId),
         (filePath: string, lineContent: string) => this.getStoredBlockId(filePath, lineContent)
@@ -226,7 +242,7 @@ export default class TaskProPlugin extends Plugin {
     this.registerMarkdownPostProcessor(
      createReadingModeProcessor(
        this.app,
-        () => ({ enableBadges: this.settings.enableBadges, badgeLanguage: this.settings.badgeLanguage, badgeSize: this.settings.badgeSize, showBadgesInEmbeds: this.settings.showBadgesInEmbeds, targetFolder: this.settings.targetFolder, calendarSystem: this.settings.calendarSystem, showPriorityBadges: this.settings.showPriorityBadges, showTimerBadges: this.settings.showTimerBadges, showRepeatBadges: this.settings.showRepeatBadges, showTagBadges: this.settings.showTagBadges, tags: this.settings.tags }),
+        () => ({ enableBadges: this.settings.enableBadges, badgeLanguage: this.settings.badgeLanguage, badgeSize: this.settings.badgeSize, showBadgesInEmbeds: this.settings.showBadgesInEmbeds, targetFolder: this.settings.targetFolder, calendarSystem: this.settings.calendarSystem, showPriorityBadges: this.settings.showPriorityBadges, showTimerBadges: this.settings.showTimerBadges, showRepeatBadges: this.settings.showRepeatBadges, showTagBadges: this.settings.showTagBadges, showScheduleBadges: this.settings.showScheduleBadges, timeFormat: this.settings.calendar.timeFormat, tags: this.settings.tags }),
         (filePath: string, blockId?: string) => this.getTaskProgress(filePath, blockId),
         (filePath: string, blockId?: string) => this.timerService.get(filePath, blockId),
         (filePath: string, lineContent: string) => this.getStoredBlockId(filePath, lineContent)
@@ -542,6 +558,48 @@ export default class TaskProPlugin extends Plugin {
       },
     });
 
+    // Command: the board, opened on its calendar
+    this.addCommand({
+      id: 'open-task-calendar',
+      name: 'Open Task Calendar',
+      callback: () => {
+        void this.openCalendar();
+      },
+    });
+
+    // Command: today's daily note, made from the template when it is missing
+    this.addCommand({
+      id: 'open-todays-daily-note',
+      name: 'Open Today’s Daily Note',
+      callback: () => {
+        void this.openDailyNote(todayKey(), this.settings.board.calendarSystem ?? this.settings.calendarSystem);
+      },
+    });
+
+    // Command: plan the task under the cursor for a day, and a time on it
+    this.addCommand({
+      id: 'schedule-current-task',
+      name: 'Plan Current Task…',
+      editorCallback: async (editor: Editor, ctx: MarkdownView | MarkdownFileInfo) => {
+        const context = this.taskAtCursor(editor, ctx);
+        if (!context) return;
+        const choice = await openSchedulePanel({
+          language: this.settings.badgeLanguage,
+          calendarSystem: this.settings.calendarSystem,
+          schedule: extractSchedule(context.line),
+          defaultDuration: this.settings.calendar.defaultDurationMinutes,
+          timeFormat: this.settings.calendar.timeFormat,
+        });
+        if (choice === undefined) return;
+        await this.setTaskScheduleFor(
+          { filePath: context.filePath, lineContent: context.line, blockId: context.blockId, lineNumber: context.lineNumber },
+          choice
+        );
+        const labels = getCalendarLabels(this.settings.badgeLanguage);
+        new Notice(choice ? labels.scheduledNotice(this.scheduleLabel(choice)) : labels.unscheduledNotice);
+      },
+    });
+
     // Command: the board as a floating window over the whole app. The same
     // hotkey closes it again; see TaskBoardModal.
     this.addCommand({
@@ -650,6 +708,7 @@ export default class TaskProPlugin extends Plugin {
     // Same for the board's remembered layout, and the tag list is cleaned so a
     // hand-edited data.json cannot break chip rendering.
     this.settings.board = Object.assign({}, DEFAULT_BOARD_PREFERENCES, saved?.board);
+    this.settings.calendar = Object.assign({}, DEFAULT_CALENDAR_SETTINGS, saved?.calendar);
     this.settings.tags = sanitizeTags(saved?.tags);
 
     // Active-note reminders are enabled by default. Apply this once to existing
@@ -712,6 +771,7 @@ export default class TaskProPlugin extends Plugin {
     const progress = this.getTaskProgress(resolvedFilePath, blockId);
     const timer = this.timerService.get(resolvedFilePath, blockId);
     const repeat = extractRepeat(lineContent ?? '');
+    const schedule = extractSchedule(lineContent ?? '');
     const customTags = extractTags(lineContent ?? '').map((key) => resolveTag(key, this.settings.tags));
 
     // Find task mapping if it exists
@@ -737,6 +797,10 @@ export default class TaskProPlugin extends Plugin {
         repeat,
         defaultTimerMinutes: this.settings.defaultTimerMinutes,
         calendarSystem: this.settings.calendarSystem,
+        schedule,
+        timeFormat: this.settings.calendar.timeFormat,
+        defaultDuration: this.settings.calendar.defaultDurationMinutes,
+        onScheduleChange: (newSchedule) => this.setTaskScheduleFor(ref, newSchedule),
         onToggleSync: async (enabled) => {
           if (mapping) {
             await this.syncManager.setLinkState(resolvedFilePath, lineContent, enabled, { scope: 'imported', blockId });
@@ -893,6 +957,34 @@ export default class TaskProPlugin extends Plugin {
   }
 
   /**
+   * Plans a task for a day (and a time), or takes it off the calendar with
+   * `null`. Unlike its status, deadline or tags, a plan is not synced to a
+   * linked source task: it says when this copy is to be worked on, and
+   * syncing it would put the same task on the calendar twice.
+   */
+  async setTaskScheduleFor(ref: TaskRef, schedule: TaskSchedule | null): Promise<void> {
+    const { blockId, file } = this.resolveTaskRef(ref);
+    if (!file) return;
+    const updated = await this.updateTaskLineInFile(
+      file,
+      ref.lineContent,
+      blockId,
+      (content) => setSchedule(content, schedule),
+      ref.lineNumber
+    );
+    if (updated) this.refreshDecorations();
+  }
+
+  /** A plan as the chips write it: "Today, 09:00 – 10:30". */
+  private scheduleLabel(schedule: TaskSchedule): string {
+    return scheduleText(schedule, {
+      language: this.settings.badgeLanguage,
+      calendarSystem: this.settings.calendarSystem,
+      timeFormat: this.settings.calendar.timeFormat,
+    });
+  }
+
+  /**
    * Renames a task, keeping every marker and the block ID. Mappings and the
    * block-ID cache are keyed partly by the task's text, so they are moved to
    * the new text as well; otherwise a linked copy would stop syncing.
@@ -1044,6 +1136,69 @@ export default class TaskProPlugin extends Plugin {
     await this.app.workspace.revealLeaf(leaf);
   }
 
+  /** Opens the board on its calendar layout. A floating board switches in place. */
+  async openCalendar(): Promise<void> {
+    if (this.settings.board.layout !== 'calendar') {
+      this.settings.board.layout = 'calendar';
+      await this.saveSettings();
+      this.refreshBoards();
+    }
+    if (!this.floatingBoard) await this.activateBoard();
+  }
+
+  /** The note the board's quick add writes to, if it still exists. */
+  private boardInboxPath(): string {
+    const { inboxPath } = this.settings.board;
+    if (inboxPath && this.app.vault.getFileByPath(inboxPath)) return inboxPath;
+    const reference = this.settings.referenceNotePath;
+    if (reference && this.app.vault.getFileByPath(reference)) return reference;
+    return '';
+  }
+
+  /** Where a task added on a day goes: that day's note, or the inbox when set so. */
+  private dayNoteTarget(day: string, system: CalendarSystem): { path: string; exists: boolean; isDailyNote: boolean } {
+    if (this.settings.calendar.newTaskTarget === 'inbox') {
+      const path = this.boardInboxPath();
+      return { path, exists: !!path, isDailyNote: false };
+    }
+    return { ...this.dailyNotes.target(day, system), isDailyNote: true };
+  }
+
+  /** Writes a task line on a day. Resolves the note it went into, or null. */
+  private async addTaskOnDay(day: string, line: string, system: CalendarSystem): Promise<string | null> {
+    try {
+      if (this.settings.calendar.newTaskTarget === 'inbox') {
+        const path = this.boardInboxPath();
+        return path && (await this.appendTaskLine(path, line)) ? path : null;
+      }
+      return (await this.dailyNotes.addTask(day, system, line)).path;
+    } catch (error) {
+      console.error('TaskPro: could not add the task to its day', error);
+      return null;
+    }
+  }
+
+  /** Opens a day's note, making it from the template first when it does not exist. */
+  async openDailyNote(day: string, system: CalendarSystem): Promise<void> {
+    let file: TFile;
+    try {
+      file = await this.dailyNotes.ensure(day, system);
+    } catch (error) {
+      console.error('TaskPro: could not create the daily note', error);
+      new Notice(getCalendarLabels(this.settings.badgeLanguage).addFailed);
+      return;
+    }
+    // A note opened from the floating board is opened to be read: step aside.
+    this.floatingBoard?.close();
+    const leaf =
+      this.app.workspace
+        .getLeavesOfType('markdown')
+        .find((candidate) => candidate.view instanceof MarkdownView && candidate.view.file?.path === file.path) ??
+      this.app.workspace.getLeaf('tab');
+    await leaf.openFile(file, { active: true });
+    await this.app.workspace.revealLeaf(leaf);
+  }
+
   /** Repaints open boards after a setting they depend on changed. */
   refreshBoards(): void {
     for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_TASK_BOARD)) {
@@ -1110,6 +1265,7 @@ export default class TaskProPlugin extends Plugin {
         tags: this.settings.tags,
         board: this.settings.board,
         referenceNotePath: this.settings.referenceNotePath,
+        calendar: this.settings.calendar,
       }),
       savePreferences: () => this.saveSettings(),
       getProgress: (task) => {
@@ -1156,6 +1312,12 @@ export default class TaskProPlugin extends Plugin {
       openFloating: () => {
         if (!this.floatingBoard) this.toggleFloatingBoard();
       },
+      setSchedule: (task, schedule) => this.setTaskScheduleFor(this.boardTaskRef(task), schedule),
+      // Both calendars' names are looked up whichever is showing, so the view system does not matter here.
+      dailyNotesFor: (day) => this.dailyNotes.existing(day, 'gregorian').map((file) => file.path),
+      dayNoteTarget: (day, system) => this.dayNoteTarget(day, system),
+      addTaskOnDay: (day, line, system) => this.addTaskOnDay(day, line, system),
+      openDailyNote: (day, system) => this.openDailyNote(day, system),
     };
   }
 
@@ -1179,6 +1341,8 @@ export default class TaskProPlugin extends Plugin {
       new Notice(getBoardLabels(this.settings.badgeLanguage).noteMissing);
       return;
     }
+    // Opened from the floating board, the note would open behind it.
+    this.floatingBoard?.close();
 
     const leaf =
       this.app.workspace
@@ -2125,17 +2289,34 @@ export default class TaskProPlugin extends Plugin {
     const content = await this.app.vault.cachedRead(file);
     if (!content.includes('@repeat(')) return;
 
-    /** Rewrites one completed repeating line, or returns null to leave it be. */
-    const roll = (line: string): { line: string; nextDeadline: string } | null => {
+    /**
+     * Rewrites one completed repeating line, or returns null to leave it be.
+     * A plan moves on with the task, by the same interval, keeping its time:
+     * a weekly 09:00 slot stays a weekly 09:00 slot. A task with a plan and no
+     * deadline repeats by its plan alone and is not given a deadline.
+     */
+    const roll = (line: string): { line: string; nextDate: string; nextDeadline?: string } | null => {
       const match = TASK_LINE_REGEX.exec(line);
       if (!match || match[2].toLowerCase() !== 'x') return null;
 
       const repeat = extractRepeat(line);
       if (!repeat) return null;
 
-      const nextDeadline = nextRepeatDate(repeat, extractDeadline(line));
-      const reopened = setDeadline(line, nextDeadline).replace(TASK_STATUS_REGEX, '- [ ]');
-      return reopened === line ? null : { line: reopened, nextDeadline };
+      const deadline = extractDeadline(line);
+      const schedule = extractSchedule(line);
+      let reopened = line.replace(TASK_STATUS_REGEX, '- [ ]');
+      let nextDeadline: string | undefined;
+      if (deadline || !schedule) {
+        nextDeadline = nextRepeatDate(repeat, deadline);
+        reopened = setDeadline(reopened, nextDeadline);
+      }
+      let nextPlan: string | undefined;
+      if (schedule) {
+        nextPlan = nextRepeatDate(repeat, schedule.date);
+        reopened = setSchedule(reopened, { ...schedule, date: nextPlan });
+      }
+      const nextDate = nextDeadline ?? nextPlan!;
+      return reopened === line ? null : { line: reopened, nextDate, nextDeadline };
     };
 
     // The write below fires another `modify`, which lands back here. That pass
@@ -2144,7 +2325,7 @@ export default class TaskProPlugin extends Plugin {
     // writing is what keeps it from becoming a ping-pong.
     if (!content.split('\n').some((line) => roll(line) !== null)) return;
 
-    const rolled: Array<{ line: string; blockId?: string; nextDeadline: string }> = [];
+    const rolled: Array<{ line: string; blockId?: string; nextDate: string; nextDeadline?: string }> = [];
 
     await this.app.vault.process(file, (current) => {
       const lines = current.split('\n');
@@ -2157,6 +2338,7 @@ export default class TaskProPlugin extends Plugin {
         rolled.push({
           line: next.line,
           blockId: this.extractTaskBlockId(next.line),
+          nextDate: next.nextDate,
           nextDeadline: next.nextDeadline,
         });
         lines[i] = next.line;
@@ -2192,9 +2374,11 @@ export default class TaskProPlugin extends Plugin {
         blockId: entry.blockId,
       });
       if (mapping?.linked) {
-        await this.syncManager.syncTaskDeadline(file.path, entry.line, entry.nextDeadline, {
-          blockId: entry.blockId,
-        });
+        if (entry.nextDeadline) {
+          await this.syncManager.syncTaskDeadline(file.path, entry.line, entry.nextDeadline, {
+            blockId: entry.blockId,
+          });
+        }
         await this.syncManager.syncTaskStatus(file.path, entry.line, '[ ]', {
           blockId: entry.blockId,
         });
@@ -2208,7 +2392,7 @@ export default class TaskProPlugin extends Plugin {
     }
 
     const labels = getRepeatLabels(this.settings.badgeLanguage);
-    new Notice(labels.rolledForward(rolled[0].nextDeadline));
+    new Notice(labels.rolledForward(rolled[0].nextDate));
     this.refreshDecorations();
   }
 
@@ -2324,6 +2508,7 @@ export default class TaskProPlugin extends Plugin {
   }
 
   onunload() {
+    useKeymapOf(null);
     // Clear all debounce timers
     this.syncDebounceTimers.forEach(timer => clearTimeout(timer));
     this.fileTaskStates.clear();

@@ -1,5 +1,96 @@
 # Changelog
 
+## 1.5.0 - A calendar to plan your days on, in either calendar
+
+### Calendar
+
+- The task board has a third layout, **Calendar**, next to Table and Board,
+  also opened with **Open Task Calendar**. It has four views: **Month**,
+  **Week**, **Day** and **Agenda** (the next 14 days as a list). Switch views
+  with `M` `W` `D` `A`, go to today with `T`, step with the arrow keys, and add
+  a task with `N`. The keys go by position, so a Persian keyboard layout works
+  too.
+- **Gregorian or Jalali**, switched from the calendar's bar, with the other
+  calendar's date shown small on every day. A Jalali week starts on Saturday
+  and has Friday as its weekend; a Gregorian week starts on Monday and has
+  Saturday and Sunday. The start can be changed in settings. In Persian the
+  calendar reads right to left.
+- **Plan a block of time**: drag across the week or day grid, or click a slot.
+  The card that opens creates a new task there, or plans one of the tasks you
+  already have.
+- **Drag to reschedule**: move a block to another hour or day, drag its edge to
+  change its length, drop it on the all-day row to keep only the day, or drop
+  it on the **Unscheduled** sidebar to unplan it. The sidebar lists open tasks
+  with no plan, ready to be dragged onto the calendar. `Esc` cancels a drag.
+- **Click a task** to open its card: rename it, change its day and time, set
+  its status, priority, deadline and tags, open its note, or remove it from
+  the calendar.
+- Deadlines show as outlined flags on their day. Dragging one plans it and
+  leaves the deadline alone. Deadlines, daily-note tasks and done tasks can
+  each be hidden from the options menu.
+- Times are typed rather than picked, so they follow TaskPro's clock setting
+  (24- or 12-hour) and not the computer's locale. `9`, `930`, `2:30 pm`,
+  `21:30` and Persian digits are all understood, and the arrow keys step by
+  the grid's snap.
+
+### Plans
+
+- A plan is stored in the task line as `@schedule(2026-09-28 09:30-11:00)`, or
+  `@schedule(2026-09-28)` for a whole day. It is shown as a pink chip in Live
+  Preview and Reading View (**Show Plan Badges** under Badges), and the chip
+  turns grey when the day has passed with the task still open.
+- **Plan Current Task…** and **Plan a Time… / Change Plan… / Remove from
+  Calendar** in the task menu set the plan from a note.
+- A plan belongs to one copy of a task. It is not synced to a linked source,
+  and importing a task leaves the plan behind. A repeating task moves its plan
+  forward with the same time of day. A task that has a plan but no deadline
+  repeats by the plan and is not given a deadline.
+
+### Daily notes
+
+- Every day can have its own note, named after its date: in English while the
+  Gregorian calendar is showing, and in Persian while the Jalali one is (or
+  always one of the two). A task created on a day goes into that day's note,
+  under a heading of your choice. A note that does not exist yet is created
+  from your template in one write, with the task already in it.
+- Tasks written in a day's note appear on that day without a plan.
+- A new **Calendar** settings tab holds the folder, a Gregorian and a Jalali
+  name format (moment-style tokens plus `jYYYY`, `jMM`, `jDD`, `jMMMM`; text in
+  `[brackets]` is kept as it is; a `/` makes subfolders), the naming calendar,
+  the template, the task heading, a live preview of today's path, and a button
+  that copies Obsidian's own Daily notes settings.
+- Templates can use `{{title}}`, `{{date}}`, `{{date:FORMAT}}`, `{{time}}`,
+  `{{weekday}}`, `{{gregorian}}`, `{{jalali}}`, `{{yesterday}}` and
+  `{{tomorrow}}`. Templater commands run too.
+- Both calendars' names are checked before a note is created, so a day never
+  gets two notes. **Open Today's Daily Note** opens or creates today's note.
+
+### Fixes
+
+- The first `Esc` in a card or menu over the floating board closed the board
+  too, because Obsidian's keymap handles keys before the page does. Cards,
+  drags and TaskPro panels now push a keymap scope of their own, so `Esc`
+  closes the innermost one only.
+- Reading View showed `[/]` and `[!]` tasks as done, because Obsidian ticks the
+  checkbox for any marker that is not a space. The marker is now read first.
+- Opening a task's note from the floating board now closes the board, so the
+  note is not hidden behind it.
+
+### Under the hood
+
+- Dates are `YYYY-MM-DD` keys counted in UTC, so daylight saving never shifts
+  a day. The Jalali calendar is only a way of reading them, and a note always
+  stores the Gregorian date.
+- The calendar reads the same task index as the board. A day's note is found
+  by computing its path from the date, not by searching the vault.
+- Overlapping blocks share a day's column in lanes. Rendering is held while a
+  drag or a card is open, so a note change never redraws the calendar under the
+  pointer.
+- Tests: `test/calendar.mjs` covers the date arithmetic in both calendars, the
+  name formats, templates, heading insertion and the lane layout.
+  `test/plugin-edits.mjs` covers daily notes, plans, sync and rolling forward.
+  `npm run test:ui` now also drags through the calendar in Chromium.
+
 ## 1.4.0 - Your own tags, and a board of every task
 
 1.3.0 was never published as a release, so its changes (below) ship in this

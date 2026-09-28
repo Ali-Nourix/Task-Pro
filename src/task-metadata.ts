@@ -1,7 +1,7 @@
 // ── task-metadata.ts ─────────────────────────────────────────────────────
 // Shared helpers for parsing and updating task metadata markers.
 
-import { RepeatUnit, TaskPriority, TaskProgress, TaskRepeat, PRIORITY_ICONS, TASK_PRIORITIES } from './types';
+import { RepeatUnit, TaskPriority, TaskProgress, TaskRepeat, TaskSchedule, PRIORITY_ICONS, TASK_PRIORITIES } from './types';
 
 // Canonical inline form is `@due(2026-08-10)`, matching `@priority(...)`.
 //
@@ -67,6 +67,14 @@ const PRIORITY_BY_EMOJI: Record<string, TaskPriority> = TASK_PRIORITIES.reduce(
 const TAG_PATTERN_SOURCE = String.raw`@tag\(\s*([^()\n]*?)\s*\)`;
 const TAG_PATTERN_GLOBAL = new RegExp(TAG_PATTERN_SOURCE, 'gu');
 const TAG_KEY_DISALLOWED = new RegExp(String.raw`[^\p{L}\p{N}\p{M}_\-/\u200c]`, 'gu');
+
+// Canonical inline form is `@schedule(2026-09-28 09:00-10:30)`, or
+// `@schedule(2026-09-28)` for a day with no set time. A start with no end
+// (`@schedule(2026-09-28 09:00)`) is read too; the calendar gives it the
+// default block length. Times are 24-hour and local.
+const SCHEDULE_PATTERN =
+  /@schedule\(\s*(\d{4}-\d{2}-\d{2})(?:[ T]+(\d{1,2}:\d{2})(?:\s*[-\u2013]\s*(\d{1,2}:\d{2}))?)?\s*\)/;
+const SCHEDULE_PATTERN_GLOBAL = new RegExp(SCHEDULE_PATTERN.source, 'g');
 
 function normalizeAfterMarkerRemovalPreserveIndent(line: string): string {
   const indent = line.match(LEADING_WHITESPACE_PATTERN)?.[0] ?? '';
@@ -337,6 +345,79 @@ export function setTags(line: string, keys: readonly string[] | null): string {
   return `${withoutTags} ${marker}`;
 }
 
+/** `9:05` → `09:05`; null for anything that is not a time of day. `24:00` only as an end. */
+function normalizeClock(value: string | undefined, isEnd: boolean): string | null {
+  const match = /^(\d{1,2}):(\d{2})$/.exec(value ?? '');
+  if (!match) return null;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (minutes > 59) return null;
+  if (hours > 23 && !(isEnd && hours === 24 && minutes === 0)) return null;
+  return `${String(hours).padStart(2, '0')}:${match[2]}`;
+}
+
+function clockToMinutes(clock: string): number {
+  const [hours, minutes] = clock.split(':').map(Number);
+  return hours * 60 + minutes;
+}
+
+function isRealIsoDate(value: string): boolean {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return false;
+  const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])];
+  const date = new Date(year, month - 1, day);
+  return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day;
+}
+
+/**
+ * The schedule on a task line, if any. A time that is not a time, or an end
+ * that is not after the start, is dropped rather than guessed at: a task with
+ * `@schedule(2026-09-28 10:00-09:00)` is planned for 10:00 with no end.
+ */
+export function extractSchedule(line: string): TaskSchedule | undefined {
+  const match = SCHEDULE_PATTERN.exec(line);
+  if (!match || !isRealIsoDate(match[1])) return undefined;
+  const date = match[1];
+  const start = normalizeClock(match[2], false);
+  if (!start) return { date };
+  const end = normalizeClock(match[3], true);
+  if (end && clockToMinutes(end) > clockToMinutes(start)) return { date, start, end };
+  return { date, start };
+}
+
+/** The marker text for a schedule: `@schedule(2026-09-28 09:00-10:30)`. */
+export function formatScheduleMarker(schedule: TaskSchedule): string {
+  const time = schedule.start ? ` ${schedule.start}${schedule.end ? `-${schedule.end}` : ''}` : '';
+  return `@schedule(${schedule.date}${time})`;
+}
+
+/** Removes every schedule marker from a task line. */
+export function stripSchedule(line: string): string {
+  return line.replace(SCHEDULE_PATTERN_GLOBAL, '').replace(/\s{2,}/g, ' ').trim();
+}
+
+/** Removes every schedule marker while preserving leading indentation. */
+export function stripSchedulePreserveIndent(line: string): string {
+  return normalizeAfterMarkerRemovalPreserveIndent(line.replace(SCHEDULE_PATTERN_GLOBAL, ''));
+}
+
+/**
+ * Replaces the line's schedule, or removes it. The marker is inserted before a
+ * trailing block ID so the ID stays last.
+ */
+export function setSchedule(line: string, schedule: TaskSchedule | null): string {
+  const without = stripSchedulePreserveIndent(line);
+  if (!schedule || !isRealIsoDate(schedule.date)) return without;
+
+  const marker = formatScheduleMarker(schedule);
+  const blockIdMatch = without.match(/\s*\^([a-zA-Z0-9-]+)\s*$/);
+  if (blockIdMatch) {
+    return without.replace(/\s*\^([a-zA-Z0-9-]+)\s*$/, ` ${marker} ^${blockIdMatch[1]}`);
+  }
+
+  return `${without} ${marker}`;
+}
+
 /**
  * Replaces the readable part of a task line and keeps everything TaskPro put
  * there: the checkbox, the indentation, every marker and the block ID. The
@@ -358,6 +439,7 @@ export function replaceTaskText(line: string, text: string): string {
     PRIORITY_PATTERN_GLOBAL,
     REPEAT_PATTERN_GLOBAL,
     TAG_PATTERN_GLOBAL,
+    SCHEDULE_PATTERN_GLOBAL,
   ]) {
     pattern.lastIndex = 0;
     let found: RegExpExecArray | null;
@@ -374,13 +456,13 @@ export function replaceTaskText(line: string, text: string): string {
 }
 
 /**
- * Every TaskPro marker removed: deadline, progress, priority, repeat and tags.
- * The block ID and the checkbox are left alone; callers that build identity
- * keys or titles strip those themselves. One helper, so a new marker is added
- * in exactly one place instead of in every copy of the strip chain.
+ * Every TaskPro marker removed: deadline, progress, priority, repeat, tags and
+ * schedule. The block ID and the checkbox are left alone; callers that build
+ * identity keys or titles strip those themselves. One helper, so a new marker
+ * is added in exactly one place instead of in every copy of the strip chain.
  */
 export function stripTaskMetadata(line: string): string {
-  return stripTags(stripRepeat(stripPriority(stripProgress(stripDeadline(line)))));
+  return stripSchedule(stripTags(stripRepeat(stripPriority(stripProgress(stripDeadline(line))))));
 }
 
 /**
@@ -453,6 +535,12 @@ export const DEADLINE_MARKER_PATTERN = new RegExp(DEADLINE_PATTERN.source, '');
 
 /** Single-match recurrence pattern for decoration ranges. */
 export const REPEAT_MARKER_PATTERN = new RegExp(REPEAT_PATTERN.source, 'i');
+
+/** Single-match schedule pattern for decoration ranges. */
+export const SCHEDULE_MARKER_PATTERN = new RegExp(SCHEDULE_PATTERN.source, '');
+
+/** Global schedule pattern, for reading-mode stripping. */
+export const SCHEDULE_MARKER_PATTERN_GLOBAL = new RegExp(SCHEDULE_PATTERN.source, 'g');
 
 /**
  * Global tag-marker pattern for decoration ranges and reading-mode stripping.

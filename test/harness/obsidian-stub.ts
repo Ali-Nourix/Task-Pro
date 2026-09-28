@@ -54,6 +54,9 @@ proto.removeClass = function (this: HTMLElement, ...classes: string[]) {
 proto.toggleClass = function (this: HTMLElement, cls: string, value: boolean) {
   this.classList.toggle(cls, value);
 };
+proto.hasClass = function (this: HTMLElement, cls: string) {
+  return this.classList.contains(cls);
+};
 proto.setText = function (this: HTMLElement, text: string) {
   this.textContent = text;
 };
@@ -167,6 +170,11 @@ class MenuItem {
     this.entry.onClick = callback;
     return this;
   }
+}
+
+/** Only the fallback path runs in the harness: no keymap is handed over. */
+export class Scope {
+  register(): void {}
 }
 
 export class ItemView {}
