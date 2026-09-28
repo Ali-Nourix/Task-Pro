@@ -32,7 +32,7 @@ export const BOARD_PROPERTIES: Record<BoardPropertyId, BoardPropertyInfo> = {
   tags: { icon: 'tags', width: 180, min: 90 },
   priority: { icon: 'flag', width: 112, min: 84, sortKey: 'priority' },
   deadline: { icon: 'calendar', width: 196, min: 110, sortKey: 'deadline' },
-  plan: { icon: 'clock', width: 196, min: 110, sortKey: 'plan' },
+  plan: { icon: 'clock', width: 228, min: 110, sortKey: 'plan' },
   waiting: { icon: 'hourglass', width: 180, min: 110 },
   repeat: { icon: 'repeat', width: 132, min: 90 },
   progress: { icon: 'pie-chart', width: 112, min: 80, sortKey: 'progress' },

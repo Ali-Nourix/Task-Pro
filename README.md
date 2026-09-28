@@ -86,6 +86,10 @@ with a palette of its own:
 </tr>
 </table>
 
+Status is the property people read first, so it is the one chip with a shape of
+its own, a capsule; tags, priorities and dates stay rounded rectangles. The
+capsule follows the chip radius setting, so squaring the chips squares it too.
+
 A label is also pulled toward the theme's own text colour, which is what keeps
 it readable in both modes from one declaration: it lightens on a dark theme and
 darkens on a light one, because that is where the theme's text colour is. Every
@@ -201,10 +205,13 @@ the ribbon or with **Open Task Board**, and it opens as a tab of its own.
 ![The task board as a kanban board, one column per status](docs/images/task-board-kanban-dark.png)
 
 - **Scope:** the whole vault, or only the target folder set under **Settings →
-  TaskPro → General**. The switch is at the top of the board.
-- **Four layouts:** a **table** with a column per property, a **board** with a
-  column per group (drag a card to another column to change its status,
-  priority or tag), the [timeline](#timeline) and the [calendar](#calendar).
+  TaskPro → General**. The switch is at the top of the board, beside the tabs,
+  and is there only when a target folder is set.
+- **Four layouts,** as a row of tabs (the current one marked by a bar on the
+  line under them, the way Notion marks its views): a **table** with a column
+  per property, a **board** with a column per group (drag a card to another
+  column to change its status, priority or tag), the [timeline](#timeline) and
+  the [calendar](#calendar).
 - **Group** by status, tag, priority, deadline (*Overdue*, *Today*, *Next 7
   days*, *Later*, *Past*) or note, and fold away groups you do not need; a
   task with two tags appears under both, as in a Notion multi-select.
@@ -236,10 +243,13 @@ the ribbon or with **Open Task Board**, and it opens as a tab of its own.
 - **Right-click any task** — a row, a card, or a task on the calendar — or
   press its **⋯** button for the [task menu](#the-task-menu): every property
   a task can carry, one hover away.
-- **Add tasks** from the row at the top, or from a board column's **New**
-  button. A new task goes into the note of your choice and takes on the active
-  filters (or the column it was added to), so it does not vanish from the view
-  the moment it is created.
+- **Add tasks** from the row at the top, from a board column's **New** button,
+  or from the **New** row that ends each group of the table. A new task goes
+  into the note of your choice and takes on the active filters (or the group it
+  was added to), so it does not vanish from the view the moment it is created.
+- **A wide table keeps its place:** the check and the title stay in view when
+  the properties are scrolled sideways, and a group's name stays with them. A
+  row's **↗** and a card's **⋯** appear on hover, as small raised buttons.
 - The board remembers its layout, grouping, sort and filters between sessions,
   follows your notes live, and reads right to left in Persian:
 
@@ -368,6 +378,8 @@ and the scale of days on top.
   the calendar.
 - **Arrows** join each task to the tasks it is [waiting on](#waiting-on-another-task),
   red when the one it waits on is planned to end after it starts.
+- **Today** is a red line down the chart that starts with a dot under today's
+  number; weekends are shaded.
 - A deadline before the task's plan is flagged on the deadline's day.
 - **Tasks with no dates** are folded away under the chart; open the section
   and click a day in a task's row to plan it for that day.
@@ -428,6 +440,9 @@ can decide what to work on and when, in the Gregorian or the Jalali calendar.
   you will do it, the deadline is when it is due.
 - The options button (the sliders next to the calendar switch) turns
   deadlines, tasks from daily notes, and done tasks on or off.
+- **The time it is:** in the week and day views a red line crosses today, and a
+  small label in the gutter, level with it, tells the time (in your clock
+  setting); the hour mark it would sit on is hidden while it is there.
 
   ![The agenda view: the next two weeks as a list](docs/images/task-calendar-agenda-light.png)
 

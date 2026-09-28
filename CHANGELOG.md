@@ -236,6 +236,47 @@
   stretches a task's circle into an oval or a day's number into a pill.
   Bookcloth sets 40px there.
 
+### A design pass
+
+The board, the calendar, the timeline and the menus were gone over one view at
+a time, against Notion's own, and share one set of radii, shadows, easing and
+focus rings now.
+
+- **The layout switch is a row of tabs.** A hairline runs under the toolbar and
+  the current tab sits on it with a 2px bar; the others are plain text with a
+  soft fill under the pointer. The search field has no box until you use it.
+  The Planner / Whole vault switch shows only when a target folder is set.
+- **Status is a capsule**; tags, priorities and dates stay rounded rectangles,
+  so the property people read first has a shape of its own. The capsule follows
+  the chip radius setting (eight times over), so squaring the chips squares it
+  too. It applies in notes as well.
+- **Table:** tighter rows and faint column lines; a **New** row ends every
+  group and adds a task with that group's status, priority or tag (one at the
+  end of the table when it is grouped any other way); the check and the title
+  stay in view when the properties are scrolled sideways; a row's **Open** and
+  a card's **⋯** appear on hover as small raised buttons. Group names stay put
+  while the table scrolls. The Plan column starts wider (228px) so a day and its
+  hours stay on one line.
+- **Board:** a column's **New** is aligned to the start, and a column's
+  header chip is a capsule tinted like its column.
+- **Calendar:** the time it is stands in the gutter, on the now line's height,
+  in the same red as today's number; the hour mark it would cover is hidden
+  while it is there.
+- **Timeline:** today's line starts with a dot under the number, and
+  dependency arrows have rounded corners.
+- **Menus:** a menu's search is a line under the title rather than a boxed
+  field (a filled field on a phone, where there is something to aim at).
+- **Empty and loading states** are composed rather than bare: an icon, a line
+  of text, and for a search that finds nothing a **Clear search and filters**
+  button. The board shows skeleton rows while it loads.
+- **Reduced motion:** with the system setting on, nothing in TaskPro slides,
+  fades or pulses.
+- Style Settings defaults were re-tuned: a chip's fill is 15% of its accent, its
+  stroke 16% (was 32%) and its label takes 40% of the accent (was 78%), so
+  the text is nearer the theme's own; the chip corner radius is 6px (was 12px)
+  and the panel radius 12px (was 10px). A setting you have changed keeps its
+  value.
+
 ### Fixes
 
 - A task added under a heading is laid out the Markdown way: a blank line
@@ -275,6 +316,24 @@
 - The calendar's header was only as wide as the screen. When a week wider
   than the screen was scrolled sideways, blocks showed through the part left
   uncovered.
+- Chips did not follow the theme in Obsidian: Obsidian keeps a theme's colours
+  and text sizes on `<body>`, and the plugin's derived colours were declared
+  on `:root`, above them, so a tag's green was a fallback rather than the
+  theme's. They are declared on `<body>` now (and Style Settings, which
+  writes there, still wins).
+- A block or a timeline bar dropped where the pointer was let go could land a
+  step from it, because the last move event had not been applied. The
+  pointer-up position is applied first now, in the table, the board, the
+  calendar and the timeline.
+- Holding a block against the edge of the calendar scrolled the grid at once,
+  which could move a block an hour or more by itself. The grid now scrolls
+  only after the pointer has rested at the edge for a moment.
+- A field in a Persian board took the wrong side for its placeholder while it
+  was empty (an empty field has no text to take a direction from). Empty
+  fields now rest in the board's direction and follow what is typed.
+- Closing a column's or a group's **New** field with `Esc` after adding a task
+  raised an error in the console, because taking the field out of the page
+  blurred it and asked to close it again.
 
 ### Under the hood
 
@@ -296,6 +355,16 @@
   with touch input: sheets, swipes, long presses, holding to drag, and the
   three-day week. `test/reading-mode.mjs` runs the Reading View processor
   over a nested list.
+- The look is built from tokens declared once on `<body>`: a radius scale
+  (chip, control, inner, card, panel, column, sheet), shared ring and lift
+  shadows tinted from the page colour, easing and three durations, and a focus
+  ring. `test/obsidian-theme.css` declares the theme's variables on `<body>`
+  too, so the harness would catch a rule that stops following the theme.
+- The UI tests believe it is 15:00 (a fixed clock), so a test that takes its
+  coordinates from the calendar does not depend on the time of day. New
+  checks cover the tabs, the capsule, the theme's colour on a tag, the New
+  rows, the frozen columns, the empty state's action, reduced motion, the
+  scope switch and the now label.
 
 ## 1.4.0 - Your own tags, and a board of every task
 
