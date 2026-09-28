@@ -3,6 +3,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { BoardColumnPref } from './board/board-columns';
+import type { TimelineZoom } from './timeline/timeline-localization';
 import type { TaskCreationIndex } from './task-registry';
 import type { TaskTag } from './tags';
 
@@ -385,7 +386,7 @@ export const DEFAULT_CALENDAR_SETTINGS: CalendarSettings = {
 // The all-tasks view. Its preferences are remembered between sessions, so the
 // board reopens exactly as it was left.
 export type BoardScope = 'target' | 'vault';
-export type BoardLayout = 'table' | 'board' | 'calendar';
+export type BoardLayout = 'table' | 'board' | 'calendar' | 'timeline';
 export type BoardGroupBy = 'none' | 'status' | 'tag' | 'priority' | 'deadline' | 'note';
 export type BoardSortKey = 'document' | 'title' | 'status' | 'priority' | 'deadline' | 'plan' | 'progress' | 'note';
 export type BoardSortDir = 'asc' | 'desc';
@@ -426,6 +427,10 @@ export interface BoardPreferences {
   hiddenGroups?: string[];
   /** The width of every column on the board, in pixels. */
   kanbanColumnWidth?: number;
+  /** The timeline's scale. Unset is days. */
+  timelineZoom?: TimelineZoom;
+  /** Whether the timeline lists the tasks that have no dates. */
+  timelineUndated?: boolean;
 }
 
 export const DEFAULT_BOARD_PREFERENCES: BoardPreferences = {

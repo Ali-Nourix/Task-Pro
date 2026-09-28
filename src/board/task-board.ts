@@ -47,6 +47,8 @@ import {
 import { BoardLabels, getBoardLabels } from './board-localization';
 import { BoardTask, TaskStore } from './task-store';
 import { TaskCalendar } from '../calendar/calendar-view';
+import { TaskTimeline } from '../timeline/timeline-view';
+import { getTimelineLabels } from '../timeline/timeline-localization';
 import { getCalendarLabels } from '../calendar/calendar-localization';
 import { MenuEntry, MenuSection, closeContextMenu, openContextMenu } from '../ui/context-menu';
 import {
@@ -155,6 +157,11 @@ export interface TaskBoardHost {
    * waiting. A task waited on that has no block ID is given one.
    */
   setWaiting?(task: BoardTask, blockers: BoardTask[]): Promise<void>;
+  /**
+   * Writes a plan and a deadline in one edit, for the timeline's drags:
+   * each is left alone when absent from the patch, and `null` removes it.
+   */
+  setDates?(task: BoardTask, patch: { schedule?: TaskSchedule | null; deadline?: string | null }): Promise<void>;
   /** The task's own reminder before its plan starts: minutes, `null` for none, `undefined` for the setting. */
   setRemind?(task: BoardTask, minutes: number | null | undefined): Promise<void>;
 
@@ -234,6 +241,8 @@ export class TaskBoard {
   /** The calendar layout, made the first time it is shown. */
   private calendarView: TaskCalendar | null = null;
   private calendarNavEl: HTMLElement | null = null;
+  /** The timeline layout, made the first time it is shown. */
+  private timelineView: TaskTimeline | null = null;
   /** Open holds on repaints: a calendar drag or picker in progress. */
   private holds = 0;
   /** Set for the moment between the end of a header drag and the click it makes. */
@@ -265,6 +274,7 @@ export class TaskBoard {
     if (this.searchTimer) clearTimeout(this.searchTimer);
     this.calendarView?.destroy();
     this.calendarView = null;
+    this.timelineView?.destroy();
     closeContextMenu();
   }
 
@@ -300,6 +310,41 @@ export class TaskBoard {
 
   private get isCalendar(): boolean {
     return this.prefs.layout === 'calendar';
+  }
+
+  private get isTimeline(): boolean {
+    return this.prefs.layout === 'timeline';
+  }
+
+  /** Board and timeline both draw from the board's scope and filters. */
+  private filteredTasks(): BoardTask[] {
+    return filterTasks(this.scopedTasks(), this.prefs, this.search, { tags: this.settings.tags });
+  }
+
+  private timeline(): TaskTimeline {
+    if (this.timelineView) return this.timelineView;
+    this.timelineView = new TaskTimeline({
+      host: this.host,
+      root: this.el,
+      settings: () => this.settings,
+      prefs: () => this.prefs,
+      updatePrefs: (patch) => this.updatePrefs(patch),
+      tasks: () => this.filteredTasks(),
+      hold: (on) => this.hold(on),
+      openTaskActions: (task, at, anchor, lead) => this.openTaskActions(task, at, anchor, lead),
+      relations: () => this.relations(),
+      progress: (task) => {
+        const shown = this.shownProgress(task);
+        return shown?.enabled && shown.totalSteps ? shown.currentSteps / shown.totalSteps : null;
+      },
+      showSummary: (tasks) => {
+        const counts = summarize(tasks, this.today());
+        this.summaryEl.setText(this.labels.summary(counts.total, counts.done, counts.overdue));
+      },
+      rerender: () => this.renderBody(),
+      segmented: (parent, cls, items, current, onPick) => this.segmented(parent, cls, items, current, onPick),
+    });
+    return this.timelineView;
   }
 
   /** The calendar, which draws itself into the board's nav bar and body. */
@@ -423,6 +468,7 @@ export class TaskBoard {
     this.el.setAttribute('dir', this.language === 'fa' ? 'rtl' : 'ltr');
     this.el.toggleClass('is-board-layout', this.prefs.layout === 'board');
     this.el.toggleClass('is-calendar-layout', this.isCalendar);
+    this.el.toggleClass('is-timeline-layout', this.isTimeline);
 
     this.headerEl = this.el.createDiv({ cls: 'taskpro-board__header' });
     const heading = this.headerEl.createDiv({ cls: 'taskpro-board__heading' });
@@ -466,8 +512,8 @@ export class TaskBoard {
     });
 
     const controls = this.toolbarEl.createDiv({ cls: 'taskpro-board__controls' });
-    // Days are the calendar's grouping and time its order.
-    if (!this.isCalendar) {
+    // Days are the calendar's grouping and time its order; the timeline's rows follow the dates.
+    if (!this.isCalendar && !this.isTimeline) {
       this.renderGroupControl(controls);
       this.renderSortControl(controls);
       this.renderPropertiesControl(controls);
@@ -482,6 +528,9 @@ export class TaskBoard {
     if (this.isCalendar) {
       this.calendarNavEl = this.el.createDiv({ cls: 'taskpro-cal-nav' });
       this.calendar().renderNav(this.calendarNavEl);
+    } else if (this.isTimeline) {
+      this.calendarNavEl = null;
+      this.timeline().renderNav(this.el.createDiv({ cls: 'taskpro-cal-nav taskpro-tl-nav' }));
     } else {
       this.calendarNavEl = null;
       this.addEl = this.el.createDiv({ cls: 'taskpro-board__add' });
@@ -558,6 +607,7 @@ export class TaskBoard {
         { value: 'table', label: labels.layoutTable, icon: 'table-2' },
         { value: 'board', label: labels.layoutBoard, icon: 'kanban' },
         { value: 'calendar', label: getCalendarLabels(this.language).layout, icon: 'calendar-days' },
+        { value: 'timeline', label: getTimelineLabels(this.language).layout, icon: 'gantt-chart' },
       ],
       this.prefs.layout,
       (value) => void this.updatePrefs({ layout: value as BoardPreferences['layout'] })
@@ -907,8 +957,13 @@ export class TaskBoard {
 
     this.refreshRelations();
     this.bodyEl.toggleClass('is-calendar', this.isCalendar);
+    this.bodyEl.toggleClass('is-timeline', this.isTimeline);
     if (this.isCalendar) {
       this.calendar().renderBody(this.bodyEl, hadFocus);
+      return;
+    }
+    if (this.isTimeline) {
+      this.timeline().renderBody(this.bodyEl);
       return;
     }
 

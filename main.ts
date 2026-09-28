@@ -1416,6 +1416,7 @@ export default class TaskProPlugin extends Plugin {
         return this.deleteTaskFor(this.boardTaskRef(task), displayTitle(task.text) || task.text, nested);
       },
       setWaiting: (task, blockers) => this.setTaskWaiting(task, blockers),
+      setDates: (task, patch) => this.setTaskDatesFor(this.boardTaskRef(task), patch),
       setRemind: (task, minutes) => this.setTaskRemindFor(this.boardTaskRef(task), minutes),
     };
   }
@@ -1521,6 +1522,32 @@ export default class TaskProPlugin extends Plugin {
       this.storeBlockId(task.filePath, nextLine, stored);
     }
     return id;
+  }
+
+  /**
+   * A plan and a deadline written in one edit, so a timeline drag that
+   * moves both is one change to the note. The deadline goes on to a linked
+   * source the way a deadline set anywhere else does; the plan does not.
+   */
+  async setTaskDatesFor(ref: TaskRef, patch: { schedule?: TaskSchedule | null; deadline?: string | null }): Promise<void> {
+    const { mapping, blockId, file } = this.resolveTaskRef(ref);
+    if (!file) return;
+    const updated = await this.updateTaskLineInFile(
+      file,
+      ref.lineContent,
+      blockId,
+      (content) => {
+        let next = content;
+        if (patch.schedule !== undefined) next = setSchedule(next, patch.schedule);
+        if (patch.deadline !== undefined) next = this.applyDeadlineToLine(next, patch.deadline);
+        return next;
+      },
+      ref.lineNumber
+    );
+    if (updated) this.refreshDecorations();
+    if (patch.deadline !== undefined && mapping?.linked) {
+      await this.syncManager.syncTaskDeadline(ref.filePath, ref.lineContent, patch.deadline, { blockId });
+    }
   }
 
   /** A task's own reminder before its plan starts, or back to the setting with `undefined`. */
