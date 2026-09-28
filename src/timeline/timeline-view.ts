@@ -88,6 +88,38 @@ export interface TimelineContext {
   ): void;
 }
 
+/** How round the bends of a dependency line are, in pixels. */
+const LINK_CORNER = 8;
+
+/**
+ * A line through `points` with its bends rounded: each is cut short by the
+ * radius (or by half of the shorter segment beside it, so two bends close
+ * together do not overlap) and joined by a curve that has the bend itself as
+ * its control point.
+ */
+function roundedPath(points: Array<[number, number]>, radius: number): string {
+  let d = `M${points[0][0]} ${points[0][1]}`;
+  for (let i = 1; i < points.length - 1; i++) {
+    const [px, py] = points[i - 1];
+    const [cx, cy] = points[i];
+    const [nx, ny] = points[i + 1];
+    const before = Math.hypot(cx - px, cy - py);
+    const after = Math.hypot(nx - cx, ny - cy);
+    const r = Math.min(radius, before / 2, after / 2);
+    if (r < 0.5) {
+      d += ` L${cx} ${cy}`;
+      continue;
+    }
+    const ax = cx + ((px - cx) / before) * r;
+    const ay = cy + ((py - cy) / before) * r;
+    const bx = cx + ((nx - cx) / after) * r;
+    const by = cy + ((ny - cy) / after) * r;
+    d += ` L${ax} ${ay} Q${cx} ${cy} ${bx} ${by}`;
+  }
+  const last = points[points.length - 1];
+  return `${d} L${last[0]} ${last[1]}`;
+}
+
 /** Where a row's bar is, in days from the chart's first; what the dependency arrows join. */
 interface TimelinePosition {
   index: number;
@@ -267,7 +299,7 @@ export class TaskTimeline {
     if (!model.rows.length && !model.undated.length) {
       const empty = body.createDiv({ cls: 'taskpro-board__empty' });
       setIcon(empty.createDiv({ cls: 'taskpro-board__empty-icon' }), 'gantt-chart');
-      empty.createDiv({ text: labels.empty });
+      empty.createDiv({ cls: 'taskpro-board__empty-text', text: labels.empty });
       return;
     }
 
@@ -578,7 +610,9 @@ export class TaskTimeline {
       this.drag = { task, mode, bar: el, lane, startX: event.clientX, from: start, to: end, delta: 0, moved: false, label: null };
       const doc = el.ownerDocument;
       const onMove = (e: PointerEvent) => this.moveDrag(e);
-      const onUp = () => {
+      const onUp = (e: PointerEvent) => {
+        // Where it let go, whether or not its last move had been delivered.
+        this.moveDrag(e);
         doc.removeEventListener('pointermove', onMove, true);
         doc.removeEventListener('pointerup', onUp, true);
         doc.removeEventListener('pointercancel', onCancel, true);
@@ -743,10 +777,12 @@ export class TaskTimeline {
         const late = blocker.task!.status !== '[x]' && finishesAfterStart(blocker.task!, row.task);
         // Starting before the other ends: round by the line between the rows, to come in from before.
         const gap = down ? to.index * ROW_HEIGHT : (to.index + 1) * ROW_HEIGHT;
-        const d =
+        const d = roundedPath(
           tipX - exitX >= 10
-            ? `M${exitX} ${exitY} V${y} H${tipX}`
-            : `M${exitX} ${exitY} V${gap} H${tipX - 10} V${y} H${tipX}`;
+            ? [[exitX, exitY], [exitX, y], [tipX, y]]
+            : [[exitX, exitY], [exitX, gap], [tipX - 10, gap], [tipX - 10, y], [tipX, y]],
+          LINK_CORNER
+        );
         paths.push({ d, late });
       }
     }

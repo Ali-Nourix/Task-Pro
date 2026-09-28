@@ -20,9 +20,22 @@ function eq(actual, expected, label) {
   checked++;
 }
 
-async function open(query = '') {
+/**
+ * Every page in these tests believes it is 15:00 today unless it is told
+ * otherwise. The calendar opens on the hours around the current time and
+ * draws a line at it, so a test that takes its coordinates from the screen
+ * would otherwise behave differently in the morning and at night.
+ */
+async function setClock(page, hour) {
+  const now = new Date();
+  now.setHours(hour, 0, 0, 0);
+  await page.clock.setFixedTime(now);
+}
+
+async function open(query = '', hour = 15) {
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, deviceScaleFactor: 1 });
   const page = await context.newPage();
+  await setClock(page, hour);
   page.errors = [];
   page.on('pageerror', (error) => page.errors.push(error.message));
   await page.goto(`file://${path.join(here, 'board-preview.html')}?mobile=1&scope=vault${query}`);
@@ -200,6 +213,17 @@ try {
   const block = await center(page.locator('.taskpro-cal__block', { hasText: 'Auto layout' }));
   await page.gesture({ x: block.x, y: block.y }, { x: block.x, y: block.y + 48 }, { hold: 600, steps: 10 });
   eq((await note(page, 'Projects/Figma.md')).includes('17:00-18:30'), true, 'a held block moves');
+  // Late in the evening the grid opens scrolled to the bottom and the day's
+  // first block sits against the header. A finger that picks it up there and
+  // moves away must carry it exactly as far as it moved: the grid waits for a
+  // drag to rest at its edge before it scrolls.
+  await page.context().close();
+  page = await open('&layout=calendar&cal=week', 22);
+  const early = await center(page.locator('.taskpro-cal__block', { hasText: 'Auto layout' }));
+  const scrolledBefore = await page.locator('.taskpro-cal__scroller').evaluate((el) => el.scrollTop);
+  await page.gesture({ x: early.x, y: early.y }, { x: early.x, y: early.y + 48 }, { hold: 600, steps: 10 });
+  eq((await note(page, 'Projects/Figma.md')).includes('17:00-18:30'), true, 'a block held against the header moves an hour, not less');
+  eq(await page.locator('.taskpro-cal__scroller').evaluate((el) => el.scrollTop), scrolledBefore, 'and the grid stayed where it was');
   // A tap on a block opens its card as a sheet.
   await page.tap('.taskpro-cal__block:has-text("Prototyping")');
   eq(await page.locator('.taskpro-cal-inspector.is-sheet, .taskpro-cal-popover.is-sheet').count(), 1, 'its card rises from the bottom');

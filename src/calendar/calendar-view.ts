@@ -96,6 +96,7 @@ import { PopoverHandle, openCalendarPopover } from './calendar-popover';
 import { scheduleDayText } from './schedule-text';
 import { MenuEntry, MenuSection, closeContextMenu, openContextMenu } from '../ui/context-menu';
 import { emptyPanel } from '../ui/sheet';
+import { autoDirection } from '../ui/fields';
 import { holdToDrag, onContextPress } from '../ui/touch';
 import {
   TaskActionOptions,
@@ -116,6 +117,8 @@ import { getRepeatLabels } from '../timer-localization';
 
 /** Pixels per hour on the week and day grids. */
 const HOUR_HEIGHT = 48;
+/** How close an hour mark may be to the now label, in minutes, before it gives way. */
+const NOW_LABEL_CLEARANCE = 20;
 const DAY_MINUTES = 24 * 60;
 /** Heights, in pixels, of a block's lines: a line of title or time, the parent's name, the properties. */
 const BLOCK_LINE = 15.5;
@@ -126,6 +129,12 @@ const DRAG_THRESHOLD = 4;
 const AGENDA_DAYS = 14;
 /** Distance from the grid's top or bottom edge at which a drag scrolls it. */
 const EDGE_SCROLL = 44;
+/**
+ * How long a drag rests in that strip before the grid starts to move. A drag
+ * that begins there, or crosses it on its way somewhere, is not asking to
+ * scroll; one that stays is.
+ */
+const EDGE_DWELL = 320;
 
 const STATUS_ACCENT: Record<TaskStatus, string> = {
   '[ ]': 'var(--interactive-accent)',
@@ -595,11 +604,29 @@ export class TaskCalendar {
         if (!this.drag && !this.popover) this.ctx.rerender();
         return;
       }
-      const minutes = this.nowMinutes();
-      this.rootEl?.querySelectorAll<HTMLElement>('.taskpro-cal__now').forEach((line) => {
-        line.style.setProperty('--start', String(minutes));
-      });
+      this.syncNow();
     }, 30_000);
+  }
+
+  /**
+   * The line across today's column and its label in the gutter, both at the
+   * time it is now. The hour mark the label would sit on gives way to it.
+   */
+  private syncNow(): void {
+    const root = this.rootEl;
+    if (!root) return;
+    const minutes = this.nowMinutes();
+    root.querySelectorAll<HTMLElement>('.taskpro-cal__now').forEach((line) => {
+      line.style.setProperty('--start', String(minutes));
+    });
+    const label = root.querySelector<HTMLElement>('.taskpro-cal__now-label');
+    if (!label) return;
+    label.style.setProperty('--start', String(minutes));
+    label.setText(formatClock(minutes, this.cal.timeFormat, this.language));
+    root.querySelectorAll<HTMLElement>('.taskpro-cal__hour').forEach((mark) => {
+      const hour = Number(mark.style.getPropertyValue('--hour'));
+      mark.toggleClass('is-covered', Math.abs(hour * 60 - minutes) < NOW_LABEL_CLEARANCE);
+    });
   }
 
   private nowMinutes(): number {
@@ -902,6 +929,7 @@ export class TaskCalendar {
       for (const placed of layoutBlocks(items.get(day) ?? [])) this.block(col, placed);
       if (day === today) {
         col.createDiv({ cls: 'taskpro-cal__now' }).style.setProperty('--start', String(this.nowMinutes()));
+        gutter.createDiv({ cls: 'taskpro-cal__now-label' });
       }
       col.addEventListener('pointerdown', (event) => this.onColumnPointerDown(event, col, day));
       col.addEventListener('contextmenu', (event) => {
@@ -919,6 +947,7 @@ export class TaskCalendar {
     }
 
     if (this.prefs.calendarSidebar) this.renderSidebar(root, tasks, noteDays);
+    this.syncNow();
 
     scroller.scrollTop = this.savedScroll ?? this.initialScroll(days);
     if (this.compact && this.view === 'week') this.placeThreeDays(scroller, days);
@@ -1587,6 +1616,11 @@ export class TaskCalendar {
     }
 
     this.guardClick();
+    // The drop is where the pointer let go, whether or not the browser had
+    // delivered its last move by then.
+    drag.x = event.clientX;
+    drag.y = event.clientY;
+    this.updateDrag(drag);
     if (drag.kind === 'create') {
       const target = drag.target;
       const preview = drag.preview;
@@ -1789,7 +1823,8 @@ export class TaskCalendar {
 
   /** Scrolls the grid while a drag rests near its top or bottom edge. */
   private scrollLoop(drag: DragState): void {
-    const tick = () => {
+    let restingSince = 0;
+    const tick = (now: number) => {
       if (this.drag !== drag) return;
       const scroller = this.scroller;
       if (scroller) {
@@ -1798,7 +1833,9 @@ export class TaskCalendar {
         let speed = 0;
         if (drag.y < top + EDGE_SCROLL) speed = -Math.ceil((top + EDGE_SCROLL - drag.y) / 5);
         else if (drag.y > bottom - EDGE_SCROLL) speed = Math.ceil((drag.y - (bottom - EDGE_SCROLL)) / 5);
-        if (speed) {
+        if (!speed) restingSince = 0;
+        else if (!restingSince) restingSince = now;
+        if (speed && now - restingSince >= EDGE_DWELL) {
           const before = scroller.scrollTop;
           scroller.scrollTop = before + clamp(speed, -24, 24);
           if (scroller.scrollTop !== before) this.updateDrag(drag);
@@ -2101,6 +2138,7 @@ export class TaskCalendar {
       cls: 'taskpro-cal-picker__input',
       attr: { placeholder: labels.searchOrCreate, 'aria-label': labels.searchOrCreate, dir: 'auto', spellcheck: 'false' },
     });
+    autoDirection(input, this.rtl ? 'rtl' : 'ltr');
     const list = el.createDiv({ cls: 'taskpro-cal-picker__list' });
     list.setAttribute('role', 'listbox');
 
@@ -2588,6 +2626,7 @@ export class TaskCalendar {
       cls: 'taskpro-cal-inspector__subtask-add',
       attr: { placeholder: getActionLabels(this.language).addSubtask, dir: 'auto', spellcheck: 'false' },
     });
+    autoDirection(add, this.rtl ? 'rtl' : 'ltr');
     add.dataset.ownEscape = 'true';
     add.addEventListener(OWN_ESCAPE_EVENT, () => {
       add.value = '';

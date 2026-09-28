@@ -24,8 +24,21 @@ const eq = (actual, expected, label) => {
   checked++;
 };
 
+/**
+ * Every page in these tests believes it is 15:00 today. The calendar opens on
+ * the hours around the current time and draws a line at it, so a test that
+ * takes its coordinates from the screen would otherwise behave differently in
+ * the morning and at night.
+ */
+async function atThreeInTheAfternoon(page) {
+  const now = new Date();
+  now.setHours(15, 0, 0, 0);
+  await page.clock.setFixedTime(now);
+}
+
 async function open(query = '', width = 1280) {
   const page = await browser.newPage({ viewport: { width, height: 900 } });
+  await atThreeInTheAfternoon(page);
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto(`file://${path.join(here, 'board-preview.html')}${query}`);
@@ -442,6 +455,85 @@ try {
   await page.locator('.taskpro-menu__item', { hasText: 'Reset column order' }).click();
   eq(await groups(), ['[ ]', '[/]', '[!]', '[x]'], 'the order reset');
   eq(page.errors, [], 'no page errors with the board columns');
+  await page.close();
+
+  // ── The marks of Notion's own views ──────────────────────────────────────
+  page = await open('?scope=vault');
+  // The layout tabs: a 2px bar under the current one and under no other.
+  eq(await page.$eval('.taskpro-board__layout .is-active', (el) => getComputedStyle(el, '::after').height), '2px', 'the current tab is marked by a bar');
+  eq(await page.$eval('.taskpro-board__layout button:not(.is-active)', (el) => getComputedStyle(el, '::after').content), 'none', 'and no other tab is');
+
+  // Status is the one capsule; a tag is a rounded rectangle.
+  const shape = (selector) =>
+    page.$eval(selector, (el) => ({ radius: parseFloat(getComputedStyle(el).borderTopLeftRadius), height: el.getBoundingClientRect().height }));
+  const capsule = await shape('.taskpro-table__row .taskpro-interactive-badge');
+  eq(capsule.radius >= capsule.height / 2, true, 'a status is a capsule');
+  const rectangle = await shape('.taskpro-table__row .taskpro-tag-chip');
+  eq(rectangle.radius < rectangle.height / 2, true, 'a tag is a rounded rectangle');
+
+  // A tag takes its colour from the theme, which keeps its colours on <body>.
+  const colours = await page.evaluate(() => {
+    const chip = [...document.querySelectorAll('.taskpro-table__row .taskpro-tag-chip')].find((el) => el.textContent === 'Home');
+    return {
+      chip: getComputedStyle(chip).getPropertyValue('--taskpro-chip-accent').trim(),
+      theme: getComputedStyle(document.body).getPropertyValue('--color-green').trim(),
+    };
+  });
+  eq(colours.chip !== '' && colours.chip === colours.theme, true, "a tag is the theme's own green");
+
+  // Every group ends with a New row, and its field adds a task with the group's status.
+  eq(
+    await page.locator('.taskpro-table__new-row').count(),
+    await page.locator('.taskpro-table__group').count(),
+    'every group ends with a New row'
+  );
+  await page.locator('.taskpro-table__new-row').nth(1).locator('.taskpro-board__new').click();
+  await page.locator('.taskpro-board__new-input').fill('Ship the release notes');
+  await page.locator('.taskpro-board__new-input').press('Enter');
+  await page.waitForTimeout(50);
+  eq((await note(page, 'Inbox.md')).trim(), '- [/] Ship the release notes', 'a group\'s New row adds a task with its status');
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(50);
+  eq(await page.locator('.taskpro-board__new-input').count(), 0, 'Escape puts the New row back');
+  eq(page.errors, [], 'no page errors with the New rows');
+  await page.close();
+
+  // With the properties scrolled sideways, the check and the title stay where they are.
+  page = await open('?scope=vault', 900);
+  const titleLeft = () => page.$eval('.taskpro-table__row td.taskpro-table__task', (el) => Math.round(el.getBoundingClientRect().left));
+  const statusLeft = () => page.$eval('.taskpro-table__row td.taskpro-table__status', (el) => Math.round(el.getBoundingClientRect().left));
+  const [titleAtRest, statusAtRest] = [await titleLeft(), await statusLeft()];
+  await page.evaluate(() => (document.querySelector('.taskpro-board__body').scrollLeft = 260));
+  await page.waitForTimeout(50);
+  eq(await titleLeft(), titleAtRest, 'the title column is frozen');
+  eq(await statusLeft() < statusAtRest, true, 'while the properties move');
+  await page.close();
+
+  // A search that finds nothing offers to clear itself, and Persian fields rest at the right.
+  page = await open('?scope=vault&lang=fa');
+  eq(await page.$eval('.taskpro-board__search input', (el) => el.getAttribute('dir')), 'rtl', 'an empty Persian field rests right to left');
+  await page.locator('.taskpro-board__search input').fill('zzzz');
+  await page.waitForTimeout(250);
+  eq(await page.$eval('.taskpro-board__search input', (el) => el.getAttribute('dir')), 'auto', 'and follows what is typed');
+  await page.locator('.taskpro-board__empty-action').click();
+  await page.waitForTimeout(100);
+  eq(await page.locator('.taskpro-table__row').count() > 0, true, 'the empty state clears the search');
+  eq(await page.$eval('.taskpro-board__search input', (el) => el.value), '', 'and the field');
+  await page.close();
+
+  // A person who asks for less motion gets none.
+  const calm = await browser.newPage({ viewport: { width: 1280, height: 900 }, reducedMotion: 'reduce' });
+  await calm.goto(`file://${path.join(here, 'board-preview.html')}?scope=vault`);
+  await calm.waitForSelector('body[data-ready="true"]');
+  eq(await calm.$eval('.taskpro-board__layout button', (el) => parseFloat(getComputedStyle(el).transitionDuration) < 0.001), true, 'transitions are gone under reduced motion');
+  await calm.close();
+
+  // Beside a target folder the scope switch is there; without one it is not.
+  page = await open('');
+  eq(await page.locator('.taskpro-board__scope').count(), 1, 'a target folder brings the scope switch');
+  await page.close();
+  page = await open('?scope=vault');
+  eq(await page.locator('.taskpro-board__scope').count(), 0, 'and with none there is nothing to switch');
   await page.close();
 } finally {
   await browser.close();

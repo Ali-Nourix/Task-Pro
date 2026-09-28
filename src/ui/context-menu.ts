@@ -14,6 +14,7 @@
 import { setIcon } from 'obsidian';
 import { claimEscape } from './escape-scope';
 import { makeSheet, wantsSheet } from './sheet';
+import { autoDirection } from './fields';
 
 export interface MenuEntry {
   label: string;
@@ -149,6 +150,7 @@ export function openContextMenu(options: ContextMenuOptions): ContextMenuHandle 
       cls: 'taskpro-menu__search',
       attr: { placeholder: options.searchPlaceholder, 'aria-label': options.searchPlaceholder, spellcheck: 'false', dir: 'auto' },
     });
+    autoDirection(search, rtl ? 'rtl' : 'ltr');
   }
   const rootList = rootEl.createDiv({ cls: 'taskpro-menu__list' });
   const root: Panel = { el: rootEl, rows: [], active: -1 };

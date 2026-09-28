@@ -48,7 +48,8 @@ import { BoardLabels, getBoardLabels } from './board-localization';
 import { BoardTask, TaskStore } from './task-store';
 import { TaskCalendar } from '../calendar/calendar-view';
 import { openCalendarPopover } from '../calendar/calendar-popover';
-import { holdToDrag, onContextPress } from '../ui/touch';
+import { autoDirection } from '../ui/fields';
+import { holdToDrag, onContextPress, readyToCarry } from '../ui/touch';
 import { TaskTimeline } from '../timeline/timeline-view';
 import { getTimelineLabels } from '../timeline/timeline-localization';
 import { getCalendarLabels } from '../calendar/calendar-localization';
@@ -89,6 +90,22 @@ const ROWS_PER_PAGE = 150;
 
 /** Narrower than this, the board is laid out for a phone: one bar, sheets, a list. */
 const COMPACT_WIDTH = 640;
+
+/** The classes of a "+ New" button, its icon (none, when the row draws the plus itself) and the field it turns into. */
+interface NewClasses {
+  button: string;
+  icon?: string;
+  input: string;
+}
+const KANBAN_NEW: NewClasses = {
+  button: 'taskpro-board__new taskpro-kanban__add',
+  icon: 'taskpro-board__new-icon taskpro-kanban__add-icon',
+  input: 'taskpro-board__new-input taskpro-kanban__add-input',
+};
+const TABLE_NEW: NewClasses = {
+  button: 'taskpro-board__new is-row',
+  input: 'taskpro-board__new-input is-row',
+};
 /** How far a row is swiped before letting go acts on it. */
 const SWIPE_ACT = 76;
 
@@ -280,6 +297,8 @@ export class TaskBoard {
   }
 
   async mount(): Promise<void> {
+    // Before the first finger goes down: see readyToCarry.
+    readyToCarry(this.el.ownerDocument);
     this.compact = this.measureCompact();
     this.el.toggleClass('is-compact', this.compact);
     this.observeSize();
@@ -341,6 +360,11 @@ export class TaskBoard {
 
   private get labels(): BoardLabels {
     return getBoardLabels(this.settings.language);
+  }
+
+  /** The interface's direction: where an empty field's placeholder starts. */
+  private get direction(): 'ltr' | 'rtl' {
+    return this.language === 'fa' ? 'rtl' : 'ltr';
   }
 
   private get language(): Language {
@@ -555,8 +579,8 @@ export class TaskBoard {
     }
 
     this.toolbarEl = this.headerEl.createDiv({ cls: 'taskpro-board__toolbar' });
-    this.renderScopeControl(this.toolbarEl);
     this.renderLayoutControl(this.toolbarEl);
+    this.renderScopeControl(this.toolbarEl);
 
     const search = this.toolbarEl.createDiv({ cls: 'taskpro-board__search' });
     setIcon(search.createSpan({ cls: 'taskpro-board__search-icon' }), 'search');
@@ -565,6 +589,7 @@ export class TaskBoard {
       attr: { placeholder: labels.search, 'aria-label': labels.search, dir: 'auto' },
     });
     input.value = this.search;
+    autoDirection(input, this.direction);
     input.addEventListener('input', () => {
       this.search = input.value;
       if (this.searchTimer) clearTimeout(this.searchTimer);
@@ -640,6 +665,9 @@ export class TaskBoard {
   private renderScopeControl(parent: HTMLElement): void {
     const labels = this.labels;
     const folder = this.settings.targetFolder.trim().replace(/^\/+|\/+$/g, '');
+    // With no folder set the whole vault is the only scope, and a switch with
+    // one live side is only noise; setting a folder brings it back.
+    if (!folder) return;
     this.segmented(
       parent,
       'taskpro-board__scope',
@@ -771,6 +799,7 @@ export class TaskBoard {
         attr: { placeholder: labels.search, 'aria-label': labels.search, dir: 'auto', enterkeyhint: 'search' },
       });
       input.value = this.search;
+      autoDirection(input, this.direction);
       input.addEventListener('input', () => {
         this.search = input.value;
         if (this.searchTimer) clearTimeout(this.searchTimer);
@@ -1009,6 +1038,7 @@ export class TaskBoard {
           cls: 'taskpro-add-sheet__input',
           attr: { placeholder: labels.addPlaceholder, 'aria-label': labels.addPlaceholder, dir: 'auto', enterkeyhint: 'done' },
         });
+        autoDirection(input, this.direction);
         const row = el.createDiv({ cls: 'taskpro-add-sheet__row' });
         const target = row.createEl('button', { cls: 'taskpro-add-sheet__target' });
         target.type = 'button';
@@ -1049,9 +1079,17 @@ export class TaskBoard {
   private controlButton(parent: HTMLElement, icon: string, label: string, value?: string): HTMLButtonElement {
     const button = parent.createEl('button', { cls: 'taskpro-board__control' });
     button.type = 'button';
+    // In a narrow pane the words give way to the icon, so the name and the
+    // value are also said where a screen reader and a pointer will find them.
+    const name = value ? `${label}: ${value}` : label;
+    button.setAttribute('aria-label', name);
+    button.title = name;
     setIcon(button.createSpan({ cls: 'taskpro-board__control-icon' }), icon);
     button.createSpan({ cls: 'taskpro-board__control-label', text: label });
-    if (value) button.createSpan({ cls: 'taskpro-board__control-value', text: value });
+    if (value) {
+      button.addClass('has-value');
+      button.createSpan({ cls: 'taskpro-board__control-value', text: value });
+    }
     return button;
   }
 
@@ -1275,6 +1313,7 @@ export class TaskBoard {
       cls: 'taskpro-board__add-input',
       attr: { placeholder: labels.addPlaceholder, 'aria-label': labels.addPlaceholder, dir: 'auto' },
     });
+    autoDirection(input, this.direction);
 
     const inbox = this.inboxPath();
     const target = parent.createEl('button', { cls: 'taskpro-board__inbox' });
@@ -1383,7 +1422,7 @@ export class TaskBoard {
 
     if (!this.host.store.isLoaded) {
       this.summaryEl.setText('');
-      this.emptyState(labels.loading, 'loader');
+      this.loadingState(labels.loading);
       return;
     }
 
@@ -1413,7 +1452,20 @@ export class TaskBoard {
 
     if (!sorted.length) {
       const filtering = this.search.trim() || this.activeFilterCount();
-      this.emptyState(filtering ? labels.emptyFiltered : labels.empty, filtering ? 'search' : 'list-checks');
+      this.emptyState(
+        filtering ? labels.emptyFiltered : labels.empty,
+        filtering ? 'search' : 'list-checks',
+        // A search that finds nothing is the one empty board with a way out.
+        filtering
+          ? {
+              label: labels.emptyClear,
+              run: () => {
+                this.search = '';
+                void this.updatePrefs({ statuses: [], priorities: [], tags: [] });
+              },
+            }
+          : undefined
+      );
       return;
     }
 
@@ -1453,10 +1505,34 @@ export class TaskBoard {
     return count ? { enabled: true, currentSteps: count.done, totalSteps: count.total } : undefined;
   }
 
-  private emptyState(text: string, icon: string): void {
+  /** An empty view: what is missing, and, where there is one, the way out of it. */
+  private emptyState(text: string, icon: string, action?: { label: string; run: () => void }): void {
     const empty = this.bodyEl.createDiv({ cls: 'taskpro-board__empty' });
     setIcon(empty.createDiv({ cls: 'taskpro-board__empty-icon' }), icon);
-    empty.createDiv({ text });
+    empty.createDiv({ cls: 'taskpro-board__empty-text', text });
+    if (!action) return;
+    const button = empty.createEl('button', { cls: 'taskpro-board__empty-action', text: action.label });
+    button.type = 'button';
+    button.addEventListener('click', action.run);
+  }
+
+  /**
+   * While the notes are being read: rows in the shape of the ones that are
+   * coming, so the page does not jump when they arrive. The sentence stays
+   * for anyone who cannot see the rows.
+   */
+  private loadingState(text: string): void {
+    const loading = this.bodyEl.createDiv({ cls: 'taskpro-board__skeleton' });
+    loading.setAttribute('role', 'status');
+    loading.setAttribute('aria-label', text);
+    for (let row = 0; row < 7; row++) {
+      const line = loading.createDiv({ cls: 'taskpro-board__skeleton-row' });
+      line.createSpan({ cls: 'taskpro-board__skeleton-dot' });
+      // Titles of a few different lengths, then a chip or two: a table's rhythm.
+      line.createSpan({ cls: 'taskpro-board__skeleton-bar' }).style.setProperty('--w', `${[34, 46, 28, 40, 52, 30, 38][row]}%`);
+      line.createSpan({ cls: 'taskpro-board__skeleton-bar is-chip' });
+      if (row % 3 !== 1) line.createSpan({ cls: 'taskpro-board__skeleton-bar is-chip' });
+    }
   }
 
   // ── Table ────────────────────────────────────────────────────────────────
@@ -1505,6 +1581,9 @@ export class TaskBoard {
     const add = this.iconButton(end, 'plus', labels.properties, () => this.openPropertiesMenu(add, 'tableColumns'));
     add.addClass('taskpro-table__add-btn');
 
+    // A group that stands for a status, a priority or a tag ends with a "+ New"
+    // that adds a task with it; any other table has one at its very end.
+    const perGroup = groupBy === 'status' || groupBy === 'priority' || groupBy === 'tag';
     const body = table.createEl('tbody');
     for (const group of groups) {
       if (groupBy !== 'none') {
@@ -1523,7 +1602,28 @@ export class TaskBoard {
           this.renderBody();
         });
       }
+      if (perGroup) this.renderNewRow(body, columns.length + 1, groupBy, group.value);
     }
+    if (!perGroup) this.renderNewRow(body, columns.length + 1, groupBy, '');
+  }
+
+  /**
+   * The row that ends a group: a plus under the checks and "New" under the
+   * titles, quiet until the pointer is over it, and one click from a field.
+   * Its cells are the check's and the title's, so it stays in view with them
+   * when the properties scroll sideways.
+   */
+  private renderNewRow(body: HTMLElement, restSpan: number, groupBy: BoardGroupBy, value: string): void {
+    const row = body.createEl('tr', { cls: 'taskpro-table__new-row' });
+    const lead = row.createEl('td', { cls: 'taskpro-table__check' });
+    setIcon(lead.createSpan({ cls: 'taskpro-board__new-icon' }), 'plus');
+    const cell = row.createEl('td', { cls: 'taskpro-table__task' });
+    const button = this.newButton(cell, TABLE_NEW, groupBy, value);
+    row.createEl('td', { attr: { colspan: String(restSpan) } });
+    // The whole row is the button; the plus is only where the eye starts.
+    lead.addEventListener('click', () => {
+      if (button.isConnected) button.click();
+    });
   }
 
   /** The table is never narrower than its columns, with room left for a title of a few words. */
@@ -1685,7 +1785,12 @@ export class TaskBoard {
         if (drop && changes) this.saveColumns('tableColumns', moveColumn(this.tableColumns(), id, before));
         this.hold(false);
       };
-      const onUp = () => finish(true);
+      // The drop is where the pointer let go, whether or not the browser had
+      // delivered its last move by then.
+      const onUp = (e: PointerEvent) => {
+        onMove(e);
+        finish(true);
+      };
       const onCancel = () => finish(false);
       const onKey = (e: KeyboardEvent) => {
         if (e.key !== 'Escape') return;
@@ -1728,7 +1833,8 @@ export class TaskBoard {
         col.style.width = `${width}px`;
         this.fitTable(table);
       };
-      const onUp = () => {
+      const onUp = (e: Event) => {
+        if (e.type === 'pointerup') onMove(e as PointerEvent);
         doc.removeEventListener('pointermove', onMove, true);
         doc.removeEventListener('pointerup', onUp, true);
         doc.removeEventListener('pointercancel', onUp, true);
@@ -2851,7 +2957,12 @@ export class TaskBoard {
         if (ok && changes) drop(before);
         this.hold(false);
       };
-      const onUp = () => finish(true);
+      // The drop is where the pointer let go, whether or not the browser had
+      // delivered its last move by then.
+      const onUp = (e: PointerEvent) => {
+        onMove(e);
+        finish(true);
+      };
       const onCancel = () => finish(false);
       const onKey = (e: KeyboardEvent) => {
         if (e.key !== 'Escape') return;
@@ -2888,7 +2999,8 @@ export class TaskBoard {
         width = clampKanbanWidth(start + (e.clientX - startX) * sign);
         board.style.setProperty('--taskpro-kanban-width', `${width}px`);
       };
-      const onUp = () => {
+      const onUp = (e: Event) => {
+        if (e.type === 'pointerup') onMove(e as PointerEvent);
         doc.removeEventListener('pointermove', onMove, true);
         doc.removeEventListener('pointerup', onUp, true);
         doc.removeEventListener('pointercancel', onUp, true);
@@ -2944,29 +3056,45 @@ export class TaskBoard {
   }
 
   private renderColumnAdd(column: HTMLElement, groupBy: BoardGroupBy, value: string): void {
+    this.newButton(column, KANBAN_NEW, groupBy, value);
+  }
+
+  /** What a task added under a group stands for: its status, its priority or its tag. */
+  private inheritFrom(groupBy: BoardGroupBy, value: string): { status?: TaskStatus; priority?: TaskPriority; tags?: string[] } {
+    if (groupBy === 'status') return { status: value as TaskStatus };
+    if (groupBy === 'priority') return { priority: (value || undefined) as TaskPriority | undefined };
+    if (groupBy === 'tag') return { tags: value ? [value] : [] };
+    return {};
+  }
+
+  /**
+   * The "+ New" that ends a board column or a group of the table: a quiet
+   * button that turns into a field, and adds the task with whatever the group
+   * stands for. Enter adds it and keeps the field for the next one, Escape or
+   * leaving it empty puts the button back.
+   */
+  private newButton(parent: HTMLElement, cls: NewClasses, groupBy: BoardGroupBy, value: string): HTMLButtonElement {
     const labels = this.labels;
-    const button = column.createEl('button', { cls: 'taskpro-kanban__add' });
+    const button = parent.createEl('button', { cls: cls.button });
     button.type = 'button';
-    setIcon(button.createSpan({ cls: 'taskpro-kanban__add-icon' }), 'plus');
+    if (cls.icon) setIcon(button.createSpan({ cls: cls.icon }), 'plus');
     button.createSpan({ text: labels.newInColumn });
     button.addEventListener('click', () => {
       const input = createEl('input', {
         type: 'text',
-        cls: 'taskpro-kanban__add-input',
-        attr: { placeholder: labels.addPlaceholder, dir: 'auto' },
+        cls: cls.input,
+        attr: { placeholder: labels.addPlaceholder, 'aria-label': labels.addPlaceholder, dir: 'auto' },
       });
+      autoDirection(input, this.direction);
       button.replaceWith(input);
       this.editing = true;
       input.focus();
-      const inherit =
-        groupBy === 'status'
-          ? { status: value as TaskStatus }
-          : groupBy === 'priority'
-            ? { priority: (value || undefined) as TaskPriority | undefined }
-            : groupBy === 'tag'
-              ? { tags: value ? [value] : [] }
-              : {};
+      const inherit = this.inheritFrom(groupBy, value);
+      // Taking the field out of the page blurs it, which asks to close it again.
+      let closed = false;
       const close = () => {
+        if (closed) return;
+        closed = true;
         input.replaceWith(button);
         this.editing = false;
         if (this.renderQueued) this.renderBody();
@@ -2989,6 +3117,7 @@ export class TaskBoard {
         if (!input.value.trim()) close();
       });
     });
+    return button;
   }
 
   /**
@@ -3056,7 +3185,10 @@ export class TaskBoard {
       if (drop && to !== undefined && to !== from) void this.moveTask(task, groupBy, from, to).finally(() => this.hold(false));
       else this.hold(false);
     };
-    const onUp = () => finish(true);
+    const onUp = (event: PointerEvent) => {
+      onMove(event);
+      finish(true);
+    };
     const onCancel = () => finish(false);
     place(start.clientX, start.clientY);
     doc.addEventListener('pointermove', onMove, true);
