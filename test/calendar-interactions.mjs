@@ -157,6 +157,20 @@ try {
   box = await column(page, day, 18);
   await page.mouse.click(box.x + box.width / 2, yAt(box, 20 * 60) + 5);
   eq([await page.locator('.taskpro-cal__quick-add').count(), await page.locator('.taskpro-cal-picker').count()], [1, 0], 'a click shows the + and not the picker');
+  const geometry = await page.evaluate(() => {
+    const button = document.querySelector('.taskpro-cal__quick-add').getBoundingClientRect();
+    const line = document.querySelector('.taskpro-cal__quick').getBoundingClientRect();
+    const icon = document.querySelector('.taskpro-cal__quick-add svg').getBoundingClientRect();
+    const mid = (r) => [r.left + r.width / 2, r.top + r.height / 2];
+    const [bx, by] = mid(button);
+    const [ix, iy] = mid(icon);
+    return {
+      square: Math.abs(button.width - button.height) < 0.5,
+      onLine: Math.abs(by - (line.top + line.height / 2)) <= 1,
+      iconCentred: Math.abs(bx - ix) <= 0.75 && Math.abs(by - iy) <= 0.75,
+    };
+  });
+  eq(geometry, { square: true, onLine: true, iconCentred: true }, 'the + is a square, centred on the slot line, with the plus centred in it');
   await page.locator('.taskpro-cal__quick-add').click();
   eq(await page.locator('.taskpro-cal-picker').count(), 1, 'the + opens the picker for that slot');
   eq(await page.locator('.taskpro-cal-picker .taskpro-cal-times__input').first().inputValue(), '20:00', 'at the slot that was clicked');
@@ -287,6 +301,14 @@ try {
   await auto.click({ button: 'right' });
   await page.keyboard.press('Escape');
   eq(await page.locator('.taskpro-menu').count(), 0, 'Escape closes it');
+
+  // One panel at a time: a card closes the menu, and the menu closes the card.
+  await auto.click({ button: 'right' });
+  await page.locator('.taskpro-cal__block:has-text("Prototyping")').click();
+  eq([await page.locator('.taskpro-menu').count(), await page.locator('.taskpro-cal-inspector').count()], [0, 1], 'opening a card leaves no menu open');
+  await page.locator('.taskpro-cal-inspector__tools button').nth(1).click();
+  eq([await page.locator('.taskpro-menu').count(), await page.locator('.taskpro-cal-inspector').count()], [1, 0], 'the card’s ⋯ swaps the card for the menu');
+  await page.keyboard.press('Escape');
 
   // The parent's card lists its subtasks, and takes a new one.
   await page.locator('.taskpro-cal__free:has-text("Learn Figma")').click();
