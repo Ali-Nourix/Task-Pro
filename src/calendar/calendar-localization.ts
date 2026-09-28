@@ -47,6 +47,8 @@ export interface CalendarLabels {
   subtasks: string;
   subtasksDone: (done: number, total: number) => string;
   partOf: string;
+  when: string;
+  note: string;
   editTitle: string;
   viewOptions: string;
   showDeadlines: string;
@@ -104,6 +106,8 @@ const EN: CalendarLabels = {
   subtasks: 'Subtasks',
   subtasksDone: (done, total) => `${done}/${total}`,
   partOf: 'Part of',
+  when: 'When',
+  note: 'Note',
   editTitle: 'Click to edit',
   viewOptions: 'View options',
   showDeadlines: 'Show deadlines',
@@ -161,6 +165,8 @@ const FA: CalendarLabels = {
   subtasks: 'زیرتسک‌ها',
   subtasksDone: (done, total) => `${done}/${total}`,
   partOf: 'بخشی از',
+  when: 'زمان',
+  note: 'یادداشت',
   editTitle: 'برای ویرایش کلیک کنید',
   viewOptions: 'گزینه‌های نمایش',
   showDeadlines: 'نمایش سررسیدها',

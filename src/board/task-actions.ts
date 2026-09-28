@@ -12,7 +12,6 @@ import {
   PRIORITY_ICON_NAMES,
   PRIORITY_LABELS,
   REPEAT_PRESETS,
-  STATUS_ICON_NAMES,
   STATUS_LABELS,
   TASK_PRIORITIES,
   TaskRepeat,
@@ -49,6 +48,7 @@ interface ActionLabels {
   noPriority: string;
   tags: string;
   noTags: string;
+  editTags: string;
   deadline: string;
   plan: string;
   repeat: string;
@@ -83,6 +83,7 @@ const EN: ActionLabels = {
   noPriority: 'No priority',
   tags: 'Tags',
   noTags: 'Empty',
+  editTags: 'Create or edit tags…',
   deadline: 'Deadline',
   plan: 'Plan',
   repeat: 'Repeat',
@@ -117,6 +118,7 @@ const FA: ActionLabels = {
   noPriority: 'بدون اولویت',
   tags: 'برچسب‌ها',
   noTags: 'خالی',
+  editTags: 'ساختن یا ویرایش برچسب‌ها…',
   deadline: 'سررسید',
   plan: 'برنامه',
   repeat: 'تکرار',
@@ -203,6 +205,27 @@ export function prioritySections(o: TaskActionOptions): MenuSection[] {
     sections.push({ entries: [{ label: labels.noPriority, icon: 'x', onSelect: () => o.host.setPriority(o.task, null) }] });
   }
   return sections;
+}
+
+/** Every tag, ticked when the task has it; choosing one adds or removes it. */
+export function tagSections(o: TaskActionOptions): MenuSection[] {
+  const labels = getActionLabels(o.language);
+  const { host, task } = o;
+  const keys = new Set(o.tags.map((tag) => tag.key));
+  // Keys on the task that nobody has defined yet are listed too, so they can be taken off.
+  const all = [...o.tags.map((tag) => tag.key), ...task.tags.filter((key) => !keys.has(key))];
+  const entries: MenuEntry[] = all.map((key) => {
+    const tag = resolveTag(key, o.tags);
+    const has = task.tags.includes(key);
+    return {
+      label: tag.name,
+      swatch: resolveTagColor(tag.color),
+      checked: has,
+      keywords: `tag ${key}`,
+      onSelect: () => host.setTags(task, has ? task.tags.filter((k) => k !== key) : [...task.tags, key]),
+    };
+  });
+  return [{ entries }, { entries: [{ label: labels.editTags, icon: 'tags', onSelect: () => host.editTags(task) }] }];
 }
 
 /** Today, tomorrow and a week from today, each with its date beside it. */
@@ -403,7 +426,7 @@ export function taskActionSections(o: TaskActionOptions): MenuSection[] {
         icon: firstTag ? undefined : 'tags',
         swatch: firstTag ? resolveTagColor(firstTag.color) : undefined,
         hint: tagNames.length ? tagNames.join(language === 'fa' ? '، ' : ', ') : labels.noTags,
-        onSelect: () => host.editTags(task),
+        submenu: () => tagSections(o),
       },
       EN.tags
     ),

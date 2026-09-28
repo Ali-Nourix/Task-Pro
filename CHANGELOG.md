@@ -38,9 +38,9 @@
 - A task nested under another is shown as part of its family. A subtask with
   no tag takes its parent's colour, a tall enough block names its parent, and
   hovering one member rings the others on screen.
-- **Unscheduled** groups each family: the parent, then its subtasks indented
-  in note order, with a done count and a fold. A planned parent stays in the
-  list, muted, to hold its open subtasks.
+- **Unscheduled** shows each family as a tree: the parent with a toggle and
+  a done count, and its subtasks under it on a guide line, in note order. A
+  planned parent stays in the list, muted, to hold its open subtasks.
 - A parent's card lists its subtasks, with when each is planned, and adds new
   ones from an **Add a subtask** field. A subtask's card links to its parent.
 - The board's task index records each task's parent, from the note's list
@@ -59,8 +59,15 @@
   Persian.
 - A right click on an empty slot offers a task at that time, the day's note,
   or the day view.
-- The card's property chips open their choices beneath them, and the card
-  gains a **Repeat** chip. Blocks of an hour and a half or more show their
+- The task card is laid out like a Notion page: parent, title, then one row
+  per property (when, status, priority, deadline, repeat, tags, note), name on
+  one side and value on the other, then subtasks. Each value is edited in
+  place or from a dropdown under it, and an empty one says so.
+- **Tags** in the menu has a submenu listing every tag, ticked when the task
+  has it.
+- A click on an empty slot shows a small boxed **+** beside the pointer, and
+  the picker opens only from the **+**. Dragging across the grid still opens
+  it at once. Blocks of an hour and a half or more show their
   priority, repeat, deadline and tags when there is room. The lines a block
   gives its title are worked out from its height, so nothing is cut through
   the middle.

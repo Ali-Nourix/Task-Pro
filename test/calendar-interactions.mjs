@@ -153,6 +153,18 @@ try {
   eq(await page.locator('.taskpro-cal-picker').count(), 0, 'Escape closes the picker');
   eq(await lineWith(page, 'Not this one'), null, 'and writes nothing');
 
+  // A click on an empty slot only offers a +; the + opens the picker.
+  box = await column(page, day, 18);
+  await page.mouse.click(box.x + box.width / 2, yAt(box, 20 * 60) + 5);
+  eq([await page.locator('.taskpro-cal__quick-add').count(), await page.locator('.taskpro-cal-picker').count()], [1, 0], 'a click shows the + and not the picker');
+  await page.locator('.taskpro-cal__quick-add').click();
+  eq(await page.locator('.taskpro-cal-picker').count(), 1, 'the + opens the picker for that slot');
+  eq(await page.locator('.taskpro-cal-picker .taskpro-cal-times__input').first().inputValue(), '20:00', 'at the slot that was clicked');
+  await page.keyboard.press('Escape');
+  await page.mouse.click(box.x + box.width / 2, yAt(box, 21 * 60) + 5);
+  await page.keyboard.press('Escape');
+  eq(await page.locator('.taskpro-cal__quick-add').count(), 0, 'Escape puts the + away');
+
   // Moving a block by two hours.
   box = await column(page, day, 12);
   let block = await page.locator('.taskpro-cal__block', { hasText: 'Deep work on the proposal' }).boundingBox();
@@ -250,11 +262,12 @@ try {
   await auto.hover();
   await page.waitForTimeout(50);
   eq(await page.locator('.taskpro-cal__block:has-text("Prototyping")').evaluate((el) => el.classList.contains('is-family-lit')), true, 'hovering one member rings the others');
-  const rows = await page.locator('.taskpro-cal__sidebar-list .taskpro-cal__free').evaluateAll((els) =>
-    els.map((el) => `${el.style.getPropertyValue('--depth')}:${el.querySelector('.taskpro-cal__free-title').textContent}`)
-  );
-  const at = rows.indexOf('0:Learn Figma');
-  ok(at !== -1 && rows[at + 1] === '1:Paid features', `the unscheduled list keeps a family together (${rows.slice(at, at + 2)})`);
+  const family = page.locator('.taskpro-cal__family', { hasText: 'Learn Figma' });
+  eq(await family.locator('.is-family-head .taskpro-cal__free-title').textContent(), 'Learn Figma', 'the unscheduled list heads a family with its parent');
+  eq(await family.locator('.taskpro-cal__family-children .taskpro-cal__free-title').allTextContents(), ['Paid features'], 'and keeps its open subtasks under it');
+  await family.locator('.taskpro-cal__fold').click();
+  eq(await page.locator('.taskpro-cal__family', { hasText: 'Learn Figma' }).locator('.taskpro-cal__family-children').count(), 0, 'the toggle folds the family');
+  await page.locator('.taskpro-cal__family', { hasText: 'Learn Figma' }).locator('.taskpro-cal__fold').click();
 
   await auto.click({ button: 'right' });
   eq(await page.locator('.taskpro-menu').count(), 1, 'a right click opens the task menu');

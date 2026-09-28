@@ -284,8 +284,10 @@ can decide what to work on and when, in the Gregorian or the Jalali calendar.
 
   ![The month view in Persian, right to left, in the Jalali calendar](docs/images/task-calendar-month-fa-dark.png)
 
-- **Plan a block of time:** drag across the week or day grid, or click a slot.
-  A card opens on the spot: type a title and press `Enter` to create a new
+- **Plan a block of time:** drag across the week or day grid. A click on an
+  empty slot only marks it with a small boxed **+** beside the pointer, so a
+  stray click never opens anything; click the **+** to plan there. A card
+  opens on the spot: type a title and press `Enter` to create a new
   task there, or choose one of the tasks you already have to plan it for that
   time. The times are typed, not picked: `9`, `930`, `2:30 pm` and `21:30` all
   work, and the arrow keys move a time by one step.
@@ -298,10 +300,12 @@ can decide what to work on and when, in the Gregorian or the Jalali calendar.
   drag.
 - **Unscheduled** lists the open tasks with no plan yet; drag one onto the
   calendar to give it a time.
-- **Click a task** to open its card: rename it, change its day and time, set
-  its status, priority, deadline, repeat and tags, see and add its subtasks,
-  open the note it lives in, or remove it from the calendar. Each property
-  chip opens its choices right under it; **⋯** and a right click open the
+- **Click a task** to open its card, laid out like a Notion page: the task it
+  is part of, the title with its checkbox, then one row per property — when,
+  status, priority, deadline, repeat, tags, note — with the name on one side
+  and the value on the other, then its subtasks. Click a title to rename it,
+  edit the time in place, or click any other value for its choices right under
+  it; an empty one says so, faintly. **⋯** and a right click open the
   [task menu](#the-task-menu).
 
   ![A task's card in the day view: date, times, status, priority, deadline and tags](docs/images/task-calendar-day-card-dark.png)
@@ -335,11 +339,12 @@ the family together while each subtask is still planned on its own:
 
 - A subtask with no tag of its own takes its parent's colour, and a block with
   room for it names the parent above its title.
-- Hovering any member rings the rest of its family on screen, however far
+- Hovering any member outlines the rest of its family on screen, however far
   apart they are planned.
-- **Unscheduled** keeps a family together: the parent, then its subtasks
-  indented under it in note order, with how many are done and a fold. A parent
-  that is already planned stays there, muted, to hold its open subtasks.
+- **Unscheduled** shows a family as a tree, as Notion's sidebar does: the
+  parent with a toggle before it and how many subtasks are done after it, and
+  the subtasks under it on a thin guide line, in note order. A parent that is
+  already planned stays there, muted, to hold its open subtasks.
 - A parent's card lists its subtasks with a checkbox and when each is planned,
   opens any of them with a click, and takes a new one in the **Add a
   subtask** field. A subtask's card links back to its parent.
@@ -354,7 +359,8 @@ it, does not break the link.
 Right-click a task on the board or the calendar for a Notion-like menu of
 everything the task can carry: status, priority, tags, deadline, plan,
 repeat and progress, each with its current value beside it and its choices in
-a submenu. Below them are **Add a subtask**, **Duplicate** (the copy goes
+a submenu (Tags lists every tag, ticked when the task has it, and a way to
+create one). Below them are **Add a subtask**, **Duplicate** (the copy goes
 after the task and its subtasks), and the full chip menu for the focus timer
 and sync.
 

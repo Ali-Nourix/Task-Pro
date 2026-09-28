@@ -3117,6 +3117,61 @@ button.taskpro-chip:focus-visible {
   padding-block: 0;
 }
 
+/* A click on an empty slot: the slot marked faintly, and a boxed + beside
+   the pointer that makes a task there. */
+.taskpro-board .taskpro-cal__quick {
+  position: absolute;
+  z-index: 4;
+  inset-inline: 0;
+  top: calc(var(--start) * var(--taskpro-cal-hour) / 60);
+  height: calc(var(--duration) * var(--taskpro-cal-hour) / 60);
+  background: color-mix(in srgb, var(--interactive-accent) 8%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--interactive-accent) 45%, transparent);
+  pointer-events: none;
+  animation: taskpro-menu-in 90ms ease-out;
+}
+.taskpro-board button.taskpro-cal__quick-add {
+  position: absolute;
+  top: calc(50% - 11px);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--interactive-accent) 60%, var(--background-modifier-border));
+  border-radius: 6px;
+  background: var(--taskpro-board-surface);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.16);
+  color: var(--interactive-accent);
+  cursor: pointer;
+  pointer-events: auto;
+}
+.taskpro-board button.taskpro-cal__quick-add:hover {
+  background-image: linear-gradient(var(--interactive-accent), var(--interactive-accent));
+  color: var(--text-on-accent);
+}
+.taskpro-board button.taskpro-cal__quick-add:focus {
+  outline: none;
+}
+.taskpro-board button.taskpro-cal__quick-add .taskpro-cal__icon,
+.taskpro-board button.taskpro-cal__quick-add svg {
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+}
+
+/* In the card, an all-day plan shows no times, and the fields are compact. */
+.taskpro-board .taskpro-cal-inspector .taskpro-cal-times.is-all-day .taskpro-cal-times__range {
+  display: none;
+}
+.taskpro-board .taskpro-cal-inspector .taskpro-cal-times input.taskpro-cal-times__input {
+  width: 64px;
+}
+.taskpro-board .taskpro-cal-inspector .taskpro-cal-times.is-12h input.taskpro-cal-times__input {
+  width: 84px;
+}
+
 /* A time range reads left to right in Persian too, and a narrow block cuts
    off its end rather than its start. */
 .taskpro-board[dir="rtl"] .taskpro-cal__block-time,
@@ -3259,65 +3314,101 @@ button.taskpro-chip:focus-visible {
   white-space: nowrap;
 }
 
-/* A family in the unscheduled list: subtasks indented under their parent,
-   joined by a guide line in the family's colour. */
-.taskpro-board .taskpro-cal__free.is-child {
-  position: relative;
-  margin-inline-start: calc(var(--depth) * 14px);
+/* A family in the unscheduled list, as a tree: the outermost task with a
+   toggle before it and its done count after it, and the subtasks under it on
+   a thin guide line that starts beneath the parent's checkbox. */
+.taskpro-board .taskpro-cal__family {
+  display: flex;
+  flex-direction: column;
 }
-.taskpro-board .taskpro-cal__free.is-child::before {
-  content: "";
-  position: absolute;
-  inset-block: 0;
-  inset-inline-start: -7px;
-  width: 1.5px;
-  border-radius: 1px;
-  background: color-mix(in srgb, var(--taskpro-cal-accent) 45%, var(--taskpro-cal-line));
+.taskpro-board .taskpro-cal__free.is-family-head {
+  padding-inline-start: 2px;
+  gap: 4px;
 }
-.taskpro-board .taskpro-cal__free.is-context {
-  cursor: pointer;
-}
-.taskpro-board .taskpro-cal__free.is-context .taskpro-cal__free-title {
-  color: var(--text-muted);
-  font-weight: var(--font-medium);
-}
-.taskpro-board .taskpro-cal__free-context-icon {
-  display: inline-flex;
-  margin-top: 2px;
-  color: color-mix(in srgb, var(--taskpro-cal-accent) 70%, var(--text-faint));
-}
-.taskpro-board .taskpro-cal__free-context-icon svg {
-  width: 14px;
-  height: 14px;
-}
-.taskpro-board .taskpro-cal__free-plan {
-  flex: 0 0 auto;
-  color: var(--taskpro-accent-schedule);
+.taskpro-board .taskpro-cal__free.is-family-head > .taskpro-cal__check {
+  margin-inline-end: 4px;
 }
 .taskpro-board button.taskpro-cal__fold {
   display: inline-flex;
-  flex: 0 0 auto;
+  flex: 0 0 18px;
   align-items: center;
-  gap: 2px;
-  height: 20px;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
   margin-top: 1px;
-  padding: 0 4px;
+  padding: 0;
   border: 0;
-  border-radius: var(--radius-s);
+  border-radius: 4px;
   background: transparent;
   box-shadow: none;
   color: var(--text-faint);
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
   cursor: pointer;
 }
 .taskpro-board button.taskpro-cal__fold:hover {
   background-image: linear-gradient(var(--background-modifier-hover), var(--background-modifier-hover));
   color: var(--text-normal);
 }
-.taskpro-board .taskpro-cal__fold .taskpro-cal__icon svg {
-  width: 13px;
-  height: 13px;
+.taskpro-board .taskpro-cal__fold .taskpro-cal__icon,
+.taskpro-board .taskpro-cal__fold svg {
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+}
+.taskpro-board .taskpro-cal__family-children {
+  display: flex;
+  flex-direction: column;
+  /* Under the parent's checkbox: the toggle, a gap, then half the box. */
+  margin-inline-start: 34px;
+  padding-inline-start: 6px;
+  border-inline-start: 1px solid var(--taskpro-cal-line);
+}
+.taskpro-board .taskpro-cal__free.is-child {
+  align-items: center;
+  margin-inline-start: calc(var(--depth) * 16px);
+  padding-block: 4px;
+}
+.taskpro-board .taskpro-cal__free.is-child .taskpro-cal__check {
+  margin-top: 0;
+}
+.taskpro-board .taskpro-cal__free.is-child .taskpro-cal__free-title {
+  color: var(--text-muted);
+}
+.taskpro-board .taskpro-cal__free.is-child:hover .taskpro-cal__free-title {
+  color: var(--text-normal);
+}
+.taskpro-board .taskpro-cal__family-count {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  padding: 0 6px;
+  border-radius: 9px;
+  background:
+    linear-gradient(color-mix(in srgb, var(--taskpro-accent-done) 22%, transparent), color-mix(in srgb, var(--taskpro-accent-done) 22%, transparent))
+      no-repeat 0 0 / calc(var(--done) * 100%) 100%,
+    var(--background-modifier-hover);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  line-height: 18px;
+}
+.taskpro-board[dir="rtl"] .taskpro-cal__family-count {
+  background-position: 100% 0, 0 0;
+}
+.taskpro-board .taskpro-cal__free.is-context {
+  cursor: pointer;
+}
+.taskpro-board .taskpro-cal__free.is-context .taskpro-cal__free-title {
+  color: var(--text-muted);
+}
+.taskpro-board .taskpro-cal__free-plan {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 3px;
+  color: var(--taskpro-accent-schedule);
+}
+.taskpro-board .taskpro-cal__free-plan svg {
+  width: 11px;
+  height: 11px;
 }
 
 /* A subtask's parent, small, above its title. */
@@ -3355,11 +3446,15 @@ button.taskpro-chip:focus-visible {
   color: var(--text-faint);
 }
 
-/* Hovering one member of a family rings the others on screen. */
-.taskpro-board .taskpro-cal__item.is-family-lit {
-  box-shadow:
-    0 0 0 1.5px var(--taskpro-cal-accent),
-    0 0 0 4px color-mix(in srgb, var(--taskpro-cal-accent) 18%, transparent);
+/* Hovering one member of a family marks the others on screen: a hairline in
+   the family's colour on the calendar, a tint in the list. */
+.taskpro-board .taskpro-cal__chip.is-family-lit,
+.taskpro-board .taskpro-cal__block.is-family-lit,
+.taskpro-board .taskpro-cal__agenda-item.is-family-lit {
+  box-shadow: 0 0 0 1px var(--taskpro-cal-accent);
+}
+.taskpro-board .taskpro-cal__free.is-family-lit {
+  background: color-mix(in srgb, var(--taskpro-cal-accent) 9%, transparent);
 }
 .taskpro-board .taskpro-cal__block.is-family-lit {
   z-index: 2;
@@ -3705,58 +3800,26 @@ button.taskpro-chip:focus-visible {
   white-space: nowrap;
 }
 
+/* ── The task card: a page's properties ──────────────────────────────────
+   Parent, then the title with its checkbox and two tools, then one row per
+   property, name on one side and value on the other, then the subtasks. */
 .taskpro-board .taskpro-cal-inspector {
-  width: 368px;
-}
-.taskpro-board .taskpro-cal-inspector__top {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-}
-.taskpro-board .taskpro-cal-inspector__top button.taskpro-cal__check {
-  width: 18px;
-  min-width: 18px;
-  height: 18px;
-  margin-top: 3px;
-}
-.taskpro-board .taskpro-cal-inspector__title {
-  flex: 1 1 auto;
-  min-width: 0;
-  margin: -1px -4px;
-  padding: 1px 4px;
-  border-radius: 4px;
-  font-size: 1.1em;
-  font-weight: var(--font-semibold);
-  line-height: 1.35;
-  overflow-wrap: anywhere;
-  cursor: text;
-  unicode-bidi: plaintext;
-}
-.taskpro-board .taskpro-cal-inspector__title:hover {
-  background: var(--background-modifier-hover);
-}
-.taskpro-board .taskpro-cal-inspector[data-status="[x]"] .taskpro-cal-inspector__title {
-  color: var(--text-muted);
-  text-decoration: line-through;
-}
-.taskpro-board input.taskpro-cal-inspector__title-input {
-  flex: 1 1 auto;
-  min-width: 0;
-  height: 30px;
-  font-size: 1.05em;
+  gap: 0;
+  width: 372px;
+  padding: 12px 12px 10px;
 }
 .taskpro-board button.taskpro-cal-inspector__parent {
   display: flex;
   align-self: flex-start;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   max-width: 100%;
-  height: 24px;
-  margin-top: -4px;
-  padding: 0 8px;
+  height: 22px;
+  margin: -2px -6px 4px;
+  padding: 0 6px;
   border: 0;
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--taskpro-cal-accent) 10%, transparent);
+  border-radius: 5px;
+  background: transparent;
   box-shadow: none;
   color: var(--text-muted);
   font-size: var(--font-ui-smaller);
@@ -3773,33 +3836,195 @@ button.taskpro-chip:focus-visible {
 .taskpro-board .taskpro-cal-inspector__parent-title {
   min-width: 0;
   overflow: hidden;
-  color: var(--text-normal);
-  font-weight: var(--font-medium);
   text-overflow: ellipsis;
   white-space: nowrap;
   unicode-bidi: plaintext;
 }
+.taskpro-board .taskpro-cal-inspector__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding-bottom: 10px;
+}
+.taskpro-board .taskpro-cal-inspector__head button.taskpro-cal__check {
+  width: 18px;
+  min-width: 18px;
+  height: 18px;
+  margin-top: 4px;
+}
+.taskpro-board .taskpro-cal-inspector__title {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: -1px -4px;
+  padding: 1px 4px;
+  border-radius: 5px;
+  font-size: 1.15em;
+  font-weight: var(--font-semibold);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  cursor: text;
+  unicode-bidi: plaintext;
+}
+.taskpro-board .taskpro-cal-inspector__title:hover {
+  background: var(--background-modifier-hover);
+}
+.taskpro-board .taskpro-cal-inspector[data-status="[x]"] .taskpro-cal-inspector__title {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+.taskpro-board input.taskpro-cal-inspector__title-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 30px;
+  font-size: 1.1em;
+}
+.taskpro-board .taskpro-cal-inspector__tools {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0;
+  margin-top: 1px;
+}
+
+.taskpro-board .taskpro-cal-inspector__sheet {
+  display: flex;
+  flex-direction: column;
+  padding: 4px 0 6px;
+  border-top: 1px solid var(--taskpro-cal-line);
+}
+.taskpro-board .taskpro-cal-prop {
+  display: grid;
+  grid-template-columns: 104px minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+  min-height: 32px;
+}
+.taskpro-board .taskpro-cal-prop__name {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  height: 32px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  white-space: nowrap;
+}
+.taskpro-board .taskpro-cal-prop__name .taskpro-cal__icon {
+  display: inline-flex;
+  color: var(--text-faint);
+}
+.taskpro-board .taskpro-cal-prop__name svg {
+  width: 14px;
+  height: 14px;
+}
+.taskpro-board .taskpro-cal-prop__value {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: 32px;
+}
+.taskpro-board .taskpro-cal-prop__value.is-editor {
+  padding: 4px 0;
+}
+.taskpro-board .taskpro-cal-prop__pick {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  min-height: 28px;
+  margin-inline-start: -6px;
+  padding: 2px 6px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+.taskpro-board .taskpro-cal-prop__pick:hover,
+.taskpro-board .taskpro-cal-prop__pick:focus-visible {
+  background: var(--background-modifier-hover);
+  outline: none;
+}
+.taskpro-board .taskpro-cal-prop__pick .taskpro-chip {
+  max-width: 100%;
+}
+.taskpro-board .taskpro-cal-prop__empty {
+  color: var(--text-faint);
+  font-size: var(--font-ui-small);
+}
+.taskpro-board .taskpro-cal-prop__aside {
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+  unicode-bidi: isolate;
+}
+.taskpro-board .taskpro-cal-prop__note {
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+}
+.taskpro-board button.taskpro-cal-prop__link {
+  display: flex;
+  align-self: flex-start;
+  align-items: center;
+  max-width: 100%;
+  height: 28px;
+  margin-inline-start: -6px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  text-decoration: underline;
+  text-decoration-color: var(--background-modifier-border);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.taskpro-board button.taskpro-cal-prop__link span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  unicode-bidi: plaintext;
+}
+.taskpro-board button.taskpro-cal-prop__link:hover {
+  background-image: linear-gradient(var(--background-modifier-hover), var(--background-modifier-hover));
+  text-decoration-color: currentColor;
+}
+.taskpro-board .taskpro-cal-date {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+}
+.taskpro-board .taskpro-cal-date__weekday {
+  min-width: 3ch;
+}
+
 .taskpro-board .taskpro-cal-inspector__subtasks {
   display: flex;
   flex-direction: column;
   gap: 1px;
+  padding-top: 8px;
+  border-top: 1px solid var(--taskpro-cal-line);
 }
 .taskpro-board .taskpro-cal-inspector__subtasks-head {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 0 2px 4px;
-  color: var(--text-faint);
-  font-size: 11px;
+  padding: 0 0 6px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
   font-weight: var(--font-semibold);
 }
 .taskpro-board .taskpro-cal-inspector__subtasks-count {
+  color: var(--text-faint);
   font-variant-numeric: tabular-nums;
   font-weight: var(--font-normal);
 }
 .taskpro-board .taskpro-cal-inspector__subtasks-bar {
   flex: 1 1 auto;
-  height: 4px;
+  height: 3px;
   border-radius: 2px;
   background:
     linear-gradient(var(--taskpro-accent-done), var(--taskpro-accent-done)) no-repeat 0 0 / calc(var(--done) * 100%) 100%,
@@ -3812,19 +4037,22 @@ button.taskpro-chip:focus-visible {
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 28px;
+  min-height: 30px;
+  margin-inline: -6px;
   padding: 0 6px;
-  border-radius: var(--radius-s);
+  border-radius: 5px;
   cursor: pointer;
 }
 .taskpro-board .taskpro-cal-inspector__subtask:hover,
 .taskpro-board .taskpro-cal-inspector__subtask:focus-visible {
   background: var(--background-modifier-hover);
+  outline: none;
 }
 .taskpro-board .taskpro-cal-inspector__subtask-title {
   flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
+  font-size: var(--font-ui-small);
   text-overflow: ellipsis;
   white-space: nowrap;
   unicode-bidi: plaintext;
@@ -3843,81 +4071,55 @@ button.taskpro-chip:focus-visible {
   color: var(--text-faint);
 }
 .taskpro-board input.taskpro-cal-inspector__subtask-add {
-  width: 100%;
-  height: 28px;
-  margin-top: 2px;
-  padding: 0 8px;
-  border: 1px dashed var(--background-modifier-border);
-  border-radius: var(--radius-s);
-  background: transparent;
+  width: calc(100% + 12px);
+  height: 30px;
+  margin: 0 -6px;
+  padding: 0 6px 0 30px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2' stroke-linecap='round'><path d='M12 5v14M5 12h14'/></svg>") no-repeat 8px 50%;
   box-shadow: none;
   color: var(--text-normal);
   font-size: var(--font-ui-small);
 }
+.taskpro-board[dir="rtl"] input.taskpro-cal-inspector__subtask-add {
+  padding: 0 30px 0 6px;
+  background-position: calc(100% - 8px) 50%;
+}
+.taskpro-board input.taskpro-cal-inspector__subtask-add:hover {
+  background-color: var(--background-modifier-hover);
+}
 .taskpro-board input.taskpro-cal-inspector__subtask-add:focus {
-  border-style: solid;
-  border-color: var(--interactive-accent);
+  background-color: transparent;
+  box-shadow: inset 0 0 0 1px var(--interactive-accent);
 }
-.taskpro-board .taskpro-cal-inspector__context {
+
+.taskpro-board .taskpro-cal-inspector__foot {
   display: flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--text-muted);
-  font-size: var(--font-ui-smaller);
-}
-.taskpro-board .taskpro-cal-inspector__when {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 10px;
-  border-radius: var(--radius-m);
-  background: color-mix(in srgb, var(--taskpro-cal-accent) 7%, transparent);
-}
-.taskpro-board .taskpro-cal-date {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--text-muted);
-}
-.taskpro-board .taskpro-cal-date__weekday {
-  min-width: 3ch;
-}
-.taskpro-board .taskpro-cal-inspector__props {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-.taskpro-board .taskpro-cal-inspector__props .taskpro-chip {
-  max-width: 100%;
-  cursor: pointer;
-}
-.taskpro-board .taskpro-chip.taskpro-cal-inspector__unset {
-  --taskpro-chip-accent: var(--text-faint);
-  border-style: dashed;
-  color: var(--text-muted);
-  font-weight: var(--font-normal);
-}
-.taskpro-board .taskpro-cal-inspector__actions {
-  display: flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 2px;
-}
-.taskpro-board button.taskpro-cal-inspector__note {
-  min-width: 0;
-  margin-inline-start: -6px;
+  justify-content: flex-start;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--taskpro-cal-line);
 }
 .taskpro-board button.taskpro-cal-inspector__remove {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   height: 26px;
-  padding: 0 10px;
+  margin-inline-start: -6px;
+  padding: 0 6px;
   border: 0;
-  border-radius: var(--radius-s);
+  border-radius: 5px;
   background: transparent;
   box-shadow: none;
   color: var(--text-muted);
   font-size: var(--font-ui-smaller);
   white-space: nowrap;
   cursor: pointer;
+}
+.taskpro-board button.taskpro-cal-inspector__remove svg {
+  width: 14px;
+  height: 14px;
 }
 .taskpro-board button.taskpro-cal-inspector__remove:hover {
   background-image: linear-gradient(var(--background-modifier-hover), var(--background-modifier-hover));
