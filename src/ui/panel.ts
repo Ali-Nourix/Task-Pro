@@ -2,6 +2,8 @@
 // Shared dialog panel for TaskPro (deadline, progress, etc.)
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { claimEscape } from './escape-scope';
+
 export interface TaskProPanelHandles {
   overlay: HTMLElement;
   panel: HTMLElement;
@@ -28,20 +30,14 @@ export function openTaskProPanel(
   const close = () => {
     if (closed) return;
     closed = true;
-    document.removeEventListener('keydown', onKeyDown, true);
+    releaseEscape();
     overlay.remove();
     options.onClose?.();
   };
 
-  // Escape closes the panel, matching every other dialog in Obsidian. Captured
-  // on document so it works wherever focus happens to be inside the panel.
-  const onKeyDown = (event: KeyboardEvent) => {
-    if (event.key !== 'Escape') return;
-    event.preventDefault();
-    event.stopPropagation();
-    close();
-  };
-  document.addEventListener('keydown', onKeyDown, true);
+  // Escape closes the panel, matching every other dialog in Obsidian, and only
+  // the panel: not the floating board or the calendar card it was opened from.
+  const releaseEscape = claimEscape(close);
 
   overlay.addEventListener('click', (e) => {
     if (e.target === overlay) close();

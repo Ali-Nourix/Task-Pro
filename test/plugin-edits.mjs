@@ -61,6 +61,8 @@ const app = new App({
   ].join('\n'),
   [SOURCE]: '- [/] Linked copy of a weekly task ^src1',
   'Life/Home.md': '- [ ] Groceries @tag(home, work)\nplain text, no newline at the end',
+  'Life/Gym.md': '- [ ] Gym @repeat(1w) @schedule(2099-01-05 07:00-08:00)\n',
+  'Templates/Day.md': '# {{title}}\n\n{{weekday}}, {{gregorian}}\n\n## Plan\n',
 });
 
 // Saved data as a user might have it: one tag with a bad colour, a duplicate,
@@ -98,7 +100,7 @@ eq(['open-task-board', 'set-task-tags', 'manage-task-tags'].every((id) => app.co
 
 // ── the board's index ──────────────────────────────────────────────────────
 await plugin.taskStore.ensureLoaded();
-eq(plugin.taskStore.all().length, 6, 'every task in the vault is indexed');
+eq(plugin.taskStore.all().length, 7, 'every task in the vault is indexed');
 let notified = 0;
 plugin.taskStore.subscribe(() => notified++);
 
@@ -168,6 +170,58 @@ await wait(200);
 const groceries = plugin.taskStore.inFile('Life/Home.md')[0];
 await host.setTags(groceries, ['home', 'deep-work']);
 eq(note('Life/Home.md')[0], '- [ ] Groceries @tag(home, deep-work)', 'the board edits through the same path');
+
+// ── calendar: daily notes ──────────────────────────────────────────────────
+eq(
+  ['open-task-calendar', 'schedule-current-task', 'open-todays-daily-note'].every((id) => app.commands.some((c) => c.id === id)),
+  true,
+  'calendar commands registered'
+);
+eq([plugin.settings.calendar.dailyNotesFolder, plugin.settings.calendar.jalaliNoteFormat], ['Daily', 'jYYYY-jMM-jDD'], 'calendar settings get their defaults');
+Object.assign(plugin.settings.calendar, { dailyNotesFolder: 'Journal/Daily', templatePath: 'Templates/Day', taskHeading: '## Plan' });
+
+const DAY = '2026-09-28';
+const JALALI_NOTE = 'Journal/Daily/1405-07-06.md';
+eq(host.dayNoteTarget(DAY, 'jalali'), { path: JALALI_NOTE, exists: false, isDailyNote: true }, 'a new note is named in the calendar shown');
+eq(await host.addTaskOnDay(DAY, '- [ ] Plan the week', 'jalali'), JALALI_NOTE, 'adding a task makes the day’s note');
+eq(app.vault.folders.has('Journal') && app.vault.folders.has('Journal/Daily'), true, 'with its folders');
+// Names in a Jalali-named note are Persian, as its title is.
+eq(note(JALALI_NOTE), ['# 1405-07-06', '', 'دوشنبه, 2026-09-28', '', '## Plan', '- [ ] Plan the week', ''], 'from the template, the task under its heading');
+
+// The same day with the Gregorian calendar showing still finds the Jalali-named note.
+eq(host.dayNoteTarget(DAY, 'gregorian'), { path: JALALI_NOTE, exists: true, isDailyNote: true }, 'the other calendar’s name is looked for');
+await host.addTaskOnDay(DAY, '- [ ] Book flights @schedule(2026-09-28 09:00-10:00)', 'gregorian');
+eq(app.vault.files.has('Journal/Daily/2026-09-28.md'), false, 'so a day never gets a second note');
+eq(note(JALALI_NOTE).slice(5, 7), ['- [ ] Plan the week', '- [ ] Book flights @schedule(2026-09-28 09:00-10:00)'], 'the next task goes under the first');
+eq(host.dailyNotesFor(DAY), [JALALI_NOTE], 'the calendar finds the note for its day');
+
+plugin.settings.calendar.newTaskTarget = 'inbox';
+plugin.settings.board.inboxPath = 'Life/Home.md';
+eq(host.dayNoteTarget(DAY, 'jalali'), { path: 'Life/Home.md', exists: true, isDailyNote: false }, 'or the inbox, when set so');
+plugin.settings.calendar.newTaskTarget = 'daily';
+
+// ── calendar: plans ────────────────────────────────────────────────────────
+await wait(200);
+const flights = plugin.taskStore.inFile(JALALI_NOTE).find((t) => t.text === 'Book flights');
+eq(flights.schedule, { date: DAY, start: '09:00', end: '10:00' }, 'the store reads a new note’s plans');
+await host.setSchedule(flights, { date: '2026-09-29', start: '14:00', end: '15:30' });
+eq(note(JALALI_NOTE)[6], '- [ ] Book flights @schedule(2026-09-29 14:00-15:30)', 'a plan moved');
+await wait(200);
+await host.setSchedule(plugin.taskStore.inFile(JALALI_NOTE).find((t) => t.text === 'Book flights'), null);
+eq(note(JALALI_NOTE)[6], '- [ ] Book flights', 'and taken off the calendar');
+
+// A plan is not synced to a linked source: it is when this copy gets done.
+await wait(200);
+const linkedNow = plugin.taskStore.inFile(PLANNER).find((t) => t.lineNumber === 4);
+await host.setSchedule(linkedNow, { date: DAY });
+eq(note(PLANNER)[4].endsWith(`@schedule(${DAY})`), true, 'the linked copy is planned');
+eq(note(SOURCE)[0].includes('@schedule('), false, 'its source is not');
+
+// Ticking off a repeating plan moves it on by its interval, time kept, no deadline added.
+const gym = app.vault.getFileByPath('Life/Gym.md');
+await app.vault.process(gym, (content) => content.replace('- [ ]', '- [x]'));
+await wait(600);
+eq(note('Life/Gym.md')[0], '- [ ] Gym @repeat(1w) @schedule(2099-01-12 07:00-08:00)', 'a repeating plan rolls to the next week');
 
 // ── floating board ─────────────────────────────────────────────────────────
 const floatCommand = app.commands.find((c) => c.id === 'toggle-floating-task-board');

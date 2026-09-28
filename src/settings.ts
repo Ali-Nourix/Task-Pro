@@ -5,6 +5,8 @@
 import { App, PluginSettingTab, Setting, Notice, setIcon } from 'obsidian';
 import TaskProPlugin from '../main';
 import {
+  CalendarTaskTarget,
+  DailyNoteNaming,
   GlobalInternalTask,
   PRIORITY_ICON_NAMES,
   PRIORITY_LABELS,
@@ -16,22 +18,33 @@ import {
   STATUS_ICON_NAMES,
   TASK_PRIORITIES,
   TaskStatus,
+  TimeFormat,
+  WeekStart,
 } from './types';
 import { ReminderSoundPlayer } from './reminders/reminder-sound';
 import { renderTagManager } from './ui/tag-manager';
 import { NoteSelectionModal } from './note-selector-modal';
+import { dailyNotePath, namingSystem } from './calendar/daily-notes';
+import { todayKey } from './calendar/calendar-dates';
 
 /** Tabs shown at the top of the settings screen. */
-type SettingsTabId = 'general' | 'appearance' | 'capabilities' | 'tags' | 'reminders' | 'tasks';
+type SettingsTabId = 'general' | 'appearance' | 'capabilities' | 'tags' | 'calendar' | 'reminders' | 'tasks';
 
 const SETTINGS_TABS: Array<{ id: SettingsTabId; label: string; icon: string }> = [
   { id: 'general', label: 'General', icon: 'settings' },
   { id: 'appearance', label: 'Badges', icon: 'palette' },
   { id: 'capabilities', label: 'Capabilities', icon: 'sparkles' },
   { id: 'tags', label: 'Tags', icon: 'tags' },
+  { id: 'calendar', label: 'Calendar', icon: 'calendar-days' },
   { id: 'reminders', label: 'Reminders', icon: 'bell-ring' },
   { id: 'tasks', label: 'Internal Tasks', icon: 'list-checks' },
 ];
+
+/** Obsidian's own Daily notes plugin, whose settings the Calendar tab can copy. */
+interface CoreDailyNotes {
+  enabled?: boolean;
+  instance?: { options?: { folder?: string; format?: string; template?: string } };
+}
 
 const TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
 const REMINDER_STATUS_OPTIONS: Array<{ value: TaskStatus; label: string }> = [
@@ -155,6 +168,9 @@ export class TaskProSettingTab extends PluginSettingTab {
         return;
       case 'tags':
         this.renderTagsTab(containerEl);
+        return;
+      case 'calendar':
+        this.renderCalendarTab(containerEl);
         return;
       case 'reminders':
         this.renderReminderSettings(containerEl);
@@ -333,6 +349,19 @@ export class TaskProSettingTab extends PluginSettingTab {
           this.plugin.refreshDecorations();
         }));
 
+    // Show Plan Badges
+    new Setting(containerEl)
+      .setName('Show Plan Badges')
+      .setDesc('Display when a task is planned ("Today, 09:00 – 10:30") and hide the raw @schedule marker')
+      .addToggle(toggle => toggle
+        .setValue(this.plugin.settings.showScheduleBadges)
+        .onChange(async (value) => {
+          this.plugin.settings.showScheduleBadges = value;
+          await this.plugin.saveSettings();
+          this.plugin.refreshDecorations();
+          this.plugin.refreshReadingViews();
+        }));
+
     this.renderSectionHeader(
       containerEl,
       'paintbrush',
@@ -483,6 +512,251 @@ export class TaskProSettingTab extends PluginSettingTab {
         .setButtonText('Open')
         .setCta()
         .onClick(() => void this.plugin.activateBoard()));
+  }
+
+  /**
+   * Daily notes and the calendar layout of the task board. The name preview
+   * is recomputed on every keystroke, so a pattern can be tried out here
+   * without creating a single note.
+   */
+  private renderCalendarTab(containerEl: HTMLElement): void {
+    const calendar = this.plugin.settings.calendar;
+    const save = async (options: { decorations?: boolean } = {}) => {
+      await this.plugin.saveSettings();
+      this.plugin.refreshBoards();
+      if (options.decorations) {
+        this.plugin.refreshDecorations();
+        this.plugin.refreshReadingViews();
+      }
+    };
+
+    this.renderSectionHeader(
+      containerEl,
+      'calendar-days',
+      'Daily Notes',
+      'Each day in the calendar has its own note. A task made on a day is written into that day’s note, which is created the first time it is needed. Before one is created, TaskPro looks for the day’s note under both calendars’ names, so switching the calendar never gives a day two notes.'
+    );
+
+    // Placed under the name settings below; built first so they can redraw it.
+    const preview = createDiv({ cls: 'taskpro-settings-preview' });
+    const renderPreview = () => {
+      preview.empty();
+      const today = todayKey();
+      const shown = this.plugin.settings.board.calendarSystem ?? this.plugin.settings.calendarSystem;
+      const naming = namingSystem(calendar, shown);
+      const iconEl = preview.createSpan({ cls: 'taskpro-settings-preview__icon' });
+      setIcon(iconEl, 'file-text');
+      const text = preview.createDiv({ cls: 'taskpro-settings-preview__text' });
+      text.createDiv({ cls: 'taskpro-settings-preview__label', text: 'Today’s note' });
+      text.createDiv({ cls: 'taskpro-settings-preview__path', text: dailyNotePath(today, naming, calendar), attr: { dir: 'auto' } });
+      if (calendar.dailyNoteNaming === 'view') {
+        const other = naming === 'jalali' ? 'gregorian' : 'jalali';
+        text.createDiv({
+          cls: 'taskpro-settings-preview__alt',
+          text: `With the ${other === 'jalali' ? 'Jalali' : 'Gregorian'} calendar showing: ${dailyNotePath(today, other, calendar)}`,
+          attr: { dir: 'auto' },
+        });
+      }
+    };
+
+    new Setting(containerEl)
+      .setName('Folder')
+      .setDesc('Where daily notes are kept. Leave empty for the vault root.')
+      .addText(text => text
+        .setPlaceholder('Daily')
+        .setValue(calendar.dailyNotesFolder)
+        .onChange(async (value) => {
+          calendar.dailyNotesFolder = value.trim();
+          renderPreview();
+          await save();
+        }));
+
+    new Setting(containerEl)
+      .setName('Gregorian name')
+      .setDesc('YYYY, MM and DD for the year, month and day; MMMM for the month’s name and dddd for the weekday. Text in [brackets] is kept as it is, and a / makes subfolders.')
+      .addText(text => text
+        .setPlaceholder('YYYY-MM-DD')
+        .setValue(calendar.gregorianNoteFormat)
+        .onChange(async (value) => {
+          calendar.gregorianNoteFormat = value;
+          renderPreview();
+          await save();
+        }));
+
+    new Setting(containerEl)
+      .setName('Jalali name')
+      .setDesc('The same with a j: jYYYY, jMM and jDD, jMMMM for the Persian month’s name. Names are written in Persian.')
+      .addText(text => text
+        .setPlaceholder('jYYYY-jMM-jDD')
+        .setValue(calendar.jalaliNoteFormat)
+        .onChange(async (value) => {
+          calendar.jalaliNoteFormat = value;
+          renderPreview();
+          await save();
+        }));
+
+    new Setting(containerEl)
+      .setName('Name new notes with')
+      .setDesc('Which calendar names a day’s note when it is created.')
+      .addDropdown(dropdown => dropdown
+        .addOption('view', 'The calendar being shown')
+        .addOption('gregorian', 'Always Gregorian')
+        .addOption('jalali', 'Always Jalali')
+        .setValue(calendar.dailyNoteNaming)
+        .onChange(async (value) => {
+          calendar.dailyNoteNaming = value as DailyNoteNaming;
+          renderPreview();
+          await save();
+        }));
+
+    let templateText: { setValue: (value: string) => unknown } | null = null;
+    new Setting(containerEl)
+      .setName('Template')
+      .setDesc('A note a new daily note starts from. {{title}}, {{date}}, {{date:FORMAT}}, {{time}}, {{weekday}}, {{gregorian}}, {{jalali}}, {{yesterday}} and {{tomorrow}} are filled in; Templater commands run too.')
+      .addText(text => {
+        templateText = text;
+        text
+          .setPlaceholder('Templates/Daily.md')
+          .setValue(calendar.templatePath)
+          .onChange(async (value) => {
+            calendar.templatePath = value.trim();
+            await save();
+          });
+      })
+      .addButton(button => button
+        .setButtonText('Choose')
+        .onClick(() => {
+          new NoteSelectionModal(this.app, async (file) => {
+            calendar.templatePath = file.path;
+            templateText?.setValue(file.path);
+            await save();
+          }).open();
+        }));
+
+    new Setting(containerEl)
+      .setName('Put new tasks under')
+      .setDesc('A heading in the daily note, such as "## Tasks". It is added when the note does not have it yet. Leave empty to add tasks at the end of the note.')
+      .addText(text => text
+        .setPlaceholder('## Tasks')
+        .setValue(calendar.taskHeading)
+        .onChange(async (value) => {
+          calendar.taskHeading = value;
+          await save();
+        }));
+
+    const core = (this.app as unknown as { internalPlugins?: { getPluginById?: (id: string) => CoreDailyNotes | null } })
+      .internalPlugins?.getPluginById?.('daily-notes');
+    const coreOptions = core?.enabled ? core.instance?.options : undefined;
+    if (coreOptions) {
+      new Setting(containerEl)
+        .setName('Use Obsidian’s Daily notes settings')
+        .setDesc('Copies the folder, the name format (as the Gregorian name) and the template from the core Daily notes plugin.')
+        .addButton(button => button
+          .setButtonText('Copy')
+          .onClick(async () => {
+            calendar.dailyNotesFolder = coreOptions.folder?.trim() ?? '';
+            if (coreOptions.format?.trim()) calendar.gregorianNoteFormat = coreOptions.format.trim();
+            if (coreOptions.template?.trim()) calendar.templatePath = coreOptions.template.trim();
+            await save();
+            new Notice('Daily notes settings copied');
+            this.display();
+          }));
+    }
+
+    renderPreview();
+    containerEl.appendChild(preview);
+
+    this.renderSectionHeader(
+      containerEl,
+      'calendar-clock',
+      'Planning',
+      'Open the task board and choose Calendar. Drag across the week or day grid to block out time, drag a task to move it or its edge to change its length, and drag one out of the unscheduled list to give it a time. A plan is written into the task line as @schedule(2026-09-28 09:00-10:30).'
+    );
+
+    new Setting(containerEl)
+      .setName('Tasks made on a day go into')
+      .setDesc('The day’s note, or the note the board’s quick add uses, with the day written on the task.')
+      .addDropdown(dropdown => dropdown
+        .addOption('daily', 'The day’s note')
+        .addOption('inbox', 'The board’s inbox note')
+        .setValue(calendar.newTaskTarget)
+        .onChange(async (value) => {
+          calendar.newTaskTarget = value as CalendarTaskTarget;
+          await save();
+        }));
+
+    new Setting(containerEl)
+      .setName('Week starts on')
+      .setDesc('Automatic starts a Jalali week on Saturday and a Gregorian one on Monday.')
+      .addDropdown(dropdown => dropdown
+        .addOption('auto', 'Automatic')
+        .addOption('saturday', 'Saturday')
+        .addOption('sunday', 'Sunday')
+        .addOption('monday', 'Monday')
+        .setValue(calendar.weekStart)
+        .onChange(async (value) => {
+          calendar.weekStart = value as WeekStart;
+          await save();
+        }));
+
+    new Setting(containerEl)
+      .setName('Clock')
+      .addDropdown(dropdown => dropdown
+        .addOption('24h', '24-hour (14:30)')
+        .addOption('12h', '12-hour (2:30 PM)')
+        .setValue(calendar.timeFormat)
+        .onChange(async (value) => {
+          calendar.timeFormat = value as TimeFormat;
+          await save({ decorations: true });
+        }));
+
+    new Setting(containerEl)
+      .setName('Day starts at')
+      .setDesc('The hour the week and day grids open at. The rest of the day is a scroll away.')
+      .addSlider(slider => slider
+        .setLimits(0, 12, 1)
+        .setValue(calendar.dayStartHour)
+        .setDynamicTooltip()
+        .onChange(async (value) => {
+          calendar.dayStartHour = value;
+          await save();
+        }));
+
+    new Setting(containerEl)
+      .setName('Snap to')
+      .setDesc('Minutes a drag on the time grid moves in.')
+      .addDropdown(dropdown => {
+        for (const minutes of [5, 10, 15, 30, 60]) dropdown.addOption(String(minutes), `${minutes} minutes`);
+        dropdown
+          .setValue(String(calendar.slotMinutes))
+          .onChange(async (value) => {
+            calendar.slotMinutes = Number(value);
+            await save();
+          });
+      });
+
+    new Setting(containerEl)
+      .setName('New block length')
+      .setDesc('How long a block made with a click, rather than a drag, lasts.')
+      .addDropdown(dropdown => {
+        for (const minutes of [15, 30, 45, 60, 90, 120]) {
+          dropdown.addOption(String(minutes), minutes < 60 ? `${minutes} minutes` : `${minutes / 60} hour${minutes === 60 ? '' : 's'}`);
+        }
+        dropdown
+          .setValue(String(calendar.defaultDurationMinutes))
+          .onChange(async (value) => {
+            calendar.defaultDurationMinutes = Number(value);
+            await save();
+          });
+      });
+
+    new Setting(containerEl)
+      .setName('Open the Calendar')
+      .setDesc('Also "Open Task Calendar" in the Command Palette, and "Open Today’s Daily Note" for today’s note.')
+      .addButton(button => button
+        .setButtonText('Open')
+        .setCta()
+        .onClick(() => void this.plugin.openCalendar()));
   }
 
   private renderInternalTasksTab(containerEl: HTMLElement): void {

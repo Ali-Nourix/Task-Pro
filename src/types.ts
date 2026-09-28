@@ -75,6 +75,8 @@ export const CHIP_ICON_NAMES = {
   timerDone: 'timer-off',
   repeat: 'repeat',
   tag: 'tag',
+  schedule: 'clock',
+  scheduleDay: 'calendar',
 } as const;
 
 export const PRIORITY_LABELS: Record<Language, Record<TaskPriority, string>> = {
@@ -301,11 +303,74 @@ export const REPEAT_PRESETS: ReadonlyArray<TaskRepeat> = [
   { every: 1, unit: 'month' },
 ] as const;
 
+// ── Schedule ───────────────────────────────────────────────────────────────
+// When a task is planned to be worked on, which is not when it is due: a task
+// can be due on Friday and planned for Tuesday morning. Like a deadline it
+// belongs to the task, so it is written into the line as
+// `@schedule(2026-09-28 09:00-10:30)`, or `@schedule(2026-09-28)` for a day
+// with no set time.
+export interface TaskSchedule {
+  /** `YYYY-MM-DD`, Gregorian, like every date TaskPro stores. */
+  date: string;
+  /** `HH:mm`, 24-hour. Absent when the task is planned for the day, with no time. */
+  start?: string;
+  /** `HH:mm`, later than `start` on the same day; `24:00` is the midnight that ends it. */
+  end?: string;
+}
+
+// ── Calendar ───────────────────────────────────────────────────────────────
+export type CalendarView = 'month' | 'week' | 'day' | 'agenda';
+/** `auto` starts a Jalali week on Saturday and a Gregorian one on Monday. */
+export type WeekStart = 'auto' | 'saturday' | 'sunday' | 'monday';
+/** Which calendar names a new daily note: the one the calendar is showing, or always one of them. */
+export type DailyNoteNaming = 'view' | 'gregorian' | 'jalali';
+/** Where a task created on a day in the calendar is written. */
+export type CalendarTaskTarget = 'daily' | 'inbox';
+export type TimeFormat = '24h' | '12h';
+
+export interface CalendarSettings {
+  /** Folder daily notes live in. Empty is the vault root. */
+  dailyNotesFolder: string;
+  /** File name for a day when the Gregorian calendar names it. `/` makes subfolders. */
+  gregorianNoteFormat: string;
+  /** File name for a day when the Jalali calendar names it. */
+  jalaliNoteFormat: string;
+  dailyNoteNaming: DailyNoteNaming;
+  /** Note whose content a new daily note starts from. Empty for a blank note. */
+  templatePath: string;
+  /** Heading new tasks go under, e.g. `## Tasks`. Empty adds them at the end of the note. */
+  taskHeading: string;
+  newTaskTarget: CalendarTaskTarget;
+  weekStart: WeekStart;
+  /** The hour the week and day grids open at. */
+  dayStartHour: number;
+  /** Minutes a drag snaps to in the time grid. */
+  slotMinutes: number;
+  /** Length of a block made by a click rather than a drag, in minutes. */
+  defaultDurationMinutes: number;
+  timeFormat: TimeFormat;
+}
+
+export const DEFAULT_CALENDAR_SETTINGS: CalendarSettings = {
+  dailyNotesFolder: 'Daily',
+  gregorianNoteFormat: 'YYYY-MM-DD',
+  jalaliNoteFormat: 'jYYYY-jMM-jDD',
+  dailyNoteNaming: 'view',
+  templatePath: '',
+  taskHeading: '',
+  newTaskTarget: 'daily',
+  weekStart: 'auto',
+  dayStartHour: 7,
+  slotMinutes: 15,
+  defaultDurationMinutes: 60,
+  timeFormat: '24h',
+};
+
 // ── Task board ─────────────────────────────────────────────────────────────
 // The all-tasks view. Its preferences are remembered between sessions, so the
 // board reopens exactly as it was left.
 export type BoardScope = 'target' | 'vault';
-export type BoardLayout = 'table' | 'board';
+export type BoardLayout = 'table' | 'board' | 'calendar';
 export type BoardGroupBy = 'none' | 'status' | 'tag' | 'priority' | 'deadline' | 'note';
 export type BoardSortKey = 'document' | 'title' | 'status' | 'priority' | 'deadline' | 'progress' | 'note';
 export type BoardSortDir = 'asc' | 'desc';
@@ -328,6 +393,14 @@ export interface BoardPreferences {
   collapsedGroups: string[];
   /** Note that the quick-add row writes new tasks into. */
   inboxPath: string;
+  calendarView: CalendarView;
+  /** The calendar the calendar layout shows. Unset follows TaskPro's calendar setting. */
+  calendarSystem?: CalendarSystem;
+  /** The unscheduled-tasks list beside the week and day grids. */
+  calendarSidebar: boolean;
+  calendarShowDeadlines: boolean;
+  calendarShowDailyNotes: boolean;
+  calendarShowDone: boolean;
 }
 
 export const DEFAULT_BOARD_PREFERENCES: BoardPreferences = {
@@ -341,6 +414,11 @@ export const DEFAULT_BOARD_PREFERENCES: BoardPreferences = {
   tags: [],
   collapsedGroups: [],
   inboxPath: '',
+  calendarView: 'month',
+  calendarSidebar: true,
+  calendarShowDeadlines: true,
+  calendarShowDailyNotes: true,
+  calendarShowDone: true,
 };
 
 export interface TaskMapping {
@@ -391,10 +469,13 @@ export interface TaskProSettings {
   showTimerBadges: boolean; // Toggle focus-timer chip rendering
   showRepeatBadges: boolean; // Toggle recurrence chip rendering
   showTagBadges: boolean; // Toggle tag chip rendering
+  showScheduleBadges: boolean; // Toggle schedule chip rendering
   /** User-defined tags: key written into notes, name and colour kept here. */
   tags: TaskTag[];
   /** How the all-tasks board was last left. */
   board: BoardPreferences;
+  /** Daily notes and the calendar's time grid. */
+  calendar: CalendarSettings;
   /** Minutes offered when a focus timer is first added to a task. */
   defaultTimerMinutes: number;
   /** Post a desktop (Windows / macOS / Linux) notification when a timer ends. */
@@ -430,8 +511,10 @@ export const DEFAULT_SETTINGS: TaskProSettings = {
   showTimerBadges: true,
   showRepeatBadges: true,
   showTagBadges: true,
+  showScheduleBadges: true,
   tags: [],
   board: DEFAULT_BOARD_PREFERENCES,
+  calendar: DEFAULT_CALENDAR_SETTINGS,
   defaultTimerMinutes: DEFAULT_TIMER_MINUTES,
   timerSystemNotification: true,
   timerSound: true,

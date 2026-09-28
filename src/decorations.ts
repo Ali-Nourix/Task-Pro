@@ -15,17 +15,30 @@ import { RangeSetBuilder, StateEffect } from '@codemirror/state';
 /** Dispatch this effect on any editor to force the decoration plugin to rebuild. */
 export const forceDecorationsRefresh = StateEffect.define<null>();
 import { App } from 'obsidian';
-import { TaskStatus, Language, BlockId, TaskProgress, TaskPriority, TaskRepeat, TaskTimer } from './types';
+import {
+  TaskStatus,
+  Language,
+  BlockId,
+  CalendarSystem,
+  TaskProgress,
+  TaskPriority,
+  TaskRepeat,
+  TaskSchedule,
+  TaskTimer,
+  TimeFormat,
+} from './types';
 import { isWithinTargetFolder } from './path-utils';
 import {
   extractDeadline,
   extractProgress,
   extractPriority,
   extractRepeat,
+  extractSchedule,
   extractTags,
   DEADLINE_MARKER_PATTERN,
   PRIORITY_MARKER_PATTERN,
   REPEAT_MARKER_PATTERN,
+  SCHEDULE_MARKER_PATTERN,
   TAG_MARKER_PATTERN_GLOBAL,
 } from './task-metadata';
 import { ResolvedTag, TaskTag, resolveTag } from './tags';
@@ -36,6 +49,7 @@ import {
   createPriorityChip,
   createProgressChip,
   createRepeatChip,
+  createScheduleChip,
   createStatusChip,
   createTimerChip,
 } from './ui/chips';
@@ -46,11 +60,13 @@ export interface DecorationSettings {
   badgeLanguage: Language;
   badgeSize: number;
   targetFolder: string;
-  calendarSystem: 'gregorian' | 'jalali';
+  calendarSystem: CalendarSystem;
   showPriorityBadges: boolean;
   showTimerBadges: boolean;
   showRepeatBadges: boolean;
   showTagBadges: boolean;
+  showScheduleBadges: boolean;
+  timeFormat: TimeFormat;
   /** The user's tag list, read live so a rename or recolour shows at once. */
   tags: TaskTag[];
 }
@@ -66,6 +82,7 @@ const PROGRESS_MATCH_REGEX = /\[progress::\s*\d+\/\d+\]/;
 const PRIORITY_MATCH_REGEX = PRIORITY_MARKER_PATTERN;
 const REPEAT_MATCH_REGEX = REPEAT_MARKER_PATTERN;
 const TAG_MATCH_REGEX = TAG_MARKER_PATTERN_GLOBAL;
+const SCHEDULE_MATCH_REGEX = SCHEDULE_MARKER_PATTERN;
 
 // Pre-created stateless decorations — reused instead of allocated per line
 const HIDE_DECO = Decoration.replace({});
@@ -114,6 +131,9 @@ class TaskBadgeWidget extends WidgetType {
     blockId?: BlockId;
     tags?: string[];
     tagChips?: ResolvedTag[];
+    schedule?: TaskSchedule;
+    calendarSystem: CalendarSystem;
+    timeFormat: TimeFormat;
   };
 
   constructor(
@@ -129,7 +149,10 @@ class TaskBadgeWidget extends WidgetType {
     filePath: string,
     blockId?: BlockId,
     tags?: string[],
-    tagChips?: ResolvedTag[]
+    tagChips?: ResolvedTag[],
+    schedule?: TaskSchedule,
+    calendarSystem: CalendarSystem = 'gregorian',
+    timeFormat: TimeFormat = '24h'
   ) {
     super();
     this.widgetState = Object.freeze({
@@ -146,6 +169,9 @@ class TaskBadgeWidget extends WidgetType {
       blockId,
       tags,
       tagChips,
+      schedule,
+      calendarSystem,
+      timeFormat,
     });
   }
 
@@ -186,6 +212,15 @@ class TaskBadgeWidget extends WidgetType {
       tc.length === otc.length &&
       tc.every((tag, i) => tag.key === otc[i].key && tag.name === otc[i].name && tag.color === otc[i].color);
 
+    // The chip reads "Today" or "Tomorrow", so a calendar or clock setting
+    // changes it as much as the marker does.
+    const s = this.widgetState.schedule;
+    const os = other.widgetState.schedule;
+    const scheduleEq =
+      ((!s && !os) || (!!s && !!os && s.date === os.date && s.start === os.start && s.end === os.end)) &&
+      this.widgetState.calendarSystem === other.widgetState.calendarSystem &&
+      this.widgetState.timeFormat === other.widgetState.timeFormat;
+
     return (
       this.widgetState.status === other.widgetState.status &&
       this.widgetState.deadline === other.widgetState.deadline &&
@@ -194,6 +229,7 @@ class TaskBadgeWidget extends WidgetType {
       timerEq &&
       repeatEq &&
       tagsEq &&
+      scheduleEq &&
       this.widgetState.language === other.widgetState.language &&
       this.widgetState.badgeSize === other.widgetState.badgeSize &&
       this.widgetState.lineContent === other.widgetState.lineContent &&
@@ -264,6 +300,24 @@ class TaskBadgeWidget extends WidgetType {
 
     if (s.deadline) {
       container.appendChild(createDeadlineChip(s.deadline, s.language, s.status));
+    }
+
+    if (s.schedule) {
+      container.appendChild(
+        createScheduleChip({
+          schedule: s.schedule,
+          language: s.language,
+          calendarSystem: s.calendarSystem,
+          timeFormat: s.timeFormat,
+          filePath: s.filePath,
+          lineContent: s.lineContent,
+          blockId: s.blockId,
+          status: s.status,
+          deadline: s.deadline,
+          priority: s.priority,
+          tags: s.tags,
+        })
+      );
     }
 
     if (s.timer?.enabled) {
@@ -379,6 +433,9 @@ function buildDecorations(
         const tagChips = settings.showTagBadges && content.includes('@tag(')
           ? extractTags(content).map((key) => resolveTag(key, settings.tags))
           : undefined;
+        const schedule = settings.showScheduleBadges && content.includes('@schedule(')
+          ? extractSchedule(content)
+          : undefined;
 
         if (deadline) {
           const deadlineMatch = DEADLINE_MATCH_REGEX.exec(content);
@@ -424,6 +481,14 @@ function buildDecorations(
           }
         }
 
+        // Same rule again: hidden only while the chip shows the plan.
+        const scheduleMatch = schedule ? SCHEDULE_MATCH_REGEX.exec(content) : null;
+        if (scheduleMatch) {
+          const contentStart = line.from + (lineText.length - taskMatch[3].length);
+          const scheduleStart = contentStart + scheduleMatch.index;
+          addRange(scheduleStart, scheduleStart + scheduleMatch[0].length, HIDE_DECO_NONINCLUSIVE);
+        }
+
         const progressMatch = PROGRESS_MATCH_REGEX.exec(content);
         if (progressMatch) {
           const contentStart = line.from + (lineText.length - taskMatch[3].length);
@@ -456,7 +521,10 @@ function buildDecorations(
               filePath,
               blockId,
               tags,
-              tagChips
+              tagChips,
+              schedule,
+              settings.calendarSystem,
+              settings.timeFormat
             ),
             side: 1,
           }),

@@ -10,8 +10,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { App, CachedMetadata, TFile } from 'obsidian';
-import { TaskPriority, TaskRepeat, TaskStatus } from '../types';
-import { extractDeadline, extractPriority, extractRepeat, extractTags } from '../task-metadata';
+import { TaskPriority, TaskRepeat, TaskSchedule, TaskStatus } from '../types';
+import { extractDeadline, extractPriority, extractRepeat, extractSchedule, extractTags } from '../task-metadata';
 import { parseTaskLine } from '../task-identity';
 
 export interface BoardTask {
@@ -34,6 +34,8 @@ export interface BoardTask {
   repeat?: TaskRepeat;
   /** TaskPro tag keys, in note order. */
   tags: string[];
+  /** When the task is planned to be done, from `@schedule(...)`. */
+  schedule?: TaskSchedule;
 }
 
 const EMBED_PATTERN = /!\[\[[^\]]+\]\]/;
@@ -81,6 +83,7 @@ export function parseBoardTasks(
       priority: extractPriority(parsed.rawContent),
       repeat: extractRepeat(parsed.rawContent),
       tags: extractTags(parsed.rawContent),
+      schedule: extractSchedule(parsed.rawContent),
     });
   }
 

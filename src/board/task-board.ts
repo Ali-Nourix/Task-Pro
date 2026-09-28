@@ -13,6 +13,7 @@ import {
   BoardPreferences,
   BoardPriorityFilter,
   BoardSortKey,
+  CalendarSettings,
   CalendarSystem,
   CHIP_ICON_NAMES,
   Language,
@@ -23,6 +24,7 @@ import {
   TASK_PRIORITIES,
   TaskPriority,
   TaskProgress,
+  TaskSchedule,
   TaskStatus,
 } from '../types';
 import { TaskTag, applyTagColor, resolveTag, resolveTagColor } from '../tags';
@@ -43,6 +45,8 @@ import {
 } from './board-query';
 import { BoardLabels, getBoardLabels } from './board-localization';
 import { BoardTask, TaskStore } from './task-store';
+import { TaskCalendar } from '../calendar/calendar-view';
+import { getCalendarLabels } from '../calendar/calendar-localization';
 
 /** Rows drawn per group before a "Show more" row; keeps a huge vault responsive. */
 const ROWS_PER_PAGE = 150;
@@ -55,6 +59,8 @@ export interface BoardSettingsView {
   board: BoardPreferences;
   /** Fallback destination for new tasks when the board has none yet. */
   referenceNotePath: string;
+  /** Daily notes and the time grid, for the calendar layout. */
+  calendar: CalendarSettings;
 }
 
 /** Everything the board needs from the plugin. */
@@ -82,6 +88,19 @@ export interface TaskBoardHost {
   notify(message: string): void;
   /** Shows the board as a floating window over the whole app. */
   openFloating?(): void;
+
+  // The calendar layout. A host without these still shows the calendar,
+  // read-only.
+  /** Writes a task's `@schedule(...)`, or removes it with `null`. */
+  setSchedule?(task: BoardTask, schedule: TaskSchedule | null): Promise<void>;
+  /** The day's daily notes that exist, under either calendar's name. */
+  dailyNotesFor?(day: string): string[];
+  /** The note a task added on `day` goes into, whether it exists yet, and whether it is the day's own note. */
+  dayNoteTarget?(day: string, system: CalendarSystem): { path: string; exists: boolean; isDailyNote: boolean };
+  /** Adds a finished task line on a day. Resolves the note it went into, or null. */
+  addTaskOnDay?(day: string, line: string, system: CalendarSystem): Promise<string | null>;
+  /** Opens the day's note, creating it from the template first when it is missing. */
+  openDailyNote?(day: string, system: CalendarSystem): Promise<void>;
 }
 
 export interface TaskBoardOptions {
@@ -96,19 +115,8 @@ export interface TaskBoardOptions {
   onToggleFloating?: () => void;
 }
 
-/** Strips link and emphasis syntax so a title reads as text in a cell. */
-export function displayTitle(text: string): string {
-  return text
-    .replace(/!?\[\[([^\]|#]*)(?:#[^\]|]*)?\|([^\]]+)\]\]/g, '$2')
-    .replace(/!?\[\[([^\]|#]*)(?:#([^\]|]*))?\]\]/g, (_m, target: string, heading?: string) => {
-      const name = target.split('/').pop() || heading || '';
-      return name;
-    })
-    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
-    .replace(/(\*\*|__|~~|==)(.+?)\1/g, '$2')
-    .replace(/`([^`]+)`/g, '$1')
-    .trim();
-}
+import { displayTitle } from './board-text';
+export { displayTitle };
 
 /** The accent a status column is tinted with; mirrors the chip colours in styles.css. */
 const STATUS_ACCENT: Record<TaskStatus, string> = {
@@ -154,6 +162,11 @@ export class TaskBoard {
   private draggedTaskId: string | null = null;
   private draggedFrom: string | null = null;
   private visible: BoardTask[] = [];
+  /** The calendar layout, made the first time it is shown. */
+  private calendarView: TaskCalendar | null = null;
+  private calendarNavEl: HTMLElement | null = null;
+  /** Open holds on repaints: a calendar drag or picker in progress. */
+  private holds = 0;
 
   constructor(
     container: HTMLElement,
@@ -176,6 +189,8 @@ export class TaskBoard {
     this.unsubscribe?.();
     this.unsubscribe = null;
     if (this.searchTimer) clearTimeout(this.searchTimer);
+    this.calendarView?.destroy();
+    this.calendarView = null;
   }
 
   /** Settings changed (language, tags, target folder): rebuild everything. */
@@ -201,11 +216,52 @@ export class TaskBoard {
   }
 
   private requestRender(): void {
-    if (this.editing) {
+    if (this.editing || this.holds > 0) {
       this.renderQueued = true;
       return;
     }
     this.renderBody();
+  }
+
+  private get isCalendar(): boolean {
+    return this.prefs.layout === 'calendar';
+  }
+
+  /** The calendar, which draws itself into the board's nav bar and body. */
+  private calendar(): TaskCalendar {
+    if (this.calendarView) return this.calendarView;
+    this.calendarView = new TaskCalendar({
+      host: this.host,
+      root: this.el,
+      settings: () => this.settings,
+      prefs: () => this.prefs,
+      updatePrefs: (patch) => this.updatePrefs(patch),
+      tasks: (dailyNotes) => {
+        const all = this.host.store.all();
+        const folder = this.settings.targetFolder;
+        const scoped =
+          this.effectiveScope === 'vault'
+            ? all
+            : all.filter((task) => isWithinTargetFolder(task.filePath, folder) || dailyNotes.has(task.filePath));
+        return filterTasks(scoped, this.prefs, this.search, { tags: this.settings.tags });
+      },
+      hold: (on) => {
+        this.holds = Math.max(0, this.holds + (on ? 1 : -1));
+        if (!this.holds && this.renderQueued) this.renderBody();
+      },
+      refresh: () => {
+        if (this.calendarNavEl) this.calendarView?.renderNav(this.calendarNavEl);
+        this.renderBody();
+      },
+      rerender: () => this.renderBody(),
+      showSummary: (tasks) => {
+        const counts = summarize(tasks, this.today());
+        this.summaryEl.setText(this.labels.summary(counts.total, counts.done, counts.overdue));
+      },
+      newTaskDefaults: () => this.newTaskDefaults({}),
+      segmented: (parent, cls, items, current, onPick) => this.segmented(parent, cls, items, current, onPick),
+    });
+    return this.calendarView;
   }
 
   private async updatePrefs(patch: Partial<BoardPreferences>, rebuildChrome = true): Promise<void> {
@@ -228,9 +284,12 @@ export class TaskBoard {
 
   private renderChrome(): void {
     const labels = this.labels;
+    // A card or ghost the calendar left open belongs to the old chrome.
+    this.calendarView?.destroy();
     this.el.empty();
     this.el.setAttribute('dir', this.language === 'fa' ? 'rtl' : 'ltr');
     this.el.toggleClass('is-board-layout', this.prefs.layout === 'board');
+    this.el.toggleClass('is-calendar-layout', this.isCalendar);
 
     this.headerEl = this.el.createDiv({ cls: 'taskpro-board__header' });
     const heading = this.headerEl.createDiv({ cls: 'taskpro-board__heading' });
@@ -274,15 +333,26 @@ export class TaskBoard {
     });
 
     const controls = this.toolbarEl.createDiv({ cls: 'taskpro-board__controls' });
-    this.renderGroupControl(controls);
-    this.renderSortControl(controls);
+    // Days are the calendar's grouping and time its order.
+    if (!this.isCalendar) {
+      this.renderGroupControl(controls);
+      this.renderSortControl(controls);
+    }
     this.renderFilterControl(controls);
 
     this.filtersEl = this.headerEl.createDiv({ cls: 'taskpro-board__filters' });
     this.renderActiveFilters();
 
-    this.addEl = this.el.createDiv({ cls: 'taskpro-board__add' });
-    this.renderQuickAdd(this.addEl);
+    // The calendar adds tasks on the day they are for, so its bar takes the
+    // place of the quick-add row.
+    if (this.isCalendar) {
+      this.calendarNavEl = this.el.createDiv({ cls: 'taskpro-cal-nav' });
+      this.calendar().renderNav(this.calendarNavEl);
+    } else {
+      this.calendarNavEl = null;
+      this.addEl = this.el.createDiv({ cls: 'taskpro-board__add' });
+      this.renderQuickAdd(this.addEl);
+    }
 
     this.bodyEl = this.el.createDiv({ cls: 'taskpro-board__body' });
   }
@@ -296,7 +366,7 @@ export class TaskBoard {
     return button;
   }
 
-  private segmented(
+  segmented(
     parent: HTMLElement,
     cls: string,
     items: Array<{ value: string; label: string; icon?: string; disabled?: boolean; title?: string }>,
@@ -353,6 +423,7 @@ export class TaskBoard {
       [
         { value: 'table', label: labels.layoutTable, icon: 'table-2' },
         { value: 'board', label: labels.layoutBoard, icon: 'kanban' },
+        { value: 'calendar', label: getCalendarLabels(this.language).layout, icon: 'calendar-days' },
       ],
       this.prefs.layout,
       (value) => void this.updatePrefs({ layout: value as BoardPreferences['layout'] })
@@ -625,13 +696,7 @@ export class TaskBoard {
       return false;
     }
 
-    const onlyStatus = this.prefs.statuses.length === 1 ? this.prefs.statuses[0] : undefined;
-    const filterPriorities = this.prefs.priorities.filter((p): p is TaskPriority => p !== 'none');
-    const onlyPriority = filterPriorities.length === 1 ? filterPriorities[0] : undefined;
-    const status = inherit.status ?? onlyStatus ?? '[ ]';
-    const priority = inherit.priority ?? onlyPriority;
-    const tags = inherit.tags ?? this.prefs.tags.filter(Boolean);
-
+    const { status, priority, tags } = this.newTaskDefaults(inherit);
     let line = `- ${status} ${text.replace(/\s+/g, ' ')}`;
     if (priority) line = setPriority(line, priority);
     if (tags.length) line = setTags(line, tags);
@@ -645,6 +710,25 @@ export class TaskBoard {
     const inScope = this.effectiveScope === 'vault' || isWithinTargetFolder(path, this.settings.targetFolder);
     this.host.notify(inScope ? labels.added(noteName) : labels.outsideScope);
     return true;
+  }
+
+  /**
+   * What a new task starts with: the column it was added in, else whatever a
+   * single status, priority or tag filter asks for, so it stays in view.
+   */
+  private newTaskDefaults(inherit: { status?: TaskStatus; priority?: TaskPriority; tags?: string[] }): {
+    status: TaskStatus;
+    priority?: TaskPriority;
+    tags: string[];
+  } {
+    const onlyStatus = this.prefs.statuses.length === 1 ? this.prefs.statuses[0] : undefined;
+    const filterPriorities = this.prefs.priorities.filter((p): p is TaskPriority => p !== 'none');
+    const onlyPriority = filterPriorities.length === 1 ? filterPriorities[0] : undefined;
+    return {
+      status: inherit.status ?? onlyStatus ?? '[ ]',
+      priority: inherit.priority ?? onlyPriority,
+      tags: inherit.tags ?? this.prefs.tags.filter(Boolean),
+    };
   }
 
   // ── Body ─────────────────────────────────────────────────────────────────
@@ -668,11 +752,19 @@ export class TaskBoard {
     const labels = this.labels;
     const scrollTop = this.bodyEl.scrollTop;
     const scrollLeft = this.bodyEl.scrollLeft;
+    // Read before emptying: a removed element can no longer be the focused one.
+    const hadFocus = this.bodyEl.contains(this.el.ownerDocument.activeElement);
     this.bodyEl.empty();
 
     if (!this.host.store.isLoaded) {
       this.summaryEl.setText('');
       this.emptyState(labels.loading, 'loader');
+      return;
+    }
+
+    this.bodyEl.toggleClass('is-calendar', this.isCalendar);
+    if (this.isCalendar) {
+      this.calendar().renderBody(this.bodyEl, hadFocus);
       return;
     }
 

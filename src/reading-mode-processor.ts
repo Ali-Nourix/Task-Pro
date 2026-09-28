@@ -3,9 +3,27 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { App, MarkdownPostProcessorContext } from 'obsidian';
-import { TaskStatus, Language, CalendarSystem, TaskProgress, TaskPriority, TaskRepeat, TaskTimer } from './types';
+import {
+  TaskStatus,
+  Language,
+  CalendarSystem,
+  TaskProgress,
+  TaskPriority,
+  TaskRepeat,
+  TaskSchedule,
+  TaskTimer,
+  TimeFormat,
+} from './types';
 import { isWithinTargetFolder } from './path-utils';
-import { extractDeadline, extractProgress, extractPriority, extractRepeat, extractTags } from './task-metadata';
+import {
+  extractDeadline,
+  extractProgress,
+  extractPriority,
+  extractRepeat,
+  extractSchedule,
+  extractTags,
+  SCHEDULE_MARKER_PATTERN_GLOBAL,
+} from './task-metadata';
 import { ResolvedTag, TaskTag, resolveTag } from './tags';
 import {
   appendTagChips,
@@ -14,6 +32,7 @@ import {
   createPriorityChip,
   createProgressChip,
   createRepeatChip,
+  createScheduleChip,
   createStatusChip,
   createTimerChip,
 } from './ui/chips';
@@ -22,6 +41,7 @@ import {
 const NEVER_MATCHES = /(?!)/g;
 /** Same shape the parser accepts; see TAG_PATTERN_SOURCE in task-metadata. */
 const TAG_MARKER_TEXT = /@tag\(\s*[^()\n]*?\s*\)/g;
+const SCHEDULE_MARKER_TEXT = SCHEDULE_MARKER_PATTERN_GLOBAL;
 
 /** Settings slice the reading-mode renderer depends on. */
 export interface ReadingModeSettings {
@@ -35,6 +55,8 @@ export interface ReadingModeSettings {
   showTimerBadges: boolean;
   showRepeatBadges: boolean;
   showTagBadges: boolean;
+  showScheduleBadges: boolean;
+  timeFormat: TimeFormat;
   tags: TaskTag[];
 }
 
@@ -80,26 +102,24 @@ export function createReadingModeProcessor(
         existingBadge.remove();
       });
 
-      // Determine status
+      // Determine status. The marker comes first: Obsidian ticks the checkbox
+      // for every marker that is not a space, so `[/]` and `[!]` arrive checked
+      // and used to read as done.
       let status: TaskStatus;
-      if (checkbox.checked) {
+      const itemText = item.textContent || '';
+      const taskMarker = checkbox.getAttribute('data-task') ?? item.getAttribute('data-task');
+      if (taskMarker === '!' || (!taskMarker && itemText.includes('[!]'))) {
+        status = '[!]';
+        checkbox.classList.add('is-not-done');
+      } else if (taskMarker === '/' || (!taskMarker && itemText.includes('[/]'))) {
+        status = '[/]';
+        // Mark checkbox as in-progress for CSS styling
+        checkbox.classList.add('is-in-progress');
+        checkbox.indeterminate = true;
+      } else if (checkbox.checked) {
         status = '[x]';
       } else {
-        const text = item.textContent || '';
-        const taskMarker = checkbox.getAttribute('data-task') || item.getAttribute('data-task');
-        if (taskMarker === '!' || text.includes('[!]')) {
-          status = '[!]';
-          checkbox.classList.add('is-not-done');
-        } else if (taskMarker === '/' || text.includes('[/]')) {
-          status = '[/]';
-          // Mark checkbox as in-progress for CSS styling
-          if (checkbox) {
-            checkbox.classList.add('is-in-progress');
-            checkbox.indeterminate = true;
-          }
-        } else {
-          status = '[ ]';
-        }
+        status = '[ ]';
       }
 
      // Extract deadline
@@ -121,6 +141,7 @@ export function createReadingModeProcessor(
       const tagChips = settings.showTagBadges
         ? extractTags(text).map((key) => resolveTag(key, settings.tags))
         : [];
+      const schedule = settings.showScheduleBadges ? extractSchedule(text) : undefined;
 
       // Extract tags
       const tagMatches = text.matchAll(/#([a-zA-Z0-9_-]+)/g);
@@ -139,10 +160,11 @@ export function createReadingModeProcessor(
         ctx.sourcePath,
         blockId,
         tags,
-        tagChips
+        tagChips,
+        schedule
       );
-      
-      hideInlineTaskMetadata(item, settings.showRepeatBadges, settings.showTagBadges);
+
+      hideInlineTaskMetadata(item, settings.showRepeatBadges, settings.showTagBadges, settings.showScheduleBadges);
       
       // Append to the list item
       item.appendChild(badgeContainer);
@@ -155,7 +177,7 @@ export function createReadingModeProcessor(
  * carry the same information. The recurrence marker is only stripped while its
  * chip is on — otherwise turning the chip off would hide the rule entirely.
  */
-function hideInlineTaskMetadata(root: Element, hideRepeat: boolean, hideTags: boolean): void {
+function hideInlineTaskMetadata(root: Element, hideRepeat: boolean, hideTags: boolean, hideSchedule: boolean): void {
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   const emptyTextNodes: Text[] = [];
 
@@ -181,6 +203,7 @@ function hideInlineTaskMetadata(root: Element, hideRepeat: boolean, hideTags: bo
         ''
       )
       .replace(hideTags ? TAG_MARKER_TEXT : NEVER_MATCHES, '')
+      .replace(hideSchedule ? SCHEDULE_MARKER_TEXT : NEVER_MATCHES, '')
       .replace(/\uD83D\uDD3A|\u23EB|\uD83D\uDD3C|\uD83D\uDD3D|\u23EC/g, '')
       .replace(/\s*\^[a-zA-Z0-9-]+\s*$/g, '')
       .replace(/\s{2,}/g, ' ');
@@ -195,6 +218,7 @@ function hideInlineTaskMetadata(root: Element, hideRepeat: boolean, hideTags: bo
         || /\[priority::/i.test(textNode.textContent)
         || (hideRepeat && /@repeat\(/i.test(textNode.textContent))
         || (hideTags && textNode.textContent.includes('@tag('))
+        || (hideSchedule && textNode.textContent.includes('@schedule('))
         || /\uD83D\uDD3A|\u23EB|\uD83D\uDD3C|\uD83D\uDD3D|\u23EC/.test(textNode.textContent)
         || /\^[a-zA-Z0-9-]+/.test(textNode.textContent);
       if (!cleanedText.trim() && hadMetadata) {
@@ -221,12 +245,13 @@ function createInteractiveBadgeContainer(
   priority: TaskPriority | undefined,
   timer: TaskTimer | undefined,
   repeat: TaskRepeat | undefined,
-  settings: { badgeLanguage: Language; badgeSize: number },
+  settings: { badgeLanguage: Language; badgeSize: number; calendarSystem: CalendarSystem; timeFormat: TimeFormat },
   lineContent: string,
   filePath: string,
   blockId?: string,
   tags?: string[],
-  tagChips: ResolvedTag[] = []
+  tagChips: ResolvedTag[] = [],
+  schedule?: TaskSchedule
 ): HTMLElement {
   const container = document.createElement('span');
   container.className = 'taskpro-badge-container';
@@ -286,6 +311,24 @@ function createInteractiveBadgeContainer(
 
   if (deadline) {
     container.appendChild(createDeadlineChip(deadline, settings.badgeLanguage, status));
+  }
+
+  if (schedule) {
+    container.appendChild(
+      createScheduleChip({
+        schedule,
+        language: settings.badgeLanguage,
+        calendarSystem: settings.calendarSystem,
+        timeFormat: settings.timeFormat,
+        filePath,
+        lineContent,
+        blockId,
+        status,
+        deadline: deadline ?? undefined,
+        priority,
+        tags,
+      })
+    );
   }
 
   if (timer?.enabled) {
