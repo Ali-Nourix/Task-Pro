@@ -362,6 +362,16 @@ export class TaskProSettingTab extends PluginSettingTab {
           this.plugin.refreshReadingViews();
         }));
 
+    new Setting(containerEl)
+      .setName('Suggest Properties After @')
+      .setDesc('On a task line, typing @ lists priorities, deadlines, plans, repeats, tags and statuses; picking one writes its marker.')
+      .addToggle(toggle => toggle
+        .setValue(this.plugin.settings.propertySuggest)
+        .onChange(async (value) => {
+          this.plugin.settings.propertySuggest = value;
+          await this.plugin.saveSettings();
+        }));
+
     this.renderSectionHeader(
       containerEl,
       'paintbrush',

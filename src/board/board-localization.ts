@@ -2,6 +2,7 @@
 // Text for the task board.
 
 import { BoardGroupBy, BoardSortKey, Language } from '../types';
+import { isolate } from '../bidi';
 import { DeadlineBucket } from './board-query';
 
 export interface BoardLabels {
@@ -133,7 +134,7 @@ const EN: BoardLabels = {
   addInto: 'Adds to',
   chooseInbox: 'Choose the note new tasks go into',
   chooseInboxShort: 'Choose note',
-  added: (note) => `Task added to ${note}`,
+  added: (note) => `Task added to ${isolate(note)}`,
   addFailed: 'Choose a note for new tasks first',
   openNote: 'Open in note',
   more: 'More options',
@@ -219,7 +220,7 @@ const FA: BoardLabels = {
   addInto: 'افزودن به',
   chooseInbox: 'یادداشتی که تسک‌های جدید در آن نوشته می‌شوند',
   chooseInboxShort: 'انتخاب یادداشت',
-  added: (note) => `تسک به ${note} اضافه شد`,
+  added: (note) => `تسک به ${isolate(note)} اضافه شد`,
   addFailed: 'اول یادداشت مقصد تسک‌های جدید را انتخاب کنید',
   openNote: 'باز کردن در یادداشت',
   more: 'گزینه‌های بیشتر',

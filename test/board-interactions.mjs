@@ -179,6 +179,22 @@ try {
   eq(await page.locator('.taskpro-board__title-text').textContent(), 'تسک‌ها', 'Persian labels');
   eq(page.errors, [], 'no page errors in RTL');
   await page.close();
+
+  // ── Right-click on a row ─────────────────────────────────────────────────
+  page = await open('?scope=vault');
+  const menuRow = page.locator('.taskpro-table__row', { hasText: 'Accessibility pass' });
+  await menuRow.click({ button: 'right', position: { x: 300, y: 10 } });
+  eq(await page.locator('.taskpro-menu').count(), 1, 'a right click on a row opens the task menu');
+  await page.locator('.taskpro-menu__item', { hasText: 'Repeat' }).hover();
+  await page.waitForTimeout(200);
+  await page.locator('.taskpro-menu.is-submenu .taskpro-menu__item', { hasText: 'Every month' }).click();
+  await page.waitForTimeout(100);
+  eq((await note(page, 'Projects/Website redesign.md')).split('\n')[3].includes('@repeat(1m)'), true, 'a repeat set from the row menu');
+  await menuRow.locator('.taskpro-table__more button').click();
+  eq(await page.locator('.taskpro-menu').count(), 1, 'the ⋯ button opens the same menu');
+  await page.keyboard.press('Escape');
+  eq(page.errors, [], 'no page errors with the row menu');
+  await page.close();
 } finally {
   await browser.close();
 }

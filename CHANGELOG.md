@@ -33,6 +33,45 @@
   `21:30` and Persian digits are all understood, and the arrow keys step by
   the grid's snap.
 
+### Subtasks on the calendar
+
+- A task nested under another is shown as part of its family. A subtask with
+  no tag takes its parent's colour, a tall enough block names its parent, and
+  hovering one member rings the others on screen.
+- **Unscheduled** groups each family: the parent, then its subtasks indented
+  in note order, with a done count and a fold. A planned parent stays in the
+  list, muted, to hold its open subtasks.
+- A parent's card lists its subtasks, with when each is planned, and adds new
+  ones from an **Add a subtask** field. A subtask's card links to its parent.
+- The board's task index records each task's parent, from the note's list
+  structure. A plain bullet between the two keeps the link, and a paragraph at
+  the margin ends it.
+
+### The task menu
+
+- Right-click a task on the calendar, a table row or a kanban card, or press
+  its **⋯**, for a Notion-like menu. It has the status, priority, tags,
+  deadline, plan, repeat and progress, each showing its value and offering
+  choices in a submenu. It also has **Add a subtask**, **Duplicate**, and the
+  chip menu for the timer and sync.
+- Type to search every action at any depth (`high` finds **Priority ›
+  High**). The arrow keys, `Enter` and `Esc` work throughout, mirrored in
+  Persian.
+- A right click on an empty slot offers a task at that time, the day's note,
+  or the day view.
+- The card's property chips open their choices beneath them, and the card
+  gains a **Repeat** chip. Blocks of an hour and a half or more show their
+  priority, repeat, deadline and tags when there is room. The lines a block
+  gives its title are worked out from its height, so nothing is cut through
+  the middle.
+
+### Properties with `@`
+
+- On a task line, `@` lists priorities, deadlines, plans, repeats, tags and
+  statuses, filtered as you type (`@high`, `@tomorrow`, `@weekly`, a tag's
+  name). Choosing one writes the canonical marker, replacing one already
+  there, and removes the typed word. There is a switch under Badges.
+
 ### Plans
 
 - A plan is stored in the task line as `@schedule(2026-09-28 09:30-11:00)`, or
@@ -67,6 +106,15 @@
 
 ### Fixes
 
+- Persian and Latin text side by side kept its pieces out of order: a time
+  range read `14:15 – 13:15`, and `Esc` sat between two Persian words in the
+  picker. Times are held left to right, note names and titles dropped into a
+  sentence are isolated, and the picker's keys are shown as key caps. This
+  applies to notices and tag and timer messages too.
+- The block a drag across the grid draws now has the same shape and place as
+  the block it becomes.
+- A repeat rule set on one of two identical task lines could land on the
+  first. It now goes to the line it was set on.
 - The first `Esc` in a card or menu over the floating board closed the board
   too, because Obsidian's keymap handles keys before the page does. Cards,
   drags and TaskPro panels now push a keymap scope of their own, so `Esc`

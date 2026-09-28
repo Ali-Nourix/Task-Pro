@@ -219,6 +219,9 @@ export class Plugin extends Component {
   }
   registerEditorExtension() {}
   registerMarkdownPostProcessor() {}
+  registerEditorSuggest(suggest) {
+    this.app.suggests = [...(this.app.suggests ?? []), suggest];
+  }
 }
 
 export class ItemView extends Component {
@@ -287,6 +290,13 @@ export class Modal {
   }
 }
 export class FuzzySuggestModal {}
+export class EditorSuggest {
+  constructor(app) {
+    this.app = app;
+    this.context = null;
+  }
+  close() {}
+}
 export class Scope {
   constructor(parent) {
     this.parent = parent;

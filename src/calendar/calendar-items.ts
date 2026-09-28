@@ -137,6 +137,113 @@ export function unscheduledTasks(
     );
 }
 
+// ── Families: a task and its subtasks ─────────────────────────────────────
+
+export interface FamilyIndex {
+  byId: Map<string, BoardTask>;
+  /** A task's direct subtasks, in note order. */
+  children: Map<string, BoardTask[]>;
+}
+
+/** Parents and subtasks among tasks; pass every task of the notes involved, not a filtered few. */
+export function indexFamilies(tasks: Iterable<BoardTask>): FamilyIndex {
+  const byId = new Map<string, BoardTask>();
+  const children = new Map<string, BoardTask[]>();
+  for (const task of tasks) byId.set(task.id, task);
+  for (const task of byId.values()) {
+    if (!task.parentId || !byId.has(task.parentId)) continue;
+    const list = children.get(task.parentId) ?? [];
+    list.push(task);
+    children.set(task.parentId, list);
+  }
+  for (const list of children.values()) list.sort((a, b) => a.lineNumber - b.lineNumber);
+  return { byId, children };
+}
+
+/** The tasks a task is nested under, nearest first. */
+export function ancestorsOf(task: BoardTask, index: FamilyIndex): BoardTask[] {
+  const out: BoardTask[] = [];
+  const seen = new Set<string>([task.id]);
+  let parent = task.parentId ? index.byId.get(task.parentId) : undefined;
+  while (parent && !seen.has(parent.id)) {
+    out.push(parent);
+    seen.add(parent.id);
+    parent = parent.parentId ? index.byId.get(parent.parentId) : undefined;
+  }
+  return out;
+}
+
+/** The outermost task of a task's family: itself when it is not nested. */
+export function rootOf(task: BoardTask, index: FamilyIndex): BoardTask {
+  const ancestors = ancestorsOf(task, index);
+  return ancestors.length ? ancestors[ancestors.length - 1] : task;
+}
+
+/** Whether a task belongs to a family at all: it has a parent or a subtask. */
+export function inFamily(task: BoardTask, index: FamilyIndex): boolean {
+  return (!!task.parentId && index.byId.has(task.parentId)) || !!index.children.get(task.id)?.length;
+}
+
+/** Every task nested under one, at any depth. */
+export function descendantsOf(task: BoardTask, index: FamilyIndex): BoardTask[] {
+  const out: BoardTask[] = [];
+  const walk = (id: string) => {
+    for (const child of index.children.get(id) ?? []) {
+      out.push(child);
+      walk(child.id);
+    }
+  };
+  walk(task.id);
+  return out;
+}
+
+export interface SidebarRow {
+  task: BoardTask;
+  /** Steps below its family's outermost task. */
+  depth: number;
+  /**
+   * Shown to place its subtasks, not to be planned from here: the parent of
+   * an unscheduled subtask that is itself planned, or done.
+   */
+  context: boolean;
+  /** The outermost task's id, for the tasks that have a family. */
+  family?: string;
+}
+
+/**
+ * The unscheduled list, with each family together: its outermost task, then
+ * the subtasks in note order, indented, with the parents that connect them.
+ * Families keep the place of their most pressing member in `free`'s order.
+ */
+export function sidebarRows(free: readonly BoardTask[], index: FamilyIndex): SidebarRow[] {
+  const freeIds = new Set(free.map((task) => task.id));
+  const groups = new Map<string, Set<string>>();
+  const order: string[] = [];
+  for (const task of free) {
+    const root = rootOf(task, index);
+    if (!groups.has(root.id)) {
+      groups.set(root.id, new Set());
+      order.push(root.id);
+    }
+    const members = groups.get(root.id)!;
+    members.add(task.id);
+    for (const ancestor of ancestorsOf(task, index)) members.add(ancestor.id);
+  }
+
+  const rows: SidebarRow[] = [];
+  for (const rootId of order) {
+    const root = index.byId.get(rootId) ?? free.find((task) => task.id === rootId)!;
+    const members = Array.from(groups.get(rootId)!)
+      .map((id) => index.byId.get(id) ?? free.find((task) => task.id === id)!)
+      .sort((a, b) => a.lineNumber - b.lineNumber);
+    const family = inFamily(root, index) ? rootId : undefined;
+    for (const task of members) {
+      rows.push({ task, depth: ancestorsOf(task, index).length, context: !freeIds.has(task.id), family });
+    }
+  }
+  return rows;
+}
+
 export interface PlacedBlock {
   item: CalendarItem;
   /** Column within the overlap group, from the start edge. */

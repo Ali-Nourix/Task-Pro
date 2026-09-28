@@ -531,89 +531,11 @@ export class TaskPopover {
   }
 
   private showCustomRepeatEditor(current?: TaskRepeat) {
-    const language = this.options.language || 'en';
-    const labels = getRepeatLabels(language);
-    const { body, footer, close } = openTaskProPanel(labels.customTitle);
-
-    const everyInput = addPanelField(body, labels.every, 'number');
-    everyInput.min = '1';
-    everyInput.value = String(current?.every ?? 1);
-
-    const unitField = body.createDiv({ cls: 'taskpro-panel__field' });
-    unitField.createEl('label', { text: labels.unit, cls: 'taskpro-panel__label' });
-    const unitSelect = unitField.createEl('select', { cls: 'taskpro-panel__input' });
-    for (const unit of ['day', 'week', 'month'] as RepeatUnit[]) {
-      const option = unitSelect.createEl('option', { text: labels.units[unit] });
-      option.value = unit;
-      if ((current?.unit ?? 'week') === unit) option.selected = true;
-    }
-
-    addPanelButtonRow(footer, {
-      cancelLabel: labels.cancel,
-      saveLabel: labels.save,
-      onCancel: close,
-      onSave: () => {
-        const every = parseInt(everyInput.value, 10);
-        if (!Number.isFinite(every) || every <= 0) {
-          new Notice(labels.invalidEvery);
-          return;
-        }
-        this.options.onRepeatChange?.({ every, unit: unitSelect.value as RepeatUnit });
-        close();
-      },
-    });
-
-    everyInput.focus();
-    everyInput.select();
+    openCustomRepeatPanel(this.options.language || 'en', current, (repeat) => this.options.onRepeatChange?.(repeat));
   }
 
   private showProgressEditor(currentProgress?: TaskProgress) {
-    const labels = this.getLabels(this.options.language || 'en');
-    const { body, footer, close } = openTaskProPanel(labels.progressBarSettings);
-
-    const totalInput = addPanelField(body, labels.totalSteps, 'number');
-    totalInput.min = '1';
-    totalInput.value = currentProgress?.totalSteps.toString() || '10';
-
-    const currentInput = addPanelField(body, labels.currentSteps, 'number');
-    currentInput.min = '0';
-    currentInput.value = currentProgress?.currentSteps.toString() || '0';
-
-    totalInput.addEventListener('input', () => {
-      const total = parseInt(totalInput.value, 10);
-      if (!isNaN(total) && total > 0) {
-        currentInput.max = total.toString();
-        const current = parseInt(currentInput.value, 10);
-        if (!isNaN(current) && current > total) {
-          currentInput.value = total.toString();
-        }
-      }
-    });
-
-    addPanelButtonRow(footer, {
-      cancelLabel: labels.cancel,
-      saveLabel: labels.save,
-      onCancel: close,
-      onSave: () => {
-        const totalSteps = parseInt(totalInput.value, 10);
-        const currentSteps = parseInt(currentInput.value, 10);
-        if (isNaN(totalSteps) || totalSteps <= 0) {
-          new Notice(labels.invalidTotalSteps);
-          return;
-        }
-        if (isNaN(currentSteps) || currentSteps < 0 || currentSteps > totalSteps) {
-          new Notice(labels.invalidCurrentSteps);
-          return;
-        }
-        if (this.options.onProgressChange) {
-          this.options.onProgressChange({ enabled: true, totalSteps, currentSteps });
-        }
-        new Notice(`${labels.progressBarUpdated} ${currentSteps}/${totalSteps}`);
-        close();
-      },
-    });
-
-    totalInput.focus();
+    openProgressPanel(this.options.language || 'en', currentProgress, (progress) => this.options.onProgressChange?.(progress));
   }
 
   private calculateRemainingTime(deadline: string, status: TaskStatus): string {
@@ -643,107 +565,7 @@ export class TaskPopover {
   }
 
   private getLabels(language: Language) {
-    if (language === 'fa') {
-      return {
-        statusLabel: 'وضعیت',
-        setDeadline: 'تعیین سررسید',
-        changeDeadline: 'تغییر سررسید',
-        enableSync: 'فعال‌سازی همگام‌سازی',
-        disableSync: 'غیرفعال‌سازی همگام‌سازی',
-        syncEnabled: '🔗 همگام‌سازی فعال شد',
-        syncDisabled: '🔓 همگام‌سازی غیرفعال شد',
-        linkedTo: 'متصل‌شده به:',
-        tags: 'تگ‌های یادداشت:',
-        blockId: 'شناسه بلاک:',
-        clear: 'حذف سررسید',
-        jalali: 'جلالی',
-        gregorian: 'میلادی',
-        jalaliPlaceholder: 'YYYY/MM/DD (مثلا 1403/01/15)',
-        cancel: 'انصراف',
-        save: 'ذخیره',
-        invalidJalali: 'فرمت تاریخ جلالی نامعتبر است. از YYYY/MM/DD استفاده کنید',
-        deadlineUpdated: '✓ سررسید به',
-        deadlineCleared: '🧹 سررسید حذف شد',
-        completedOnTime: 'در زمان تعیین شده انجام شد',
-        notCompletedOnTime: 'در زمان تعیین شده انجام نشد',
-        dueToday: 'تا امروز',
-        dueTomorrow: 'فردا',
-        daysRemaining: (days: number) => `${days} روز باقی‌مانده`,
-        progressBar: 'نوار پیشرفت',
-        addCapability: 'افزودن قابلیت',
-        enableProgressBar: 'فعال‌سازی نوار پیشرفت',
-        changeProgressBar: 'تغییر نوار پیشرفت',
-        disableProgressBar: 'غیرفعال‌سازی نوار پیشرفت',
-        progressBarSettings: 'تنظیمات نوار پیشرفت',
-        totalSteps: 'تعداد کل مراحل',
-        currentSteps: 'مراحل انجام‌شده',
-        progressBarUpdated: '✓ نوار پیشرفت به‌روز شد:',
-        progressBarDisabled: '🧹 نوار پیشرفت غیرفعال شد',
-        invalidTotalSteps: 'تعداد کل مراحل باید عددی بزرگتر از صفر باشد',
-        invalidCurrentSteps: 'مراحل انجام‌شده باید بین 0 و تعداد کل مراحل باشد',
-        priorityLabel: 'اولویت',
-        noPriority: 'تعیین‌نشده',
-        clearPriority: 'حذف اولویت',
-        priorityUpdated: '✓ اولویت تغییر کرد به',
-        priorityCleared: '🧹 اولویت حذف شد',
-        planned: 'برنامه',
-        planTime: 'برنامه‌ریزی زمان انجام',
-        changePlan: 'تغییر برنامه',
-        removePlan: 'برداشتن از تقویم',
-        planUpdated: '✓ برنامه‌ریزی شد:',
-        planRemoved: '🧹 از تقویم برداشته شد',
-      };
-    }
-
-    return {
-      statusLabel: 'Status',
-      setDeadline: 'Set Deadline',
-      changeDeadline: 'Change Deadline',
-      enableSync: 'Enable Sync',
-      disableSync: 'Disable Sync',
-      syncEnabled: '🔗 Sync enabled',
-      syncDisabled: '🔓 Sync disabled',
-      linkedTo: 'Linked to:',
-      tags: 'Note tags:',
-      blockId: 'Block ID:',
-      clear: 'Clear Deadline',
-      jalali: 'Jalali',
-      gregorian: 'Gregorian',
-      jalaliPlaceholder: 'YYYY/MM/DD (e.g., 1403/01/15)',
-      cancel: 'Cancel',
-      save: 'Save',
-      invalidJalali: 'Invalid Jalali date format. Use YYYY/MM/DD',
-      deadlineUpdated: '✓ Deadline set to',
-      deadlineCleared: '🧹 Deadline removed',
-      completedOnTime: 'Completed on time',
-      notCompletedOnTime: 'Not completed on time',
-      dueToday: 'Due today',
-      dueTomorrow: 'Due tomorrow',
-      daysRemaining: (days: number) => `${days} days remaining`,
-      progressBar: 'Progress Bar',
-      addCapability: 'Add Capability',
-      enableProgressBar: 'Enable Progress Bar',
-      changeProgressBar: 'Change Progress Bar',
-      disableProgressBar: 'Disable Progress Bar',
-      progressBarSettings: 'Progress Bar Settings',
-      totalSteps: 'Total Steps',
-      currentSteps: 'Current Steps',
-      progressBarUpdated: '✓ Progress bar updated:',
-      progressBarDisabled: '🧹 Progress bar disabled',
-      invalidTotalSteps: 'Total steps must be a number greater than 0',
-      invalidCurrentSteps: 'Current steps must be between 0 and total steps',
-      priorityLabel: 'Priority',
-      noPriority: 'Not set',
-      clearPriority: 'Clear Priority',
-      priorityUpdated: '✓ Priority set to',
-      priorityCleared: '🧹 Priority removed',
-      planned: 'Planned',
-      planTime: 'Plan a Time…',
-      changePlan: 'Change Plan…',
-      removePlan: 'Remove from Calendar',
-      planUpdated: '✓ Planned for',
-      planRemoved: '🧹 Taken off the calendar',
-    };
+    return popoverLabels(language);
   }
 
   show() {
@@ -755,4 +577,193 @@ export class TaskPopover {
     );
     styleTaskProMenu(this.infoMenuTitles);
   }
+}
+
+function popoverLabels(language: Language) {
+  if (language === 'fa') {
+    return {
+      statusLabel: 'وضعیت',
+      setDeadline: 'تعیین سررسید',
+      changeDeadline: 'تغییر سررسید',
+      enableSync: 'فعال‌سازی همگام‌سازی',
+      disableSync: 'غیرفعال‌سازی همگام‌سازی',
+      syncEnabled: '🔗 همگام‌سازی فعال شد',
+      syncDisabled: '🔓 همگام‌سازی غیرفعال شد',
+      linkedTo: 'متصل‌شده به:',
+      tags: 'تگ‌های یادداشت:',
+      blockId: 'شناسه بلاک:',
+      clear: 'حذف سررسید',
+      jalali: 'جلالی',
+      gregorian: 'میلادی',
+      jalaliPlaceholder: 'YYYY/MM/DD (مثلا 1403/01/15)',
+      cancel: 'انصراف',
+      save: 'ذخیره',
+      invalidJalali: 'فرمت تاریخ جلالی نامعتبر است. از YYYY/MM/DD استفاده کنید',
+      deadlineUpdated: '✓ سررسید به',
+      deadlineCleared: '🧹 سررسید حذف شد',
+      completedOnTime: 'در زمان تعیین شده انجام شد',
+      notCompletedOnTime: 'در زمان تعیین شده انجام نشد',
+      dueToday: 'تا امروز',
+      dueTomorrow: 'فردا',
+      daysRemaining: (days: number) => `${days} روز باقی‌مانده`,
+      progressBar: 'نوار پیشرفت',
+      addCapability: 'افزودن قابلیت',
+      enableProgressBar: 'فعال‌سازی نوار پیشرفت',
+      changeProgressBar: 'تغییر نوار پیشرفت',
+      disableProgressBar: 'غیرفعال‌سازی نوار پیشرفت',
+      progressBarSettings: 'تنظیمات نوار پیشرفت',
+      totalSteps: 'تعداد کل مراحل',
+      currentSteps: 'مراحل انجام‌شده',
+      progressBarUpdated: '✓ نوار پیشرفت به‌روز شد:',
+      progressBarDisabled: '🧹 نوار پیشرفت غیرفعال شد',
+      invalidTotalSteps: 'تعداد کل مراحل باید عددی بزرگتر از صفر باشد',
+      invalidCurrentSteps: 'مراحل انجام‌شده باید بین 0 و تعداد کل مراحل باشد',
+      priorityLabel: 'اولویت',
+      noPriority: 'تعیین‌نشده',
+      clearPriority: 'حذف اولویت',
+      priorityUpdated: '✓ اولویت تغییر کرد به',
+      priorityCleared: '🧹 اولویت حذف شد',
+      planned: 'برنامه',
+      planTime: 'برنامه‌ریزی زمان انجام',
+      changePlan: 'تغییر برنامه',
+      removePlan: 'برداشتن از تقویم',
+      planUpdated: '✓ برنامه‌ریزی شد:',
+      planRemoved: '🧹 از تقویم برداشته شد',
+    };
+  }
+
+  return {
+    statusLabel: 'Status',
+    setDeadline: 'Set Deadline',
+    changeDeadline: 'Change Deadline',
+    enableSync: 'Enable Sync',
+    disableSync: 'Disable Sync',
+    syncEnabled: '🔗 Sync enabled',
+    syncDisabled: '🔓 Sync disabled',
+    linkedTo: 'Linked to:',
+    tags: 'Note tags:',
+    blockId: 'Block ID:',
+    clear: 'Clear Deadline',
+    jalali: 'Jalali',
+    gregorian: 'Gregorian',
+    jalaliPlaceholder: 'YYYY/MM/DD (e.g., 1403/01/15)',
+    cancel: 'Cancel',
+    save: 'Save',
+    invalidJalali: 'Invalid Jalali date format. Use YYYY/MM/DD',
+    deadlineUpdated: '✓ Deadline set to',
+    deadlineCleared: '🧹 Deadline removed',
+    completedOnTime: 'Completed on time',
+    notCompletedOnTime: 'Not completed on time',
+    dueToday: 'Due today',
+    dueTomorrow: 'Due tomorrow',
+    daysRemaining: (days: number) => `${days} days remaining`,
+    progressBar: 'Progress Bar',
+    addCapability: 'Add Capability',
+    enableProgressBar: 'Enable Progress Bar',
+    changeProgressBar: 'Change Progress Bar',
+    disableProgressBar: 'Disable Progress Bar',
+    progressBarSettings: 'Progress Bar Settings',
+    totalSteps: 'Total Steps',
+    currentSteps: 'Current Steps',
+    progressBarUpdated: '✓ Progress bar updated:',
+    progressBarDisabled: '🧹 Progress bar disabled',
+    invalidTotalSteps: 'Total steps must be a number greater than 0',
+    invalidCurrentSteps: 'Current steps must be between 0 and total steps',
+    priorityLabel: 'Priority',
+    noPriority: 'Not set',
+    clearPriority: 'Clear Priority',
+    priorityUpdated: '✓ Priority set to',
+    priorityCleared: '🧹 Priority removed',
+    planned: 'Planned',
+    planTime: 'Plan a Time…',
+    changePlan: 'Change Plan…',
+    removePlan: 'Remove from Calendar',
+    planUpdated: '✓ Planned for',
+    planRemoved: '🧹 Taken off the calendar',
+  };
+}
+
+/** Asks for a repeat interval of any length. */
+export function openCustomRepeatPanel(language: Language, current: TaskRepeat | undefined, onSave: (repeat: TaskRepeat) => void): void {
+  const labels = getRepeatLabels(language);
+  const { body, footer, close } = openTaskProPanel(labels.customTitle);
+
+  const everyInput = addPanelField(body, labels.every, 'number');
+  everyInput.min = '1';
+  everyInput.value = String(current?.every ?? 1);
+
+  const unitField = body.createDiv({ cls: 'taskpro-panel__field' });
+  unitField.createEl('label', { text: labels.unit, cls: 'taskpro-panel__label' });
+  const unitSelect = unitField.createEl('select', { cls: 'taskpro-panel__input' });
+  for (const unit of ['day', 'week', 'month'] as RepeatUnit[]) {
+    const option = unitSelect.createEl('option', { text: labels.units[unit] });
+    option.value = unit;
+    if ((current?.unit ?? 'week') === unit) option.selected = true;
+  }
+
+  addPanelButtonRow(footer, {
+    cancelLabel: labels.cancel,
+    saveLabel: labels.save,
+    onCancel: close,
+    onSave: () => {
+      const every = parseInt(everyInput.value, 10);
+      if (!Number.isFinite(every) || every <= 0) {
+        new Notice(labels.invalidEvery);
+        return;
+      }
+      onSave({ every, unit: unitSelect.value as RepeatUnit });
+      close();
+    },
+  });
+
+  everyInput.focus();
+  everyInput.select();
+}
+
+/** Sets a progress bar's steps, adding one to a task that has none. */
+export function openProgressPanel(language: Language, currentProgress: TaskProgress | undefined, onSave: (progress: TaskProgress) => void): void {
+const labels = popoverLabels(language);
+  const { body, footer, close } = openTaskProPanel(labels.progressBarSettings);
+
+  const totalInput = addPanelField(body, labels.totalSteps, 'number');
+  totalInput.min = '1';
+  totalInput.value = currentProgress?.totalSteps.toString() || '10';
+
+  const currentInput = addPanelField(body, labels.currentSteps, 'number');
+  currentInput.min = '0';
+  currentInput.value = currentProgress?.currentSteps.toString() || '0';
+
+  totalInput.addEventListener('input', () => {
+    const total = parseInt(totalInput.value, 10);
+    if (!isNaN(total) && total > 0) {
+      currentInput.max = total.toString();
+      const current = parseInt(currentInput.value, 10);
+      if (!isNaN(current) && current > total) {
+        currentInput.value = total.toString();
+      }
+    }
+  });
+
+  addPanelButtonRow(footer, {
+    cancelLabel: labels.cancel,
+    saveLabel: labels.save,
+    onCancel: close,
+    onSave: () => {
+      const totalSteps = parseInt(totalInput.value, 10);
+      const currentSteps = parseInt(currentInput.value, 10);
+      if (isNaN(totalSteps) || totalSteps <= 0) {
+        new Notice(labels.invalidTotalSteps);
+        return;
+      }
+      if (isNaN(currentSteps) || currentSteps < 0 || currentSteps > totalSteps) {
+        new Notice(labels.invalidCurrentSteps);
+        return;
+      }
+      onSave({ enabled: true, totalSteps, currentSteps });
+      new Notice(`${labels.progressBarUpdated} ${currentSteps}/${totalSteps}`);
+      close();
+    },
+  });
+
+  totalInput.focus();
 }

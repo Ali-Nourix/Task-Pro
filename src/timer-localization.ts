@@ -3,6 +3,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { Language, RepeatUnit, TaskRepeat, TaskTimerState } from './types';
+import { isolate } from './bidi';
 
 export interface TimerLabels {
   timerLabel: string;
@@ -43,10 +44,10 @@ export function getTimerLabels(language: Language): TimerLabels {
             : state === 'done'
               ? 'تایمر تمام شد'
               : `تایمر آماده، ${clock}`,
-      statusBarAria: (note) => `تایمر فعال در ${note}`,
+      statusBarAria: (note) => `تایمر فعال در ${isolate(note)}`,
       finishedTitle: 'تایمر تسک تمام شد',
-      finishedBody: (task) => `زمان تعیین‌شده برای «${task}» به پایان رسید.`,
-      finishedNotice: (task) => `⏱ تایمر «${task}» تمام شد`,
+      finishedBody: (task) => `زمان تعیین‌شده برای «${isolate(task)}» به پایان رسید.`,
+      finishedNotice: (task) => `⏱ تایمر «${isolate(task)}» تمام شد`,
       start: 'شروع تایمر',
       resume: 'ادامه تایمر',
       pause: 'توقف تایمر',
@@ -77,10 +78,10 @@ export function getTimerLabels(language: Language): TimerLabels {
           : state === 'done'
             ? 'Timer finished'
             : `Timer ready, ${clock}`,
-    statusBarAria: (note) => `Focus timer running in ${note}`,
+    statusBarAria: (note) => `Focus timer running in ${isolate(note)}`,
     finishedTitle: 'Task timer finished',
-    finishedBody: (task) => `Time is up for “${task}”.`,
-    finishedNotice: (task) => `⏱ Timer finished for “${task}”`,
+    finishedBody: (task) => `Time is up for “${isolate(task)}”.`,
+    finishedNotice: (task) => `⏱ Timer finished for “${isolate(task)}”`,
     start: 'Start timer',
     resume: 'Resume timer',
     pause: 'Pause timer',

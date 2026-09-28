@@ -182,3 +182,4 @@ export class Plugin {}
 export class App {}
 export class TFile {}
 export class FuzzySuggestModal {}
+export class EditorSuggest {}

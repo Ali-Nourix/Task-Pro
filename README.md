@@ -20,6 +20,7 @@ screenshots of a live vault.</sub>
 - [Tags](#tags)
 - [Task board](#task-board)
 - [Calendar](#calendar)
+  - [Subtasks](#subtasks) · [The task menu](#the-task-menu) · [Plans](#plans) · [Daily notes](#daily-notes)
 - [Per-task capabilities](#per-task-capabilities)
 - [Requirements](#requirements)
 - [Installation](#installation)
@@ -112,6 +113,17 @@ sensible default.
 `[!]` means *not done* — for something that missed its moment rather than
 something still open. Overdue tasks are moved into it automatically.
 
+### Properties with `@`
+
+On a task line, type `@` and the plugin lists what the task can be given — a
+priority, a deadline (today, tomorrow, next week, or a date you pick), a plan,
+a repeat rule, a tag, a status — filtered as you type, the way Notion's `@`
+works. `@high`, `@tomorrow`, `@weekly` or a tag's name are enough. Choosing
+one writes the marker through the same writers the menus use, so an existing
+priority or deadline is replaced rather than doubled, and the `@word` you
+typed is taken out again. Picking a tag the task already has takes it off. It
+can be switched off under **Settings → TaskPro → Badges**.
+
 ### Task import and bi-directional sync
 
 Import tasks from a central reference note (say `Weekly Tasks.md`) into any
@@ -197,9 +209,11 @@ the ribbon or with **Open Task Board**, and it opens as a tab of its own.
 - **Edit in place:** tick a task off, change its status or priority from a menu,
   set the deadline, pick tags, or click a title to rename it. Every edit is
   written into the note the task lives in, keeping all of its markers, and a
-  linked copy syncs to its source the same way it does from the chip menu. The
-  **⋯** button opens the task's full menu (progress, focus timer, repeat,
-  sync), and **↗** opens the note with the cursor on the task.
+  linked copy syncs to its source the same way it does from the chip menu.
+  **↗** opens the note with the cursor on the task.
+- **Right-click any task** — a row, a card, or a task on the calendar — or
+  press its **⋯** button for the [task menu](#the-task-menu): every property
+  a task can carry, one hover away.
 - **Add tasks** from the row at the top, or from a board column's **New**
   button. A new task goes into the note of your choice and takes on the active
   filters (or the column it was added to), so it does not vanish from the view
@@ -285,8 +299,10 @@ can decide what to work on and when, in the Gregorian or the Jalali calendar.
 - **Unscheduled** lists the open tasks with no plan yet; drag one onto the
   calendar to give it a time.
 - **Click a task** to open its card: rename it, change its day and time, set
-  its status, priority, deadline and tags, open the note it lives in, or remove
-  it from the calendar. **⋯** opens its full menu.
+  its status, priority, deadline, repeat and tags, see and add its subtasks,
+  open the note it lives in, or remove it from the calendar. Each property
+  chip opens its choices right under it; **⋯** and a right click open the
+  [task menu](#the-task-menu).
 
   ![A task's card in the day view: date, times, status, priority, deadline and tags](docs/images/task-calendar-day-card-dark.png)
 
@@ -311,6 +327,49 @@ can decide what to work on and when, in the Gregorian or the Jalali calendar.
 
 <sub>The screenshots in this section are of Obsidian 1.13.7 itself, not harness
 renders.</sub>
+
+### Subtasks
+
+A task nested under another in its note is its subtask, and the calendar shows
+the family together while each subtask is still planned on its own:
+
+- A subtask with no tag of its own takes its parent's colour, and a block with
+  room for it names the parent above its title.
+- Hovering any member rings the rest of its family on screen, however far
+  apart they are planned.
+- **Unscheduled** keeps a family together: the parent, then its subtasks
+  indented under it in note order, with how many are done and a fold. A parent
+  that is already planned stays there, muted, to hold its open subtasks.
+- A parent's card lists its subtasks with a checkbox and when each is planned,
+  opens any of them with a click, and takes a new one in the **Add a
+  subtask** field. A subtask's card links back to its parent.
+
+A plain bullet between a task and its subtask, such as a note written under
+it, does not break the link.
+
+![A parent task's card with its subtasks and when each is planned, and the family ringed on the calendar](docs/images/task-calendar-subtasks-light.png)
+
+### The task menu
+
+Right-click a task on the board or the calendar for a Notion-like menu of
+everything the task can carry: status, priority, tags, deadline, plan,
+repeat and progress, each with its current value beside it and its choices in
+a submenu. Below them are **Add a subtask**, **Duplicate** (the copy goes
+after the task and its subtasks), and the full chip menu for the focus timer
+and sync.
+
+![The task menu on the calendar, with the Plan submenu open](docs/images/task-calendar-menu-light.png)
+
+- Type straight away to search: `high` finds **Priority › High**, `week`
+  finds **Repeat › Every week** and **Plan › Next week**. English words work
+  in the Persian menu too.
+- The arrow keys move through it, the forward arrow opens a submenu and the
+  back arrow closes it (mirrored in Persian), `Enter` chooses, and `Esc`
+  closes the innermost panel first.
+- A right click on an empty slot offers a new task at that time, the day's
+  note, or the day on its own.
+
+<img src="docs/images/task-calendar-menu-fa-light.png" alt="The same menu in Persian, right to left, with its submenu opening to the left" width="820">
 
 ### Plans
 
@@ -557,7 +616,7 @@ alert resolves the outer note's own file, so a callout like
 | Tab | Holds |
 | --- | --- |
 | **General** | Reference note, target folder restriction |
-| **Badges** | Chip language, size, calendar system, embed visibility, and a switch per optional chip |
+| **Badges** | Chip language, size, calendar system, embed visibility, a switch per optional chip, and the `@` suggestions on task lines |
 | **Capabilities** | Focus-timer duration, desktop notification, sound, status-bar readout; a note on how repeat intervals are counted |
 | **Tags** | Tag chips on or off, and the tag list: create, rename, recolour, delete |
 | **Calendar** | [Daily notes](#daily-notes): folder, name formats, template, heading; planning: where new tasks go, week start, 12- or 24-hour clock, the hour the grid opens at, snap, and new block length |
@@ -611,6 +670,13 @@ Chip colours, padding, radius and opacity are exposed to the
   tap opens the task, so scrolling is left alone. While a drag or a card is
   open, a note change is held back and redrawn afterwards, so the calendar
   never redraws under your pointer.
+- A task's parent is read from the list structure of its note while the note
+  is parsed: the nearest task among the list items it is nested under, past
+  any plain bullets in between, and a paragraph at the margin ends the list.
+- Mixed Persian and Latin text is kept in order with Unicode isolates rather
+  than by hoping the bidi algorithm guesses right: a note name or a task title
+  dropped into a sentence is isolated, and a Latin-digit time range is held
+  left to right, so `09:00 – 10:30` never reads `10:30 – 09:00` in Persian.
 - `Esc` goes to the innermost thing open. Obsidian handles keys before the
   page does, so a card or a drag pushes a keymap scope of its own: the first
   `Esc` closes the card, and only the next one closes the floating board.

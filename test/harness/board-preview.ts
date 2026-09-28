@@ -19,6 +19,7 @@ import {
   DEFAULT_CALENDAR_SETTINGS,
   Language,
   TaskProgress,
+  TaskRepeat,
   TaskSchedule,
 } from '../../src/types';
 import {
@@ -50,6 +51,7 @@ import {
   replaceTaskText,
   setDeadline,
   setPriority,
+  setRepeat,
   setTags,
 } from '../../src/task-metadata';
 import { TAG_PALETTE, applyTagColor, resolveTag } from '../../src/tags';
@@ -149,6 +151,13 @@ const CALENDAR_NOTES: Record<string, string> =
           `- [ ] نوشتن گزارش ماهانه @schedule(${inDays(2)} 14:00-16:00) @tag(deep-work)`,
           `- [ ] تماس با حسابدار @schedule(${inDays(3)})`,
         ].join('\n'),
+        'Projects/فیگما.md': [
+          `- [ ] فیگما @tag(learning)`,
+          `    - [ ] یک Auto layout @schedule(${inDays(0)} 16:00-17:30)`,
+          `        - به حدی برسم که بدون حدس زدن ایده‌ها را اجرا کنم.`,
+          `    - [ ] دو Prototyping @schedule(${inDays(0)} 18:00-19:00)`,
+          `    - [ ] سه Paid Feature`,
+        ].join('\n'),
         [dailyPath(0)]: ['# امروز', '', '## Tasks', '- [ ] خرید نان', '- [x] آب دادن گلدان‌ها', ''].join('\n'),
         'Templates/Daily.md': TEMPLATE,
       }
@@ -159,6 +168,13 @@ const CALENDAR_NOTES: Record<string, string> =
           `- [ ] Morning run @repeat(1d) @schedule(${inDays(1)} 07:00-08:00) @tag(health)`,
           `- [ ] Write the monthly report @schedule(${inDays(2)} 14:00-16:00) @tag(deep-work)`,
           `- [ ] Call the accountant @schedule(${inDays(3)})`,
+        ].join('\n'),
+        'Projects/Figma.md': [
+          `- [ ] Learn Figma @tag(learning)`,
+          `    - [ ] Auto layout @schedule(${inDays(0)} 16:00-17:30)`,
+          `        - enough to try ideas without guessing`,
+          `    - [ ] Prototyping @schedule(${inDays(0)} 18:00-19:00)`,
+          `    - [ ] Paid features`,
         ].join('\n'),
         [dailyPath(0)]: ['# Today', '', '## Tasks', '- [ ] Buy bread', '- [x] Water the plants', ''].join('\n'),
         'Templates/Daily.md': TEMPLATE,
@@ -287,6 +303,27 @@ const host = {
   },
   openDailyNote: async (day: string) => {
     (window as unknown as { __openedDay: string }).__openedDay = day;
+  },
+  setDeadline: (task: BoardTask, deadline: string | null) => edit(task, (line) => setDeadline(line, deadline)),
+  setRepeat: (task: BoardTask, repeat: TaskRepeat | null) => edit(task, (line) => setRepeat(line, repeat)),
+  setProgress: async (task: BoardTask, progress: TaskProgress | null) => {
+    if (!task.blockId) return;
+    if (progress) PROGRESS[task.blockId] = progress;
+    else delete PROGRESS[task.blockId];
+    changed();
+  },
+  editSchedule: (task: BoardTask) => edit(task, (line) => setSchedule(line, { date: inDays(1), start: '15:00', end: '16:00' })),
+  insertTask: async (task: BoardTask, line: string, as: 'child' | 'sibling') => {
+    const lines = NOTES[task.filePath].split('\n');
+    const indent = /^\s*/.exec(lines[task.lineNumber])![0];
+    let end = task.lineNumber;
+    for (let i = end + 1; i < lines.length && (!lines[i].trim() || /^\s*/.exec(lines[i])![0].length > indent.length); i++) {
+      if (lines[i].trim()) end = i;
+    }
+    lines.splice(end + 1, 0, (as === 'child' ? `${indent}    ` : indent) + line.trimStart());
+    NOTES[task.filePath] = lines.join('\n');
+    changed();
+    return true;
   },
 } as unknown as TaskBoardHost;
 

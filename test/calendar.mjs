@@ -18,6 +18,8 @@ const build = await esbuild.build({
       } from "../src/task-metadata";
       export { parseBoardTasks } from "../src/board/task-store";
       export { parseTaskLine } from "../src/task-identity";
+      export { isolate } from "../src/bidi";
+      export { findToken, removeToken, propertySuggestions } from "../src/editor/property-suggest";
       export { parseTasksWithHierarchy } from "../src/task-parser";
     `,
     resolveDir: new URL('.', import.meta.url).pathname,
@@ -33,7 +35,7 @@ const build = await esbuild.build({
       setup(b) {
         b.onResolve({ filter: /^obsidian$/ }, () => ({ path: 'obsidian', namespace: 'mock' }));
         b.onLoad({ filter: /.*/, namespace: 'mock' }, () => ({
-          contents: 'export const setIcon = () => {}; export class TFile {}; export class App {};',
+          contents: 'export const setIcon = () => {}; export class TFile {}; export class App {}; export class EditorSuggest {}; export class Modal {}; export class Notice {}; export class Menu {}; export class Scope {}; export class Setting {}; export class FuzzySuggestModal {}; export const moment = () => ({});',
           loader: 'js',
         }));
       },
@@ -112,6 +114,10 @@ eq(
 eq(m.formatClock(0, '12h', 'en'), '12:00 AM', 'midnight on a 12-hour clock');
 eq(m.formatClock(13 * 60 + 5, '24h', 'fa'), '13:05', '24-hour');
 eq(m.formatHour(15, '12h', 'fa'), '3 ب.ظ', 'Persian hour mark');
+eq(m.formatClockRange(540, 630, '24h', 'en'), '09:00 – 10:30', 'a range');
+eq(m.formatClockRange(540, 630, '24h', 'fa'), '\u206609:00 – 10:30\u2069', 'kept left to right in Persian, so it does not read backwards');
+eq(m.formatClockRange(540, 630, '12h', 'fa'), '9:00 ق.ظ – 10:30 ق.ظ', 'a 12-hour Persian range reads with its words');
+eq(m.isolate('Daily/1405-07-05'), '\u2068Daily/1405-07-05\u2069', 'outside text is isolated');
 
 // ── The schedule marker ────────────────────────────────────────────────────
 eq(m.extractSchedule('- [ ] Write @schedule(2026-09-28 09:00-10:30)'), { date: '2026-09-28', start: '09:00', end: '10:30' }, 'timed');
@@ -221,5 +227,48 @@ eq(lanes([block('a', 540, 660), block('b', 600, 630), block('c', 700, 760)]), ['
 eq(lanes([block('a', 540, 600), block('b', 600, 660)]), ['a:0/1', 'b:0/1'], 'back to back is not a clash');
 eq(lanes([block('a', 540, 720), block('b', 550, 600), block('c', 610, 650), block('d', 560, 700)]), ['a:0/3', 'b:1/3', 'd:2/3', 'c:1/3'], 'a freed column is reused');
 eq(lanes([block('a', 540, 545), block('b', 546, 550)]), ['a:0/2', 'b:1/2'], 'tiny blocks are given room to be seen');
+
+// ── Families: parents and subtasks ────────────────────────────────────────
+const fam = m.parseBoardTasks('P.md', [
+  '- [ ] Figma',
+  '    - [ ] Auto layout @schedule(2026-09-29 10:00-11:30)',
+  '    - [ ] Prototyping',
+  '        - [ ] Smart animate',
+  '    - [x] Pricing',
+  '- [ ] Alone',
+  '- [ ] Planned parent @schedule(2026-09-30)',
+  '    - [ ] Its open subtask',
+].join('\n'));
+const index = m.indexFamilies(fam);
+const t = Object.fromEntries(fam.map((task) => [task.text, task]));
+eq(index.children.get(t['Figma'].id).map((x) => x.text), ['Auto layout', 'Prototyping', 'Pricing'], 'direct subtasks in note order');
+eq(m.ancestorsOf(t['Smart animate'], index).map((x) => x.text), ['Prototyping', 'Figma'], 'ancestors, nearest first');
+eq(m.rootOf(t['Smart animate'], index).text, 'Figma', 'the outermost task');
+eq(m.descendantsOf(t['Figma'], index).length, 4, 'descendants at any depth');
+eq([m.inFamily(t['Alone'], index), m.inFamily(t['Pricing'], index)], [false, true], 'who belongs to a family');
+const free = m.unscheduledTasks(fam, () => false);
+eq(
+  m.sidebarRows(free, index).map((r) => `${'  '.repeat(r.depth)}${r.task.text}${r.context ? ' (context)' : ''}`),
+  ['Figma', '    Prototyping', '        Smart animate', 'Alone', 'Planned parent (context)', '    Its open subtask'].map((x) => x.replace(/^( +)/, (sp) => '  '.repeat(sp.length / 4))),
+  'families stay together, a planned parent shows only to place its subtask'
+);
+
+// ── @ on a task line ───────────────────────────────────────────────────────
+eq(m.findToken('- [ ] Call mom @pri', 19), { start: 15, query: 'pri' }, 'a token after the checkbox');
+eq(m.findToken('- [ ] Call @', 12), { start: 11, query: '' }, 'an @ alone opens the list');
+eq(m.findToken('- [ ] کار @یادگیری\u200cها', 21), { start: 10, query: 'یادگیری\u200cها' }, 'a Persian word keeps its half-space');
+eq(m.findToken('- [ ] mail a@b', 14), null, 'not inside a word');
+eq(m.findToken('Just text @pri', 14), null, 'only on task lines');
+eq(m.findToken('- [ ] @due(2026', 15), null, 'not while a marker is typed out');
+eq(m.removeToken('- [ ] Call mom @pri', 15, 19), { line: '- [ ] Call mom', cursor: 14 }, 'the typed token goes, and its space');
+eq(m.removeToken('- [ ] Call @pri mom', 11, 15), { line: '- [ ] Call mom', cursor: 10 }, 'in the middle too');
+const sctx = { language: 'en', calendarSystem: 'gregorian', timeFormat: '24h', tags: [{ key: 'work', name: 'Work', color: 'blue' }], line: '- [ ] Call mom' };
+const pick = (q) => m.propertySuggestions(q, sctx).map((x) => `${x.group}:${x.label}`);
+eq(pick('high'), ['priority:Highest', 'priority:High'], 'finds priorities by name');
+eq(pick('work'), ['tag:Work'], 'and tags');
+eq(m.propertySuggestions('high', sctx)[1].apply('- [ ] Call mom'), '- [ ] Call mom @priority(high)', 'writes the canonical marker');
+eq(m.propertySuggestions('work', { ...sctx, line: '- [ ] Call @tag(work)' })[0].apply('- [ ] Call @tag(work)'), '- [ ] Call', 'a tag it has is taken off');
+eq(pick('weekly').length >= 1 && pick('every week').includes('repeat:Every week'), true, 'repeat presets by their words');
+eq(m.propertySuggestions('اولویت زیاد', { ...sctx, language: 'fa' }).map((x) => x.label), ['زیاد'], 'Persian words find Persian labels');
 
 console.log(`CALENDAR_OK (${checked} checks)`);
