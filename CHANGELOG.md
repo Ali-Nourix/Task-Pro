@@ -84,6 +84,13 @@
   gives its title are worked out from its height, so nothing is cut through
   the middle.
 
+### Deleting a task
+
+- **Delete** in the task menu, at the foot of a card, or the `Delete` key on
+  a focused calendar task removes the task from its note, with everything
+  nested under it. The label says when subtasks go with it. A notice offers
+  **Undo**, which puts the lines back exactly.
+
 ### Properties with `@`
 
 - On a task line, `@` lists priorities, deadlines, plans, repeats, tags and
@@ -125,6 +132,18 @@
 
 ### Fixes
 
+- A task added under a heading is laid out the Markdown way: a blank line
+  under the heading, joined to the list already there, and a blank line
+  before the next heading. A task added to the end of a note after a
+  paragraph starts a new list one line down.
+- The settings tab:
+  - Every icon is 16px in a square box.
+  - A section's icon sits in a small badge, with the title and its
+    description beside it (Obsidian's own `h3` padding had pushed them out
+    of line).
+  - The tabs lost Obsidian's button chrome.
+  - Tag colour dots stay round.
+  - The reference note shows beside its button rather than below the row.
 - Persian and Latin text side by side kept its pieces out of order: a time
   range read `14:15 – 13:15`, and `Esc` sat between two Persian words in the
   picker. Times are held left to right, note names and titles dropped into a

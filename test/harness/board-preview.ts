@@ -32,6 +32,7 @@ import {
 import { createScheduleChip } from '../../src/ui/chips';
 import { extractSchedule, setSchedule } from '../../src/task-metadata';
 import { TaskTag } from '../../src/tags';
+import { removeBlock } from '../../src/task-lines';
 import { openTagPicker } from '../../src/ui/tag-picker';
 import { renderTagManager } from '../../src/ui/tag-manager';
 import {
@@ -313,6 +314,12 @@ const host = {
     changed();
   },
   editSchedule: (task: BoardTask) => edit(task, (line) => setSchedule(line, { date: inDays(1), start: '15:00', end: '16:00' })),
+  deleteTask: async (task: BoardTask) => {
+    const { lines } = removeBlock(NOTES[task.filePath].split('\n'), task.lineNumber);
+    NOTES[task.filePath] = lines.join('\n');
+    changed();
+    return true;
+  },
   insertTask: async (task: BoardTask, line: string, as: 'child' | 'sibling') => {
     const lines = NOTES[task.filePath].split('\n');
     const indent = /^\s*/.exec(lines[task.lineNumber])![0];

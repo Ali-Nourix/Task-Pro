@@ -363,8 +363,16 @@ everything the task can carry: status, priority, tags, deadline, plan,
 repeat and progress, each with its current value beside it and its choices in
 a submenu (Tags lists every tag, ticked when the task has it, and a way to
 create one). Below them are **Add a subtask**, **Duplicate** (the copy goes
-after the task and its subtasks), and the full chip menu for the focus timer
-and sync.
+after the task and its subtasks), the full chip menu for the focus timer
+and sync, and **Delete**.
+
+**Delete** takes the task out of its note, together with everything nested
+under it (its subtasks and the notes written beneath it), and says so when
+there are subtasks: *Delete with its 2 subtasks*. A notice then offers
+**Undo** for a few seconds, which puts the lines back exactly as they were.
+It is also at the foot of a task's card, and the `Delete` key does it for a
+task that has focus on the calendar. **Remove from calendar** is different:
+it only takes the plan off, and the task stays in its note.
 
 ![The task menu on the calendar, with the Plan submenu open](docs/images/task-calendar-menu-light.png)
 
@@ -410,7 +418,7 @@ Set these up under **Settings → TaskPro → Calendar**:
 | **Gregorian name** / **Jalali name** | The name formats: `YYYY-MM-DD` and `jYYYY-jMM-jDD` by default |
 | **Name new notes with** | The calendar showing, or always Gregorian, or always Jalali |
 | **Template** | The note a new daily note starts from |
-| **Put new tasks under** | A heading such as `## Tasks`, added if the note does not have it yet; leave it empty to add tasks at the end of the note |
+| **Put new tasks under** | A heading such as `## Tasks`, added if the note does not have it yet; leave it empty to add tasks at the end of the note. The note is kept tidy: a blank line between the heading and its list, a new task joining the list already there, and a blank line before the next heading |
 | **Use Obsidian's Daily notes settings** | Copies the folder, format and template from the core Daily notes plugin |
 
 A preview under the name settings shows today's note path in both calendars as

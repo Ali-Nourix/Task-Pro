@@ -186,13 +186,13 @@ eq(host.dayNoteTarget(DAY, 'jalali'), { path: JALALI_NOTE, exists: false, isDail
 eq(await host.addTaskOnDay(DAY, '- [ ] Plan the week', 'jalali'), JALALI_NOTE, 'adding a task makes the day’s note');
 eq(app.vault.folders.has('Journal') && app.vault.folders.has('Journal/Daily'), true, 'with its folders');
 // Names in a Jalali-named note are Persian, as its title is.
-eq(note(JALALI_NOTE), ['# 1405-07-06', '', 'دوشنبه, 2026-09-28', '', '## Plan', '- [ ] Plan the week', ''], 'from the template, the task under its heading');
+eq(note(JALALI_NOTE), ['# 1405-07-06', '', 'دوشنبه, 2026-09-28', '', '## Plan', '', '- [ ] Plan the week', ''], 'from the template, the task a line under its heading');
 
 // The same day with the Gregorian calendar showing still finds the Jalali-named note.
 eq(host.dayNoteTarget(DAY, 'gregorian'), { path: JALALI_NOTE, exists: true, isDailyNote: true }, 'the other calendar’s name is looked for');
 await host.addTaskOnDay(DAY, '- [ ] Book flights @schedule(2026-09-28 09:00-10:00)', 'gregorian');
 eq(app.vault.files.has('Journal/Daily/2026-09-28.md'), false, 'so a day never gets a second note');
-eq(note(JALALI_NOTE).slice(5, 7), ['- [ ] Plan the week', '- [ ] Book flights @schedule(2026-09-28 09:00-10:00)'], 'the next task goes under the first');
+eq(note(JALALI_NOTE).slice(6, 8), ['- [ ] Plan the week', '- [ ] Book flights @schedule(2026-09-28 09:00-10:00)'], 'the next task goes under the first');
 eq(host.dailyNotesFor(DAY), [JALALI_NOTE], 'the calendar finds the note for its day');
 
 plugin.settings.calendar.newTaskTarget = 'inbox';
@@ -205,10 +205,10 @@ await wait(200);
 const flights = plugin.taskStore.inFile(JALALI_NOTE).find((t) => t.text === 'Book flights');
 eq(flights.schedule, { date: DAY, start: '09:00', end: '10:00' }, 'the store reads a new note’s plans');
 await host.setSchedule(flights, { date: '2026-09-29', start: '14:00', end: '15:30' });
-eq(note(JALALI_NOTE)[6], '- [ ] Book flights @schedule(2026-09-29 14:00-15:30)', 'a plan moved');
+eq(note(JALALI_NOTE)[7], '- [ ] Book flights @schedule(2026-09-29 14:00-15:30)', 'a plan moved');
 await wait(200);
 await host.setSchedule(plugin.taskStore.inFile(JALALI_NOTE).find((t) => t.text === 'Book flights'), null);
-eq(note(JALALI_NOTE)[6], '- [ ] Book flights', 'and taken off the calendar');
+eq(note(JALALI_NOTE)[7], '- [ ] Book flights', 'and taken off the calendar');
 
 // A plan is not synced to a linked source: it is when this copy gets done.
 await wait(200);
@@ -245,6 +245,13 @@ await wait(200);
 await host.setRepeat(figma()[3], { every: 1, unit: 'day' });
 eq([note('Projects/Figma.md')[0], note('Projects/Figma.md')[4]], ['- [ ] Figma', '- [ ] Figma @repeat(1d)'], 'an edit to the copy lands on the copy, not the identical line above');
 eq(app.suggests?.length, 1, 'typing @ on a task line is registered');
+
+// Deleting a task from the board takes it, and what is nested under it, out of the note.
+await wait(200);
+const before = notices.length;
+eq(await host.deleteTask(figma()[0]), true, 'a task is deleted');
+eq(note('Projects/Figma.md'), ['- [ ] Figma @repeat(1d)', '- [ ] Next @repeat(2w) @due(2026-10-01)'], 'with its subtasks and the note under them');
+eq(notices.slice(before), ['Deleted “\u2068Figma\u2069” and its 2 subtasks'], 'and a notice says what went');
 
 // ── floating board ─────────────────────────────────────────────────────────
 const floatCommand = app.commands.find((c) => c.id === 'toggle-floating-task-board');

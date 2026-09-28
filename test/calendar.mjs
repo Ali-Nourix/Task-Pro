@@ -19,6 +19,7 @@ const build = await esbuild.build({
       export { parseBoardTasks } from "../src/board/task-store";
       export { parseTaskLine } from "../src/task-identity";
       export { isolate } from "../src/bidi";
+      export { blockEnd, childIndent, removeBlock } from "../src/task-lines";
       export { findToken, removeToken, propertySuggestions } from "../src/editor/property-suggest";
       export { parseTasksWithHierarchy } from "../src/task-parser";
     `,
@@ -182,12 +183,18 @@ eq(
 );
 
 const daily = ['# 2026-09-28', '', '## Tasks', '- [ ] One', '', '## Notes', 'Some text', ''].join('\n');
-eq(m.insertTaskLine(daily, '- [ ] Two', '## Tasks').split('\n'), ['# 2026-09-28', '', '## Tasks', '- [ ] One', '- [ ] Two', '', '## Notes', 'Some text', ''], 'goes at the end of its section');
+eq(m.insertTaskLine(daily, '- [ ] Two', '## Tasks').split('\n'), ['# 2026-09-28', '', '## Tasks', '- [ ] One', '- [ ] Two', '', '## Notes', 'Some text', ''], 'goes at the end of its section, joining its list');
 eq(m.insertTaskLine(daily, '- [ ] Two', 'tasks').split('\n')[4], '- [ ] Two', 'a heading setting without #s matches any level');
-eq(m.insertTaskLine('# Day\n', '- [ ] Two', '## Plan'), '# Day\n\n## Plan\n- [ ] Two\n', 'a missing heading is added');
-eq(m.insertTaskLine('Text', '- [ ] Two', ''), 'Text\n- [ ] Two\n', 'no heading: the end of the note');
-eq(m.insertTaskLine('```\n## Tasks\n```\n', '- [ ] Two', '## Tasks'), '```\n## Tasks\n```\n\n## Tasks\n- [ ] Two\n', 'a heading in a code block is not one');
-eq(m.insertTaskLine('## Tasks\n### Sub\n- [ ] a\n## Next', '- [ ] b', '## Tasks').split('\n'), ['## Tasks', '### Sub', '- [ ] a', '- [ ] b', '## Next'], 'subsections belong to the section');
+eq(m.insertTaskLine('# Day\n', '- [ ] Two', '## Plan'), '# Day\n\n## Plan\n\n- [ ] Two\n', 'a missing heading is added, a blank line above and below it');
+eq(m.insertTaskLine('', '- [ ] Two', '## Plan'), '## Plan\n\n- [ ] Two\n', 'in an empty note too');
+eq(m.insertTaskLine('## Tasks\n## Notes\nText', '- [ ] Two', '## Tasks').split('\n'), ['## Tasks', '', '- [ ] Two', '', '## Notes', 'Text'], 'an empty section gets a blank line under its heading and before the next one');
+eq(m.insertTaskLine('## Tasks\n\n## Notes', '- [ ] Two', '## Tasks').split('\n'), ['## Tasks', '', '- [ ] Two', '', '## Notes'], 'blank lines already there are not doubled');
+eq(m.insertTaskLine('## Tasks\nSome words.\n', '- [ ] Two', '## Tasks').split('\n'), ['## Tasks', 'Some words.', '', '- [ ] Two', ''], 'after a paragraph a list starts a line down');
+eq(m.insertTaskLine('## Tasks\n- [ ] a\n    - a note\n', '- [ ] b', '## Tasks').split('\n'), ['## Tasks', '- [ ] a', '    - a note', '- [ ] b', ''], 'a nested line is part of the list');
+eq(m.insertTaskLine('Text', '- [ ] Two', ''), 'Text\n\n- [ ] Two\n', 'no heading: the end of the note, a line after the text');
+eq(m.insertTaskLine('- [ ] One\n', '- [ ] Two', ''), '- [ ] One\n- [ ] Two\n', 'or joining the list it ends with');
+eq(m.insertTaskLine('```\n## Tasks\n```\n', '- [ ] Two', '## Tasks'), '```\n## Tasks\n```\n\n## Tasks\n\n- [ ] Two\n', 'a heading in a code block is not one');
+eq(m.insertTaskLine('## Tasks\n### Sub\n- [ ] a\n## Next', '- [ ] b', '## Tasks').split('\n'), ['## Tasks', '### Sub', '- [ ] a', '- [ ] b', '', '## Next'], 'subsections belong to the section');
 
 // ── What shows on a day ────────────────────────────────────────────────────
 const tasks = m.parseBoardTasks('Projects/Site.md', [
@@ -270,5 +277,18 @@ eq(m.propertySuggestions('high', sctx)[1].apply('- [ ] Call mom'), '- [ ] Call m
 eq(m.propertySuggestions('work', { ...sctx, line: '- [ ] Call @tag(work)' })[0].apply('- [ ] Call @tag(work)'), '- [ ] Call', 'a tag it has is taken off');
 eq(pick('weekly').length >= 1 && pick('every week').includes('repeat:Every week'), true, 'repeat presets by their words');
 eq(m.propertySuggestions('اولویت زیاد', { ...sctx, language: 'fa' }).map((x) => x.label), ['زیاد'], 'Persian words find Persian labels');
+
+// ── A task's block in its note ────────────────────────────────────────────
+const taskBlock = ['## Tasks', '', '- [ ] Figma', '\t- [ ] Auto layout', '\t\t- a note', '', '\t- [ ] Paid', '- [ ] Next', '', '## Notes'];
+eq(m.blockEnd(taskBlock, 2), 6, 'a task’s block runs through its subtasks and notes, blank lines inside included');
+eq(m.blockEnd(taskBlock, 7), 7, 'a task with nothing under it is its own line');
+eq(m.childIndent(taskBlock, 2), '\t', 'the indent its subtasks use');
+const cut = m.removeBlock(taskBlock, 2);
+eq(cut.lines, ['## Tasks', '', '- [ ] Next', '', '## Notes'], 'deleting a parent takes its subtasks with it');
+const last = m.removeBlock(cut.lines, 2);
+eq(last.lines, ['## Tasks', '', '## Notes'], 'and deleting the last task leaves one blank line, not two');
+const restored = [...last.lines];
+restored.splice(last.at, 0, ...last.removed);
+eq(restored, cut.lines, 'putting the removed lines back restores the note exactly');
 
 console.log(`CALENDAR_OK (${checked} checks)`);

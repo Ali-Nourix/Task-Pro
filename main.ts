@@ -64,13 +64,17 @@ import { TaskBoardHost } from './src/board/task-board';
 import { TaskBoardView, VIEW_TYPE_TASK_BOARD } from './src/board/task-board-view';
 import { TaskBoardModal } from './src/board/task-board-modal';
 import { getBoardLabels } from './src/board/board-localization';
-import { DailyNoteService } from './src/calendar/daily-notes';
+import { DailyNoteService, appendTaskLine } from './src/calendar/daily-notes';
 import { todayKey } from './src/calendar/calendar-dates';
 import { getCalendarLabels } from './src/calendar/calendar-localization';
 import { scheduleText } from './src/calendar/schedule-text';
 import { openSchedulePanel } from './src/ui/schedule-editor';
 import { useKeymapOf } from './src/ui/escape-scope';
 import { TaskPropertySuggest } from './src/editor/property-suggest';
+import { RemovedBlock, blockEnd, childIndent, indentOf, removeBlock } from './src/task-lines';
+import { getActionLabels } from './src/board/task-actions';
+import { displayTitle } from './src/board/board-text';
+import { descendantsOf, indexFamilies } from './src/calendar/calendar-items';
 
 /**
  * A task as the editing API addresses it. `lineNumber` is a hint: it is used
@@ -1352,6 +1356,10 @@ export default class TaskProPlugin extends Plugin {
         if (choice !== undefined) await this.setTaskScheduleFor(this.boardTaskRef(task), choice);
       },
       insertTask: (task, line, as) => this.insertTaskNear(this.boardTaskRef(task), line, as),
+      deleteTask: (task) => {
+        const nested = descendantsOf(task, indexFamilies(this.taskStore.inFile(task.filePath))).length;
+        return this.deleteTaskFor(this.boardTaskRef(task), displayTitle(task.text) || task.text, nested);
+      },
     };
   }
 
@@ -1372,23 +1380,12 @@ export default class TaskProPlugin extends Plugin {
           : this.findTaskLineIndex(lines, ref.lineContent, ref.blockId);
       if (index === -1) return content;
 
-      const indentOf = (text: string) => /^\s*/.exec(text)![0];
-      const width = (indent: string) => indent.replace(/\t/g, '    ').length;
       const own = indentOf(lines[index]);
-      let end = index;
-      let firstChild: string | null = null;
-      for (let i = index + 1; i < lines.length; i++) {
-        if (!lines[i].trim()) continue;
-        if (width(indentOf(lines[i])) <= width(own)) break;
-        const indent = indentOf(lines[i]);
-        // The shallowest list item under it is the depth its children use.
-        if (/^\s*(?:[-*+]|\d+[.)]) /.test(lines[i]) && (firstChild === null || width(indent) < width(firstChild))) firstChild = indent;
-        end = i;
-      }
-
+      const end = blockEnd(lines, index);
       let indent = own;
       if (as === 'child') {
-        if (firstChild !== null) indent = firstChild;
+        const existing = childIndent(lines, index);
+        if (existing !== null) indent = existing;
         else {
           const spaced = lines.find((text) => /^ +[-*+] /.test(text));
           const tabbed = lines.some((text) => /^\t+[-*+] /.test(text));
@@ -1401,6 +1398,49 @@ export default class TaskProPlugin extends Plugin {
     });
     if (written) this.refreshDecorations();
     return written;
+  }
+
+  /**
+   * Deletes a task from its note, with everything nested under it, and puts
+   * up a notice that can put it all back. Resolves whether anything went.
+   */
+  private async deleteTaskFor(ref: TaskRef, title: string, subtasks: number): Promise<boolean> {
+    const file = ref.filePath ? this.app.vault.getFileByPath(ref.filePath) : null;
+    if (!file) return false;
+    let taken: RemovedBlock | null = null;
+    await this.app.vault.process(file, (content) => {
+      const lines = content.split('\n');
+      const index =
+        ref.lineNumber !== undefined && lines[ref.lineNumber] === ref.lineContent
+          ? ref.lineNumber
+          : this.findTaskLineIndex(lines, ref.lineContent, ref.blockId);
+      if (index === -1) return content;
+      taken = removeBlock(lines, index);
+      return taken.lines.join('\n');
+    });
+    const removed = taken as RemovedBlock | null;
+    if (!removed) return false;
+    this.refreshDecorations();
+
+    const labels = getActionLabels(this.settings.badgeLanguage);
+    const notice = new Notice(labels.deleted(title, subtasks), 8000);
+    const messageEl = (notice as unknown as { messageEl?: HTMLElement; noticeEl?: HTMLElement }).messageEl
+      ?? (notice as unknown as { noticeEl?: HTMLElement }).noticeEl;
+    if (messageEl?.createEl) {
+      // Obsidian's notices are left to right; a Persian sentence needs its own direction.
+      messageEl.setAttribute('dir', this.settings.badgeLanguage === 'fa' ? 'rtl' : 'ltr');
+      const undo = messageEl.createEl('button', { cls: 'taskpro-notice-undo', text: labels.undo });
+      undo.addEventListener('click', (event) => {
+        event.stopPropagation();
+        notice.hide();
+        void this.app.vault.process(file, (content) => {
+          const lines = content.split('\n');
+          lines.splice(Math.min(removed.at, lines.length), 0, ...removed.removed);
+          return lines.join('\n');
+        }).then(() => this.refreshDecorations());
+      });
+    }
+    return true;
   }
 
   private boardMenuDetail(task: BoardTask, anchor: HTMLElement): TaskMenuDetail {
@@ -1452,10 +1492,7 @@ export default class TaskProPlugin extends Plugin {
   private async appendTaskLine(path: string, line: string): Promise<boolean> {
     const file = this.app.vault.getFileByPath(path);
     if (!file) return false;
-    await this.app.vault.process(file, (content) => {
-      const separator = content.length === 0 || content.endsWith('\n') ? '' : '\n';
-      return `${content}${separator}${line}\n`;
-    });
+    await this.app.vault.process(file, (content) => appendTaskLine(content, line));
     return true;
   }
 

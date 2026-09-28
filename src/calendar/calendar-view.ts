@@ -98,6 +98,7 @@ import {
   TaskActionOptions,
   getActionLabels,
   deadlineSections,
+  deleteEntries,
   planSections,
   prioritySections,
   repeatSections,
@@ -1041,6 +1042,12 @@ export class TaskCalendar {
       this.openInspector(item, el);
     });
     el.addEventListener('keydown', (event) => {
+      if (event.key === 'Delete' && this.ctx.host.deleteTask) {
+        event.preventDefault();
+        event.stopPropagation();
+        void this.ctx.host.deleteTask(item.task);
+        return;
+      }
       if (event.key !== 'Enter' && event.key !== ' ') return;
       event.preventDefault();
       event.stopPropagation();
@@ -2291,8 +2298,9 @@ export class TaskCalendar {
 
     this.subtaskList(el, task);
 
+    // Taking it off the calendar keeps the task; deleting takes it out of its note.
+    const foot = el.createDiv({ cls: 'taskpro-cal-inspector__foot' });
     if (schedule) {
-      const foot = el.createDiv({ cls: 'taskpro-cal-inspector__foot' });
       const remove = foot.createEl('button', { cls: 'taskpro-cal-inspector__remove' });
       remove.type = 'button';
       this.icon(remove, 'calendar-x');
@@ -2302,6 +2310,17 @@ export class TaskCalendar {
         this.closePopover();
       });
     }
+    for (const entry of deleteEntries(options())) {
+      const remove = foot.createEl('button', { cls: 'taskpro-cal-inspector__remove is-delete' });
+      remove.type = 'button';
+      this.icon(remove, 'trash-2');
+      remove.createSpan({ text: entry.label });
+      remove.addEventListener('click', () => {
+        this.closePopover();
+        void entry.onSelect?.();
+      });
+    }
+    if (!foot.childElementCount) foot.remove();
   }
 
   /** A task's parent as it is in the note now. */

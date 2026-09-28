@@ -176,9 +176,19 @@ function parseHeadingSetting(value: string): HeadingSetting | null {
   return { text: trimmed };
 }
 
-function appendLine(content: string, line: string): string {
-  const separator = content.length === 0 || content.endsWith('\n') ? '' : '\n';
-  return `${content}${separator}${line}\n`;
+/** A list item, or a line indented under one. */
+const LIST_LINE = /^(?:\s*(?:[-*+]|\d+[.)])(?:\s|$)|\s+\S)/;
+
+/**
+ * Adds a task line at the end of a note. It joins a list the note ends with;
+ * after anything else it starts its own, one blank line down, the way a
+ * list is written in Markdown.
+ */
+export function appendTaskLine(content: string, line: string): string {
+  const body = content.replace(/\s+$/, '');
+  if (!body) return `${line}\n`;
+  const last = body.slice(body.lastIndexOf('\n') + 1);
+  return `${body}${LIST_LINE.test(last) ? '\n' : '\n\n'}${line}\n`;
 }
 
 /**
@@ -186,10 +196,14 @@ function appendLine(content: string, line: string): string {
  * `heading`, or at the end of the note when no heading is set. A heading the
  * note does not have yet is added at the end, with the task under it.
  * Headings inside code blocks are not headings.
+ *
+ * The note is kept tidy the way Markdown is usually written: a blank line
+ * between a heading and its list, a new task joining the list that is
+ * already there, and a blank line again before the next heading.
  */
 export function insertTaskLine(content: string, line: string, heading: string): string {
   const wanted = parseHeadingSetting(heading);
-  if (!wanted) return appendLine(content, line);
+  if (!wanted) return appendTaskLine(content, line);
 
   const lines = content.split('\n');
   const levels: Array<number | null> = [];
@@ -213,9 +227,8 @@ export function insertTaskLine(content: string, line: string, heading: string): 
 
   if (index === -1) {
     const headingLine = `${'#'.repeat(wanted.level ?? 2)} ${wanted.text}`;
-    if (!content.trim()) return `${headingLine}\n${line}\n`;
-    const spacer = content.endsWith('\n\n') ? '' : content.endsWith('\n') ? '\n' : '\n\n';
-    return `${content}${spacer}${headingLine}\n${line}\n`;
+    const body = content.replace(/\s+$/, '');
+    return `${body ? `${body}\n\n` : ''}${headingLine}\n\n${line}\n`;
   }
 
   const level = levels[index]!;
@@ -228,14 +241,31 @@ export function insertTaskLine(content: string, line: string, heading: string): 
     }
   }
 
-  let insertAt = index + 1;
+  // The section's last line with something on it, if it has one.
+  let last = -1;
   for (let i = end - 1; i > index; i--) {
     if (lines[i].trim()) {
-      insertAt = i + 1;
+      last = i;
       break;
     }
   }
-  lines.splice(insertAt, 0, line);
+
+  const insert: string[] = [];
+  let at: number;
+  if (last === -1) {
+    // An empty section: a blank line under the heading, then the list.
+    at = index + 1;
+    insert.push('', line);
+  } else {
+    at = last + 1;
+    // A list goes on; after a paragraph or a subheading a new one starts.
+    if (!LIST_LINE.test(lines[last]) || levels[last] !== null) insert.push('');
+    insert.push(line);
+  }
+  // Something straight after the list, such as the next heading, is kept a line away.
+  const next = lines[at];
+  if (next !== undefined && next.trim()) insert.push('');
+  lines.splice(at, 0, ...insert);
   return lines.join('\n');
 }
 
