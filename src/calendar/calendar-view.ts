@@ -76,14 +76,42 @@ import {
   weekOf,
   weekdayOf,
 } from './calendar-dates';
-import { CalendarItem, CalendarItemKind, PlacedBlock, collectItems, layoutBlocks, unscheduledTasks } from './calendar-items';
+import {
+  CalendarItem,
+  CalendarItemKind,
+  FamilyIndex,
+  PlacedBlock,
+  ancestorsOf,
+  collectItems,
+  descendantsOf,
+  inFamily,
+  indexFamilies,
+  layoutBlocks,
+  rootOf,
+  sidebarRows,
+  unscheduledTasks,
+} from './calendar-items';
 import { CalendarLabels, getCalendarLabels } from './calendar-localization';
 import { PopoverHandle, openCalendarPopover } from './calendar-popover';
 import { scheduleDayText } from './schedule-text';
+import { MenuEntry, MenuSection, openContextMenu } from '../ui/context-menu';
+import {
+  TaskActionOptions,
+  getActionLabels,
+  deadlineSections,
+  prioritySections,
+  repeatSections,
+  statusSections,
+} from '../board/task-actions';
+import { getRepeatLabels } from '../timer-localization';
 
 /** Pixels per hour on the week and day grids. */
 const HOUR_HEIGHT = 48;
 const DAY_MINUTES = 24 * 60;
+/** Heights, in pixels, of a block's lines: a line of title or time, the parent's name, the properties. */
+const BLOCK_LINE = 15.5;
+const BLOCK_CRUMB = 14;
+const BLOCK_PROPS = 21;
 /** Pixels a press has to travel before it is a drag rather than a click. */
 const DRAG_THRESHOLD = 4;
 const AGENDA_DAYS = 14;
@@ -123,6 +151,8 @@ export interface CalendarContext {
   tasks(dailyNotes: ReadonlySet<string>): BoardTask[];
   /** Holds (and releases) repaints from note changes while a drag or a picker is open. Counted. */
   hold(on: boolean): void;
+  /** The task's right-click menu, with the calendar's own rows first. */
+  openTaskActions(task: BoardTask, at: { x: number; y: number } | DOMRect, anchor: HTMLElement, lead?: MenuEntry[]): void;
   /** Repaints the navigation bar and the calendar. */
   refresh(): void;
   /** Repaints the calendar only. */
@@ -218,6 +248,10 @@ export class TaskCalendar {
   private inspectorStale = false;
   /** The tasks of the last render, for pickers opened from it. */
   private lastTasks: BoardTask[] = [];
+  /** Parents and subtasks in the notes the last render drew from. */
+  private families: FamilyIndex = indexFamilies([]);
+  /** Families folded shut in the unscheduled list, by their outermost task's id. */
+  private readonly foldedFamilies = new Set<string>();
   private fallbackTimer: number | null = null;
 
   constructor(private readonly ctx: CalendarContext) {}
@@ -442,6 +476,7 @@ export class TaskCalendar {
     }
     const tasks = this.ctx.tasks(new Set(noteDays.keys()));
     this.lastTasks = tasks;
+    this.families = this.familiesOf(tasks);
 
     const prefs = this.prefs;
     const items = collectItems(tasks, {
@@ -470,6 +505,22 @@ export class TaskCalendar {
     if (refocus) root.focus({ preventScroll: true });
     this.startClock();
     this.refreshInspector();
+  }
+
+  /**
+   * Families read from every task of the notes involved, not only those the
+   * search let through, so a subtask still knows its parent when the parent
+   * is filtered out.
+   */
+  private familiesOf(tasks: readonly BoardTask[]): FamilyIndex {
+    const store = this.ctx.host.store;
+    const paths = new Set(tasks.map((task) => task.filePath));
+    return indexFamilies(Array.from(paths).flatMap((path) => store.inFile(path)));
+  }
+
+  /** The task a subtask is nested under, if it is one. */
+  private parentOf(task: BoardTask): BoardTask | undefined {
+    return task.parentId ? this.families.byId.get(task.parentId) : undefined;
   }
 
   destroy(): void {
@@ -588,6 +639,7 @@ export class TaskCalendar {
         if ((event.target as HTMLElement).closest('.taskpro-cal__chip, button')) return;
         this.openSlotPicker(day, null, cell);
       });
+      cell.addEventListener('contextmenu', (event) => this.openDayMenu(event, day));
     });
 
     this.afterLayout(grid, () => this.fitMonth(grid));
@@ -696,6 +748,7 @@ export class TaskCalendar {
         if ((event.target as HTMLElement).closest('.taskpro-cal__chip, button')) return;
         this.openSlotPicker(day, null, cell);
       });
+      cell.addEventListener('contextmenu', (event) => this.openDayMenu(event, day));
     }
 
     const grid = scroller.createDiv({ cls: 'taskpro-cal__row taskpro-cal__grid' });
@@ -713,6 +766,9 @@ export class TaskCalendar {
         col.createDiv({ cls: 'taskpro-cal__now' }).style.setProperty('--start', String(this.nowMinutes()));
       }
       col.addEventListener('pointerdown', (event) => this.onColumnPointerDown(event, col, day));
+      col.addEventListener('contextmenu', (event) => {
+        if (event.target === col) this.openDayMenu(event, day, col);
+      });
       // Touch has no drag to make a block: a tap on an empty slot opens the picker there.
       col.addEventListener('click', (event) => {
         if (event.target !== col || this.clickGuard || (event as PointerEvent).pointerType !== 'touch') return;
@@ -754,14 +810,30 @@ export class TaskCalendar {
     aside.createDiv({ cls: 'taskpro-cal__sidebar-hint', text: free.length ? labels.unscheduledHint : labels.noUnscheduled });
 
     const list = aside.createDiv({ cls: 'taskpro-cal__sidebar-list' });
-    for (const task of free.slice(0, 300)) {
-      const item: CalendarItem = { id: `free:${task.id}`, kind: 'free', task, day: '' };
+    for (const entry of sidebarRows(free.slice(0, 300), this.families)) {
+      const { task, depth, context, family } = entry;
+      if (family && depth > 0 && this.foldedFamilies.has(family)) continue;
       const row = list.createDiv({ cls: 'taskpro-cal__free' });
-      this.decorate(row, item);
-      this.check(row, task);
+      row.style.setProperty('--depth', String(depth));
+      row.toggleClass('is-child', depth > 0);
+      if (context) {
+        // A parent that is planned, or done, placed here only for its subtasks.
+        row.addClass('is-context');
+        this.markFamily(row, task);
+        row.style.setProperty('--taskpro-cal-accent', this.accent({ kind: 'scheduled', task }));
+        row.setAttribute('role', 'button');
+        row.tabIndex = 0;
+        row.addEventListener('click', () => this.openInspector(this.itemFor(task), row));
+        this.icon(row, task.status === '[x]' ? 'check-circle-2' : 'calendar-check', 'taskpro-cal__free-context-icon');
+      } else {
+        this.decorate(row, { id: `free:${task.id}`, kind: 'free', task, day: '' });
+        this.check(row, task);
+      }
+
       const text = row.createDiv({ cls: 'taskpro-cal__free-text' });
       text.createDiv({ cls: 'taskpro-cal__free-title', text: displayTitle(task.text) || '—', attr: { dir: 'auto' } });
       const meta = text.createDiv({ cls: 'taskpro-cal__free-meta' });
+      if (context && task.schedule) meta.createSpan({ cls: 'taskpro-cal__free-plan', text: this.shortScheduleText(task.schedule) });
       if (task.deadline) {
         const due = meta.createSpan({ cls: 'taskpro-cal__free-due' });
         this.icon(due, 'flag');
@@ -769,8 +841,35 @@ export class TaskCalendar {
         due.dataset.state = getDeadlineInfo(task.deadline, this.language, task.status).state;
       }
       if (task.priority) this.icon(meta, PRIORITY_ICON_NAMES[task.priority], 'taskpro-cal__free-priority');
-      meta.createSpan({ cls: 'taskpro-cal__free-note', text: task.fileName, attr: { dir: 'auto' } });
+      if (depth === 0) meta.createSpan({ cls: 'taskpro-cal__free-note', text: task.fileName, attr: { dir: 'auto' } });
+
+      // The family's outermost task: how far along its subtasks are, and a fold.
+      if (family && depth === 0) {
+        const subtasks = descendantsOf(task, this.families);
+        const done = subtasks.filter((sub) => sub.status === '[x]').length;
+        const fold = row.createEl('button', { cls: 'taskpro-cal__fold' });
+        fold.type = 'button';
+        const folded = this.foldedFamilies.has(family);
+        fold.setAttribute('aria-expanded', String(!folded));
+        fold.setAttribute('aria-label', labels.subtasks);
+        fold.createSpan({ cls: 'taskpro-cal__fold-count', text: labels.subtasksDone(done, subtasks.length) });
+        this.icon(fold, folded ? (this.rtl ? 'chevron-left' : 'chevron-right') : 'chevron-down');
+        fold.addEventListener('pointerdown', (event) => event.stopPropagation());
+        fold.addEventListener('click', (event) => {
+          event.stopPropagation();
+          if (folded) this.foldedFamilies.delete(family);
+          else this.foldedFamilies.add(family);
+          this.ctx.rerender();
+        });
+      }
     }
+  }
+
+  /** A task as the item a card is opened for: planned, or not. */
+  private itemFor(task: BoardTask): CalendarItem {
+    return task.schedule
+      ? { id: `scheduled:${task.id}`, kind: 'scheduled', task, day: task.schedule.date }
+      : { id: `free:${task.id}`, kind: 'free', task, day: '' };
   }
 
   // ── Agenda ────────────────────────────────────────────────────────────────
@@ -784,6 +883,7 @@ export class TaskCalendar {
       const section = root.createDiv({ cls: 'taskpro-cal__agenda-day' });
       this.markDay(section, day, today);
       section.dataset.drop = 'day';
+      section.addEventListener('contextmenu', (event) => this.openDayMenu(event, day));
 
       const head = section.createDiv({ cls: 'taskpro-cal__agenda-head' });
       const number = head.createEl('button', { cls: 'taskpro-cal__agenda-num', text: String(partsIn(day, system).day) });
@@ -828,6 +928,19 @@ export class TaskCalendar {
     return button;
   }
 
+  /**
+   * Keys and what they do, as key caps: the caps stay left to right whatever
+   * the language, so `Esc` never ends up between two Persian words.
+   */
+  private keyHints(parent: HTMLElement, hints: Array<[key: string, action: string]>): void {
+    const row = parent.createDiv({ cls: 'taskpro-cal-keys' });
+    for (const [key, action] of hints) {
+      const hint = row.createSpan({ cls: 'taskpro-cal-keys__hint' });
+      hint.createEl('kbd', { cls: 'taskpro-cal-keys__key', text: key, attr: { dir: 'ltr' } });
+      hint.createSpan({ cls: 'taskpro-cal-keys__action', text: action });
+    }
+  }
+
   /** The item's colour: its first tag's, else its status's; a deadline's urgency for a due flag. */
   private accent(item: Pick<CalendarItem, 'kind' | 'task'>): string {
     const task = item.task;
@@ -835,6 +948,9 @@ export class TaskCalendar {
       return DEADLINE_ACCENT[getDeadlineInfo(task.deadline, this.language, task.status).state] ?? STATUS_ACCENT['[ ]'];
     }
     if (task.tags.length) return resolveTagColor(resolveTag(task.tags[0], this.settings.tags).color);
+    // A subtask with no tag of its own wears its parent's, so a family reads as one.
+    const tagged = ancestorsOf(task, this.families).find((ancestor) => ancestor.tags.length);
+    if (tagged) return resolveTagColor(resolveTag(tagged.tags[0], this.settings.tags).color);
     return STATUS_ACCENT[task.status];
   }
 
@@ -858,6 +974,8 @@ export class TaskCalendar {
   private describe(item: CalendarItem): string {
     const task = item.task;
     const lines = [displayTitle(task.text) || '—'];
+    const parent = this.parentOf(task);
+    if (parent) lines.push(`${this.labels.partOf}: ${displayTitle(parent.text) || '—'}`);
     if (task.schedule) lines.push(this.scheduleText(task.schedule));
     if (task.deadline) lines.push(`${this.labels.due} ${mediumDay(task.deadline, this.system, this.language)}`);
     lines.push(task.fileName);
@@ -872,6 +990,7 @@ export class TaskCalendar {
     el.dataset.status = item.task.status;
     el.style.setProperty('--taskpro-cal-accent', this.accent(item));
     el.toggleClass('is-done', item.task.status === '[x]');
+    this.markFamily(el, item.task);
     el.setAttribute('role', 'button');
     el.tabIndex = 0;
     el.title = this.describe(item);
@@ -886,6 +1005,121 @@ export class TaskCalendar {
       event.preventDefault();
       event.stopPropagation();
       this.openInspector(item, el);
+    });
+    el.addEventListener('contextmenu', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (this.drag?.started) return;
+      this.closePopover();
+      const openCard: MenuEntry = {
+        label: this.labels.openCard,
+        icon: 'panel-top-open',
+        hint: 'Enter',
+        onSelect: () => {
+          if (el.isConnected) this.openInspector(item, el);
+        },
+      };
+      this.ctx.openTaskActions(item.task, { x: event.clientX, y: event.clientY }, el, [openCard]);
+    });
+  }
+
+  /**
+   * Tags a family's members with their outermost task, and on hover rings
+   * every member on screen, so subtasks planned apart are still seen together.
+   */
+  private markFamily(el: HTMLElement, task: BoardTask): void {
+    if (!inFamily(task, this.families)) return;
+    const family = rootOf(task, this.families).id;
+    el.dataset.family = family;
+    el.addEventListener('pointerenter', () => {
+      if (this.drag?.started) return;
+      this.rootEl?.querySelectorAll<HTMLElement>('[data-family]').forEach((other) => {
+        other.toggleClass('is-family-lit', other.dataset.family === family && other !== el);
+      });
+    });
+    el.addEventListener('pointerleave', () => {
+      this.rootEl?.querySelectorAll('.is-family-lit').forEach((other) => other.removeClass('is-family-lit'));
+    });
+  }
+
+  /** The parent's name, small, above a subtask's title. */
+  private parentCrumb(parent: HTMLElement, task: BoardTask, cls: string): void {
+    const up = this.parentOf(task);
+    if (!up) return;
+    const crumb = parent.createDiv({ cls: `taskpro-cal__crumb ${cls}` });
+    this.icon(crumb, this.rtl ? 'corner-down-left' : 'corner-down-right', 'taskpro-cal__crumb-icon');
+    crumb.createSpan({ cls: 'taskpro-cal__crumb-text', text: displayTitle(up.text) || '—', attr: { dir: 'auto' } });
+  }
+
+  /** What the task menus need to know, for one task. */
+  private actionOptions(task: BoardTask, anchor: HTMLElement): TaskActionOptions {
+    return {
+      host: this.ctx.host,
+      task,
+      language: this.language,
+      calendarSystem: this.system,
+      timeFormat: this.cal.timeFormat,
+      tags: this.settings.tags,
+      anchor,
+    };
+  }
+
+  /** One property's choices, opened under its chip in the task card. */
+  private dropdown(chip: HTMLElement, sections: MenuSection[]): void {
+    this.ctx.hold(true);
+    openContextMenu({
+      container: this.ctx.root,
+      at: chip.getBoundingClientRect(),
+      rtl: this.rtl,
+      sections,
+      onClose: () => this.ctx.hold(false),
+    });
+  }
+
+  /**
+   * Right click on an empty slot or day: a task there, the day's note, the
+   * day on its own.
+   */
+  private openDayMenu(event: MouseEvent, day: DayKey, col?: HTMLElement): void {
+    event.preventDefault();
+    event.stopPropagation();
+    if (this.drag?.started) return;
+    this.closePopover();
+    const labels = this.labels;
+    const point = { x: event.clientX, y: event.clientY };
+    const entries: MenuEntry[] = [];
+    if (col) {
+      const start = this.floorSlot(this.minutesAt(event.clientY, col));
+      const end = Math.min(DAY_MINUTES, start + this.defaultDuration);
+      entries.push({
+        label: labels.newTaskAt(formatClock(start, this.cal.timeFormat, this.language)),
+        icon: 'plus',
+        onSelect: () => {
+          if (!col.isConnected) return;
+          const preview = this.createPreview(col, start, end);
+          this.openSlotPicker(day, { start, end }, preview, () => preview.remove());
+        },
+      });
+    } else {
+      entries.push({
+        label: labels.newTaskOnDay,
+        icon: 'plus',
+        onSelect: () => this.openSlotPicker(day, null, new DOMRect(point.x, point.y, 1, 1)),
+      });
+    }
+    const more: MenuEntry[] = [];
+    if (this.ctx.host.openDailyNote) {
+      more.push({ label: labels.openDailyNote, icon: 'file-text', onSelect: () => this.ctx.host.openDailyNote?.(day, this.system) });
+    }
+    if (this.view !== 'day') more.push({ label: labels.viewDay, icon: 'calendar-days', onSelect: () => this.openDay(day) });
+    this.ctx.hold(true);
+    openContextMenu({
+      container: this.ctx.root,
+      at: point,
+      rtl: this.rtl,
+      header: longDay(day, this.system, this.language),
+      sections: [{ entries }, { entries: more }],
+      onClose: () => this.ctx.hold(false),
     });
   }
 
@@ -933,13 +1167,50 @@ export class TaskCalendar {
     el.toggleClass('is-compact', end - start >= 45 && end - start < 75);
     this.decorate(el, item);
 
+    // From an hour and a quarter there is room for the parent's name above the title.
+    // What fits is worked out from the block's height: the time always, the
+    // parent's name and the properties when there is room, and as many lines
+    // of title as are left, so nothing is cut through the middle.
+    const duration = end - start;
+    let room = (duration * HOUR_HEIGHT) / 60 - 2 - 8 - BLOCK_LINE;
+    const crumb = duration >= 75 && !!this.parentOf(item.task);
+    if (crumb) room -= BLOCK_CRUMB;
+    let props = duration >= 90 && this.hasBlockProps(item);
+    if (props && room - BLOCK_PROPS < BLOCK_LINE * 2) props = false;
+    if (props) room -= BLOCK_PROPS;
+    el.style.setProperty('--title-lines', String(clamp(Math.floor(room / BLOCK_LINE), 1, 4)));
+
+    if (crumb) this.parentCrumb(el, item.task, 'taskpro-cal__block-crumb');
     const top = el.createDiv({ cls: 'taskpro-cal__block-top' });
     this.check(top, item.task);
     top.createSpan({ cls: 'taskpro-cal__block-title', text: displayTitle(item.task.text) || '—', attr: { dir: 'auto' } });
     if (item.dueHere) this.icon(top, 'flag', 'taskpro-cal__chip-flag is-due-here');
     el.createDiv({ cls: 'taskpro-cal__block-time', text: formatClockRange(start, end, this.cal.timeFormat, this.language) });
+    if (props) this.blockProps(el, item);
     el.createDiv({ cls: 'taskpro-cal__resize is-start' });
     el.createDiv({ cls: 'taskpro-cal__resize is-end' });
+  }
+
+  private hasBlockProps(item: CalendarItem): boolean {
+    const task = item.task;
+    return !!task.priority || !!task.repeat || (!!task.deadline && !item.dueHere) || task.tags.length > 0;
+  }
+
+  private blockProps(el: HTMLElement, item: CalendarItem): void {
+    const task = item.task;
+    const props = el.createDiv({ cls: 'taskpro-cal__block-props' });
+    if (task.priority) this.icon(props, PRIORITY_ICON_NAMES[task.priority], 'taskpro-cal__block-prop').dataset.priority = task.priority;
+    if (task.repeat) this.icon(props, 'repeat', 'taskpro-cal__block-prop');
+    if (task.deadline && !item.dueHere) {
+      const due = props.createSpan({ cls: 'taskpro-cal__block-prop is-due' });
+      this.icon(due, 'flag');
+      due.createSpan({ text: shortDay(task.deadline, this.system, this.language) });
+    }
+    for (const key of task.tags.slice(0, 2)) {
+      const tag = resolveTag(key, this.settings.tags);
+      applyTagColor(props.createSpan({ cls: 'taskpro-chip taskpro-tag-chip taskpro-cal__block-tag', text: tag.name }), tag.color);
+    }
+    if (!props.childElementCount) props.remove();
   }
 
   private agendaRow(list: HTMLElement, item: CalendarItem): void {
@@ -957,7 +1228,9 @@ export class TaskCalendar {
     row.createDiv({ cls: 'taskpro-cal__agenda-bar' });
     if (item.kind === 'due') this.icon(row, 'flag', 'taskpro-cal__chip-flag');
     else this.check(row, task);
-    row.createDiv({ cls: 'taskpro-cal__agenda-title', text: displayTitle(task.text) || '—', attr: { dir: 'auto' } });
+    const titles = row.createDiv({ cls: 'taskpro-cal__agenda-titles' });
+    this.parentCrumb(titles, task, 'taskpro-cal__agenda-crumb');
+    titles.createDiv({ cls: 'taskpro-cal__agenda-title', text: displayTitle(task.text) || '—', attr: { dir: 'auto' } });
 
     const meta = row.createDiv({ cls: 'taskpro-cal__agenda-meta' });
     for (const key of task.tags.slice(0, 3)) {
@@ -1379,14 +1652,16 @@ export class TaskCalendar {
     const format = this.cal.timeFormat;
     const row = parent.createDiv({ cls: 'taskpro-cal-times' });
     row.toggleClass('is-12h', format === '12h');
+    // The two times read left to right, from and to, as they do on the blocks.
+    const range = row.createDiv({ cls: 'taskpro-cal-times__range', attr: { dir: 'ltr' } });
     const field = (label: string) =>
-      row.createEl('input', {
+      range.createEl('input', {
         type: 'text',
         cls: 'taskpro-cal-times__input',
         attr: { 'aria-label': label, dir: 'ltr', autocomplete: 'off', spellcheck: 'false' },
       });
     const start = field(labels.from);
-    row.createSpan({ cls: 'taskpro-cal-times__sep', text: '–' });
+    range.createSpan({ cls: 'taskpro-cal-times__sep', text: '–' });
     const end = field(labels.to);
     const allDay = row.createEl('label', { cls: 'taskpro-cal-times__allday' });
     const box = allDay.createEl('input', { type: 'checkbox' });
@@ -1535,10 +1810,16 @@ export class TaskCalendar {
     if (target) {
       const note = foot.createDiv({ cls: 'taskpro-cal-popover__note' });
       this.icon(note, target.exists ? 'file-text' : 'file-plus');
-      note.createSpan({ text: target.exists ? labels.addsTo(noteName(target.path)) : labels.createsNote(noteName(target.path)), attr: { dir: 'auto' } });
+      note.createSpan({
+        cls: 'taskpro-cal-popover__note-text',
+        text: target.exists ? labels.addsTo(noteName(target.path)) : labels.createsNote(noteName(target.path)),
+      });
       note.title = target.path;
     }
-    foot.createDiv({ cls: 'taskpro-cal-popover__hint', text: labels.pickerHint });
+    this.keyHints(foot, [
+      ['Enter', labels.keyCreate],
+      ['Esc', labels.keyClose],
+    ]);
 
     type Option = { kind: 'create'; text: string } | { kind: 'task'; task: BoardTask };
     let active = 0;
@@ -1593,11 +1874,14 @@ export class TaskCalendar {
           const dot = row.createSpan({ cls: 'taskpro-cal-picker__dot' });
           dot.style.setProperty('--taskpro-cal-accent', this.accent({ kind: 'scheduled', task }));
           row.createSpan({ cls: 'taskpro-cal-picker__option-title', text: displayTitle(task.text) || '—', attr: { dir: 'auto' } });
+          const parent = this.parentOf(task);
           const meta = task.schedule
             ? labels.scheduledAt(this.shortScheduleText(task.schedule))
             : task.deadline
               ? `${labels.due} ${shortDay(task.deadline, system, language)}`
-              : task.fileName;
+              : parent
+                ? displayTitle(parent.text) || task.fileName
+                : task.fileName;
           row.createSpan({ cls: 'taskpro-cal-picker__option-meta', text: meta, attr: { dir: 'auto' } });
         }
         // Keeps the text field focused, so typing can go on after a click misses.
@@ -1639,13 +1923,14 @@ export class TaskCalendar {
 
   // ── The task card ─────────────────────────────────────────────────────────
 
-  private openInspector(item: CalendarItem, anchor: HTMLElement): void {
+  private openInspector(item: CalendarItem, anchor: HTMLElement | DOMRect): void {
+    const rect = anchor instanceof DOMRect ? anchor : anchor.getBoundingClientRect();
     this.closePopover();
     this.inspected = { task: item.task, kind: item.kind, day: item.day };
     this.inspectorStale = false;
     this.popover = openCalendarPopover({
       container: this.ctx.root,
-      anchor: anchor.getBoundingClientRect(),
+      anchor: rect,
       cls: 'taskpro-cal-inspector',
       rtl: this.rtl,
       onClose: () => {
@@ -1679,7 +1964,11 @@ export class TaskCalendar {
     const popover = this.popover;
     const inspected = this.inspected;
     if (!popover?.isOpen || !inspected) return;
-    if (popover.el.contains(this.doc.activeElement) && this.doc.activeElement?.matches('input')) {
+    const active = this.doc.activeElement;
+    // The add-a-subtask field is left empty after each one, so the list can
+    // be redrawn under it; any other field is waited for.
+    const adding = !!active?.matches('.taskpro-cal-inspector__subtask-add') && !(active as HTMLInputElement).value;
+    if (popover.el.contains(active) && active?.matches('input') && !adding) {
       this.inspectorStale = true;
       return;
     }
@@ -1698,6 +1987,7 @@ export class TaskCalendar {
     }
     this.buildInspector(popover.el);
     popover.reposition();
+    if (adding) popover.el.querySelector<HTMLInputElement>('.taskpro-cal-inspector__subtask-add')?.focus();
   }
 
   private buildInspector(el: HTMLElement): void {
@@ -1727,6 +2017,17 @@ export class TaskCalendar {
       }
     });
     this.iconButton(top, 'arrow-up-right', labels.openNote, () => void host.reveal(task));
+
+    // The task it is part of, one click away
+    const parent = this.freshParent(task);
+    if (parent) {
+      const up = el.createEl('button', { cls: 'taskpro-cal-inspector__parent' });
+      up.type = 'button';
+      this.icon(up, this.rtl ? 'corner-right-up' : 'corner-left-up');
+      up.createSpan({ cls: 'taskpro-cal-inspector__parent-label', text: labels.partOf });
+      up.createSpan({ cls: 'taskpro-cal-inspector__parent-title', text: displayTitle(parent.text) || '—', attr: { dir: 'auto' } });
+      up.addEventListener('click', () => this.openInspector(this.itemFor(parent), el.getBoundingClientRect()));
+    }
 
     // Why it is on this day, when it is not planned there
     const context =
@@ -1773,55 +2074,32 @@ export class TaskCalendar {
     });
     this.timeFields(when, edit.time, commit);
 
-    // Properties, as chips that open the board's own editors
+    // Properties, as chips that open their choices right under them
     const props = el.createDiv({ cls: 'taskpro-cal-inspector__props' });
+    const actions = () => this.actionOptions(task, props);
     const status = buildChip('taskpro-interactive-badge', STATUS_ICON_NAMES[task.status], STATUS_LABELS[language][task.status]);
     status.dataset.status = task.status;
-    this.chipButton(props, status, (event) => {
-      const menu = new Menu();
-      for (const value of BOARD_STATUS_ORDER) {
-        menu.addItem((item) =>
-          item
-            .setTitle(STATUS_LABELS[language][value])
-            .setIcon(STATUS_ICON_NAMES[value])
-            .setChecked(task.status === value)
-            .onClick(() => {
-              if (value !== task.status) void host.setStatus(task, value);
-            })
-        );
-      }
-      menu.showAtMouseEvent(event);
-    });
+    this.chipButton(props, status, () => this.dropdown(status, statusSections(actions())));
 
     const priority = task.priority
       ? buildChip('taskpro-priority-badge', PRIORITY_ICON_NAMES[task.priority], PRIORITY_LABELS[language][task.priority])
       : buildChip('taskpro-cal-inspector__unset', 'flag', board.columns.priority);
     if (task.priority) priority.dataset.priority = task.priority;
-    this.chipButton(props, priority, (event) => {
-      const menu = new Menu();
-      for (const level of TASK_PRIORITIES) {
-        menu.addItem((item) =>
-          item
-            .setTitle(PRIORITY_LABELS[language][level])
-            .setIcon(PRIORITY_ICON_NAMES[level])
-            .setChecked(task.priority === level)
-            .onClick(() => {
-              if (level !== task.priority) void host.setPriority(task, level);
-            })
-        );
-      }
-      if (task.priority) {
-        menu.addSeparator();
-        menu.addItem((item) => item.setTitle(board.noPriority).setIcon('x').onClick(() => void host.setPriority(task, null)));
-      }
-      menu.showAtMouseEvent(event);
-    });
+    this.chipButton(props, priority, () => this.dropdown(priority, prioritySections(actions())));
 
     const deadline = task.deadline
       ? buildChip('taskpro-deadline-badge', CHIP_ICON_NAMES.deadline, getDeadlineInfo(task.deadline, language, task.status).text)
       : buildChip('taskpro-cal-inspector__unset', CHIP_ICON_NAMES.deadline, board.columns.deadline);
     if (task.deadline) deadline.dataset.state = getDeadlineInfo(task.deadline, language, task.status).state;
-    this.chipButton(props, deadline, () => void host.editDeadline(task));
+    this.chipButton(props, deadline, () => this.dropdown(deadline, deadlineSections(actions())));
+
+    if (host.setRepeat) {
+      const repeatLabels = getRepeatLabels(language);
+      const repeat = task.repeat
+        ? buildChip('taskpro-repeat-badge', CHIP_ICON_NAMES.repeat, repeatLabels.chip(task.repeat))
+        : buildChip('taskpro-cal-inspector__unset', CHIP_ICON_NAMES.repeat, repeatLabels.repeatLabel);
+      this.chipButton(props, repeat, () => this.dropdown(repeat, repeatSections(actions())));
+    }
 
     if (task.tags.length) {
       for (const key of task.tags) {
@@ -1835,6 +2113,8 @@ export class TaskCalendar {
       this.chipButton(props, buildChip('taskpro-cal-inspector__unset', CHIP_ICON_NAMES.tag, board.columns.tags), () => host.editTags(task));
     }
 
+    this.subtaskList(el, task);
+
     // Where it lives, and the rest
     const foot = el.createDiv({ cls: 'taskpro-cal-popover__foot taskpro-cal-inspector__foot' });
     const note = foot.createEl('button', { cls: 'taskpro-board__note taskpro-cal-inspector__note' });
@@ -1844,16 +2124,91 @@ export class TaskCalendar {
     note.createSpan({ cls: 'taskpro-board__note-name', text: task.fileName, attr: { dir: 'auto' } });
     note.addEventListener('click', () => void host.reveal(task));
 
-    const actions = foot.createDiv({ cls: 'taskpro-cal-inspector__actions' });
+    const actionsEl = foot.createDiv({ cls: 'taskpro-cal-inspector__actions' });
     if (schedule) {
-      const remove = actions.createEl('button', { cls: 'taskpro-cal-inspector__remove', text: labels.unschedule });
+      const remove = actionsEl.createEl('button', { cls: 'taskpro-cal-inspector__remove', text: labels.unschedule });
       remove.type = 'button';
       remove.addEventListener('click', () => {
         void this.writeSchedule(task, null);
         this.closePopover();
       });
     }
-    const more = this.iconButton(actions, 'more-horizontal', labels.moreActions, () => host.openTaskMenu(task, more));
+    const more = this.iconButton(actionsEl, 'more-horizontal', labels.moreActions, () =>
+      this.ctx.openTaskActions(task, more.getBoundingClientRect(), more)
+    );
+  }
+
+  /** A task's parent as it is in the note now. */
+  private freshParent(task: BoardTask): BoardTask | undefined {
+    if (!task.parentId) return undefined;
+    return this.ctx.host.store.inFile(task.filePath).find((candidate) => candidate.id === task.parentId);
+  }
+
+  /**
+   * The card's subtasks: each with its checkbox and when it is planned, a
+   * click away from its own card, and a row to add one more.
+   */
+  private subtaskList(el: HTMLElement, task: BoardTask): void {
+    const labels = this.labels;
+    const host = this.ctx.host;
+    const subtasks = host.store.inFile(task.filePath).filter((candidate) => candidate.parentId === task.id);
+    if (!subtasks.length && !host.insertTask) return;
+
+    const section = el.createDiv({ cls: 'taskpro-cal-inspector__subtasks' });
+    const head = section.createDiv({ cls: 'taskpro-cal-inspector__subtasks-head' });
+    head.createSpan({ text: labels.subtasks });
+    if (subtasks.length) {
+      const done = subtasks.filter((sub) => sub.status === '[x]').length;
+      head.createSpan({ cls: 'taskpro-cal-inspector__subtasks-count', text: labels.subtasksDone(done, subtasks.length) });
+      const bar = head.createSpan({ cls: 'taskpro-cal-inspector__subtasks-bar' });
+      bar.style.setProperty('--done', String(done / subtasks.length));
+    }
+
+    for (const sub of subtasks) {
+      const row = section.createDiv({ cls: 'taskpro-cal-inspector__subtask' });
+      row.style.setProperty('--taskpro-cal-accent', this.accent({ kind: 'scheduled', task: sub }));
+      row.toggleClass('is-done', sub.status === '[x]');
+      this.check(row, sub);
+      row.createSpan({ cls: 'taskpro-cal-inspector__subtask-title', text: displayTitle(sub.text) || '—', attr: { dir: 'auto' } });
+      row.createSpan({
+        cls: 'taskpro-cal-inspector__subtask-when',
+        text: sub.schedule ? this.shortScheduleText(sub.schedule) : labels.notPlanned,
+      }).toggleClass('is-unplanned', !sub.schedule);
+      row.setAttribute('role', 'button');
+      row.tabIndex = 0;
+      const open = () => this.openInspector(this.itemFor(sub), el.getBoundingClientRect());
+      row.addEventListener('click', open);
+      row.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter') return;
+        event.preventDefault();
+        open();
+      });
+      row.addEventListener('contextmenu', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        this.ctx.openTaskActions(sub, { x: event.clientX, y: event.clientY }, row);
+      });
+    }
+
+    if (!host.insertTask) return;
+    const add = section.createEl('input', {
+      type: 'text',
+      cls: 'taskpro-cal-inspector__subtask-add',
+      attr: { placeholder: getActionLabels(this.language).addSubtask, dir: 'auto', spellcheck: 'false' },
+    });
+    add.dataset.ownEscape = 'true';
+    add.addEventListener(OWN_ESCAPE_EVENT, () => {
+      add.value = '';
+      add.blur();
+    });
+    add.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' || event.isComposing) return;
+      event.preventDefault();
+      const text = add.value.replace(/\s+/g, ' ').trim();
+      if (!text) return;
+      add.value = '';
+      void host.insertTask?.(task, `- [ ] ${text}`, 'child');
+    });
   }
 
   private scheduleTimes(schedule: TaskSchedule): { start: number; end: number } | null {

@@ -77,7 +77,32 @@ eq(tasks[0].deadline, '2026-09-27', 'deadline');
 eq(tasks[1].depth, 4, 'subtask depth from indentation');
 eq(tasks[4].repeat, { every: 1, unit: 'week' }, 'repeat rule');
 eq(tasks[0].fileName, 'W39', 'note name without folder or extension');
-eq(parseBoardTasks('a.md', note).length, 7, 'without the cache, only the regex decides');
+eq(parseBoardTasks('a.md', note).length, 6, 'without the cache, code blocks are still skipped');
+eq(tasks[1].parentId, tasks[0].id, 'a subtask points at its parent');
+eq(tasks[0].parentId, undefined, 'a top-level task has no parent');
+
+// ── subtasks under a parent, with notes between them ──────────────────────
+const nested = parseBoardTasks('Plan.md', [
+  '- [ ] Figma',
+  '    - [ ] Auto layout',
+  '        - learn it well enough to try ideas',
+  '    - [ ] Prototyping',
+  '        - [ ] Smart animate',
+  '    - note under the parent',
+  '        - [ ] Paid features',
+  '',
+  '    - [ ] After a blank line',
+  'A paragraph ends the list.',
+  '    - [ ] Not a child of Figma',
+  '- [ ] Next',
+].join('\n'));
+const byText = Object.fromEntries(nested.map((t) => [t.text, t]));
+eq(byText['Auto layout'].parentId, 'Plan.md:0', 'direct child');
+eq(byText['Smart animate'].parentId, 'Plan.md:3', 'grandchild points at its own parent');
+eq(byText['Paid features'].parentId, 'Plan.md:0', 'a plain bullet in between keeps the nearest task');
+eq(byText['After a blank line'].parentId, 'Plan.md:0', 'a blank line does not end the list');
+eq(byText['Not a child of Figma'].parentId, undefined, 'a paragraph at the margin does');
+eq(byText['Next'].parentId, undefined, 'a sibling at the top level');
 
 // ── deadline buckets ───────────────────────────────────────────────────────
 eq(daysUntil('2026-09-27', today), 3, 'three days out');

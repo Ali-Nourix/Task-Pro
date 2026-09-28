@@ -241,6 +241,67 @@ try {
   ok(faDaily && /^Daily\/14\d\d-\d\d-\d\d\.md$/.test(faDaily), `a Jalali calendar names the new note in Jalali (${faDaily})`);
   eq(page.errors, [], 'no page errors in RTL');
   await page.close();
+
+  // ── Right-click menu, subtasks, and times in Persian ────────────────────
+  page = await open('cal=week');
+  const auto = page.locator('.taskpro-cal__block:has-text("Auto layout")');
+  eq((await auto.getAttribute('data-family')) === (await page.locator('.taskpro-cal__block:has-text("Prototyping")').getAttribute('data-family')), true, 'subtasks planned apart share their family');
+  ok((await auto.locator('.taskpro-cal__crumb').textContent()).includes('Learn Figma'), 'a long enough block names its parent');
+  await auto.hover();
+  await page.waitForTimeout(50);
+  eq(await page.locator('.taskpro-cal__block:has-text("Prototyping")').evaluate((el) => el.classList.contains('is-family-lit')), true, 'hovering one member rings the others');
+  const rows = await page.locator('.taskpro-cal__sidebar-list .taskpro-cal__free').evaluateAll((els) =>
+    els.map((el) => `${el.style.getPropertyValue('--depth')}:${el.querySelector('.taskpro-cal__free-title').textContent}`)
+  );
+  const at = rows.indexOf('0:Learn Figma');
+  ok(at !== -1 && rows[at + 1] === '1:Paid features', `the unscheduled list keeps a family together (${rows.slice(at, at + 2)})`);
+
+  await auto.click({ button: 'right' });
+  eq(await page.locator('.taskpro-menu').count(), 1, 'a right click opens the task menu');
+  eq(await page.locator('.taskpro-menu__header').textContent(), 'Auto layout', 'titled with the task');
+  await page.locator('.taskpro-menu__item:has-text("Priority")').hover();
+  await page.waitForTimeout(200);
+  await page.locator('.taskpro-menu.is-submenu .taskpro-menu__item:has-text("High")').first().click();
+  await page.waitForTimeout(100);
+  ok((await lineWith(page, 'Auto layout')).includes('@priority(highest)'), 'a submenu choice is written');
+  eq(await page.locator('.taskpro-menu').count(), 0, 'and closes the menu');
+
+  await auto.click({ button: 'right' });
+  await page.keyboard.type('every week');
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(100);
+  ok((await lineWith(page, 'Auto layout')).includes('@repeat(1w)'), 'the menu’s search reaches into submenus');
+  await auto.click({ button: 'right' });
+  await page.keyboard.press('Escape');
+  eq(await page.locator('.taskpro-menu').count(), 0, 'Escape closes it');
+
+  // The parent's card lists its subtasks, and takes a new one.
+  await page.locator('.taskpro-cal__free:has-text("Learn Figma")').click();
+  eq(await page.locator('.taskpro-cal-inspector__subtask').count(), 3, 'the card lists the subtasks');
+  await page.locator('.taskpro-cal-inspector__subtask-add').fill('Components');
+  await page.locator('.taskpro-cal-inspector__subtask-add').press('Enter');
+  await page.waitForTimeout(150);
+  eq((await notes(page))['Projects/Figma.md'].split('\n').pop(), '    - [ ] Components', 'a subtask added from the card goes under its parent');
+  eq(await page.locator('.taskpro-cal-inspector__subtask').count(), 4, 'and shows in the card at once');
+  await page.locator('.taskpro-cal-inspector__subtask:has-text("Prototyping")').click();
+  ok((await page.locator('.taskpro-cal-inspector__parent').textContent()).includes('Learn Figma'), 'a subtask’s card links back to its parent');
+  await page.keyboard.press('Escape');
+
+  // Right click on an empty slot offers a task at that time.
+  const emptyCol = await column(page, inDays(0), 12);
+  await page.mouse.click(emptyCol.x + emptyCol.width / 2, emptyCol.y + 15 * HOUR + 5, { button: 'right' });
+  ok((await page.locator('.taskpro-menu__item').first().textContent()).includes('15:00'), 'an empty slot’s menu starts a task at its time');
+  await page.locator('.taskpro-menu__item').first().click();
+  eq(await page.locator('.taskpro-cal-picker').count(), 1, 'and opens the picker there');
+  await page.keyboard.press('Escape');
+  eq(page.errors, [], 'no page errors with menus');
+  await page.close();
+
+  page = await open('cal=week&lang=fa');
+  const faTime = await page.locator('.taskpro-cal__block-time').first().evaluate((el) => getComputedStyle(el).direction);
+  eq(faTime, 'ltr', 'a time range reads left to right in Persian');
+  eq(page.errors, [], 'no page errors in the Persian week');
+  await page.close();
 } finally {
   await browser.close();
 }

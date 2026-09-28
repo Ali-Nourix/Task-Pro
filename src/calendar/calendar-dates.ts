@@ -7,6 +7,7 @@
 
 import { CalendarSystem, Language, TimeFormat, WeekStart } from '../types';
 import { gregorianToJalali, jalaliToGregorian } from '../date-utils';
+import { isolateLtr } from '../bidi';
 
 /** A day as `YYYY-MM-DD`, Gregorian. */
 export type DayKey = string;
@@ -445,7 +446,14 @@ export function formatHour(hour: number, format: TimeFormat, language: Language)
   return `${hours24 % 12 || 12} ${MERIDIEM[language][hours24 < 12 ? 0 : 1]}`;
 }
 
-/** `09:00 – 10:30`. */
+/**
+ * `09:00 – 10:30`. In Persian a 24-hour range is kept left to right as one
+ * piece: otherwise the bidi algorithm lays its two Latin-digit times out from
+ * the right, and it reads `10:30 – 09:00`. A 12-hour one has Persian words in
+ * it and reads right to left like the text around it.
+ */
 export function formatClockRange(start: number, end: number, format: TimeFormat, language: Language): string {
-  return `${formatClock(start, format, language)} – ${formatClock(end, format, language)}`;
+  const range = `${formatClock(start, format, language)} – ${formatClock(end, format, language)}`;
+  return language === 'fa' && format === '24h' ? isolateLtr(range) : range;
 }
+

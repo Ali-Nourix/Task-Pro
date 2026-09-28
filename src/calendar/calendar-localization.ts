@@ -2,6 +2,7 @@
 // Text for the calendar layout of the task board.
 
 import { CalendarSystem, CalendarView, Language } from '../types';
+import { isolate } from '../bidi';
 
 export interface CalendarLabels {
   layout: string;
@@ -25,7 +26,9 @@ export interface CalendarLabels {
   scheduledAt: (when: string) => string;
   addsTo: (note: string) => string;
   createsNote: (note: string) => string;
-  pickerHint: string;
+  /** The keys at the foot of the picker, each next to what it does. */
+  keyCreate: string;
+  keyClose: string;
   date: string;
   from: string;
   to: string;
@@ -37,6 +40,13 @@ export interface CalendarLabels {
   openNote: string;
   openDailyNote: string;
   moreActions: string;
+  openCard: string;
+  newTaskAt: (time: string) => string;
+  newTaskOnDay: string;
+  viewDay: string;
+  subtasks: string;
+  subtasksDone: (done: number, total: number) => string;
+  partOf: string;
   editTitle: string;
   viewOptions: string;
   showDeadlines: string;
@@ -66,15 +76,16 @@ const EN: CalendarLabels = {
   noUnscheduled: 'Every open task has a place on the calendar.',
   nothingPlanned: 'Nothing planned',
   more: (count) => `${count} more`,
-  addOn: (day) => `Add a task on ${day}`,
+  addOn: (day) => `Add a task on ${isolate(day)}`,
   newTask: 'New task',
   searchOrCreate: 'Type a new task, or find one…',
-  create: (text) => `Create “${text}”`,
+  create: (text) => `Create “${isolate(text)}”`,
   existing: 'Plan an existing task',
-  scheduledAt: (when) => `Planned · ${when}`,
-  addsTo: (note) => `Goes into ${note}`,
-  createsNote: (note) => `Creates ${note}`,
-  pickerHint: '↵ create · esc close',
+  scheduledAt: (when) => `Planned · ${isolate(when)}`,
+  addsTo: (note) => `Goes into ${isolate(note)}`,
+  createsNote: (note) => `Creates ${isolate(note)}`,
+  keyCreate: 'create',
+  keyClose: 'close',
   date: 'Date',
   from: 'From',
   to: 'To',
@@ -86,15 +97,22 @@ const EN: CalendarLabels = {
   openNote: 'Open in note',
   openDailyNote: 'Open the daily note',
   moreActions: 'All actions',
+  openCard: 'Open card',
+  newTaskAt: (time) => `New task at ${isolate(time)}`,
+  newTaskOnDay: 'New task on this day',
+  viewDay: 'Open day view',
+  subtasks: 'Subtasks',
+  subtasksDone: (done, total) => `${done}/${total}`,
+  partOf: 'Part of',
   editTitle: 'Click to edit',
   viewOptions: 'View options',
   showDeadlines: 'Show deadlines',
   showDailyNotes: 'Show tasks from daily notes',
   showDone: 'Show done tasks',
   sidebar: 'Unscheduled tasks',
-  scheduledNotice: (when) => `Planned for ${when}`,
+  scheduledNotice: (when) => `Planned for ${isolate(when)}`,
   unscheduledNotice: 'Taken off the calendar',
-  addedTo: (note) => `Task added to ${note}`,
+  addedTo: (note) => `Task added to ${isolate(note)}`,
   addFailed: 'The task could not be added',
   invalidDate: 'That is not a date',
   invalidTime: 'The end has to be after the start',
@@ -115,15 +133,16 @@ const FA: CalendarLabels = {
   noUnscheduled: 'همه تسک‌های باز جایی روی تقویم دارند.',
   nothingPlanned: 'برنامه‌ای نیست',
   more: (count) => `${count} مورد دیگر`,
-  addOn: (day) => `افزودن تسک در ${day}`,
+  addOn: (day) => `افزودن تسک در ${isolate(day)}`,
   newTask: 'تسک جدید',
   searchOrCreate: 'تسک تازه بنویسید یا یکی را پیدا کنید…',
-  create: (text) => `ساختن «${text}»`,
+  create: (text) => `ساختن «${isolate(text)}»`,
   existing: 'برنامه‌ریزی تسک موجود',
-  scheduledAt: (when) => `برنامه · ${when}`,
-  addsTo: (note) => `در ${note} نوشته می‌شود`,
-  createsNote: (note) => `${note} ساخته می‌شود`,
-  pickerHint: '↵ ساختن · esc بستن',
+  scheduledAt: (when) => `برنامه · ${isolate(when)}`,
+  addsTo: (note) => `در ${isolate(note)} نوشته می‌شود`,
+  createsNote: (note) => `${isolate(note)} ساخته می‌شود`,
+  keyCreate: 'ساختن',
+  keyClose: 'بستن',
   date: 'تاریخ',
   from: 'از',
   to: 'تا',
@@ -135,15 +154,22 @@ const FA: CalendarLabels = {
   openNote: 'باز کردن در یادداشت',
   openDailyNote: 'باز کردن یادداشت روزانه',
   moreActions: 'همه کارها',
+  openCard: 'باز کردن کارت',
+  newTaskAt: (time) => `تسک جدید در ساعت ${isolate(time)}`,
+  newTaskOnDay: 'تسک جدید در این روز',
+  viewDay: 'نمای روز',
+  subtasks: 'زیرتسک‌ها',
+  subtasksDone: (done, total) => `${done}/${total}`,
+  partOf: 'بخشی از',
   editTitle: 'برای ویرایش کلیک کنید',
   viewOptions: 'گزینه‌های نمایش',
   showDeadlines: 'نمایش سررسیدها',
   showDailyNotes: 'نمایش تسک‌های یادداشت روزانه',
   showDone: 'نمایش تسک‌های انجام‌شده',
   sidebar: 'تسک‌های بدون زمان',
-  scheduledNotice: (when) => `برنامه‌ریزی شد: ${when}`,
+  scheduledNotice: (when) => `برنامه‌ریزی شد: ${isolate(when)}`,
   unscheduledNotice: 'از تقویم برداشته شد',
-  addedTo: (note) => `تسک به ${note} اضافه شد`,
+  addedTo: (note) => `تسک به ${isolate(note)} اضافه شد`,
   addFailed: 'تسک اضافه نشد',
   invalidDate: 'این تاریخ درست نیست',
   invalidTime: 'پایان باید بعد از شروع باشد',

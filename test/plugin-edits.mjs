@@ -223,6 +223,29 @@ await app.vault.process(gym, (content) => content.replace('- [ ]', '- [x]'));
 await wait(600);
 eq(note('Life/Gym.md')[0], '- [ ] Gym @repeat(1w) @schedule(2099-01-12 07:00-08:00)', 'a repeating plan rolls to the next week');
 
+// ── quick edits from the right-click menu ─────────────────────────────────
+await app.vault.createFolder('Projects');
+await app.vault.create('Projects/Figma.md', ['- [ ] Figma', '\t- [ ] Auto layout', '\t\t- a note under it', '- [ ] Next'].join('\n'));
+await wait(200);
+const figma = () => plugin.taskStore.inFile('Projects/Figma.md');
+eq(figma().map((t) => [t.text, t.parentId ?? null]), [['Figma', null], ['Auto layout', 'Projects/Figma.md:0'], ['Next', null]], 'the store links a subtask to its parent');
+eq(await host.insertTask(figma()[0], '- [ ] Prototyping', 'child'), true, 'a subtask is written');
+eq(note('Projects/Figma.md'), ['- [ ] Figma', '\t- [ ] Auto layout', '\t\t- a note under it', '\t- [ ] Prototyping', '- [ ] Next'], 'as the last child, with the note’s own indent');
+await wait(200);
+await host.insertTask(figma()[0], figma()[0].line, 'sibling');
+eq(note('Projects/Figma.md')[4], '- [ ] Figma', 'a copy goes after the task and everything under it');
+await wait(200);
+await host.setRepeat(figma()[4], { every: 2, unit: 'week' });
+eq(note('Projects/Figma.md')[5], '- [ ] Next @repeat(2w)', 'a repeat rule is written');
+await wait(200);
+await host.setDeadline(figma()[4], '2026-10-01');
+eq(note('Projects/Figma.md')[0], '- [ ] Figma', 'the task it was copied from is left alone');
+eq(note('Projects/Figma.md')[5], '- [ ] Next @repeat(2w) @due(2026-10-01)', 'and a deadline, without a picker');
+await wait(200);
+await host.setRepeat(figma()[3], { every: 1, unit: 'day' });
+eq([note('Projects/Figma.md')[0], note('Projects/Figma.md')[4]], ['- [ ] Figma', '- [ ] Figma @repeat(1d)'], 'an edit to the copy lands on the copy, not the identical line above');
+eq(app.suggests?.length, 1, 'typing @ on a task line is registered');
+
 // ── floating board ─────────────────────────────────────────────────────────
 const floatCommand = app.commands.find((c) => c.id === 'toggle-floating-task-board');
 eq(floatCommand?.hotkeys, [{ modifiers: ['Mod', 'Shift'], key: 'b' }], 'the float has a default shortcut');

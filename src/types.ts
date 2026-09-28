@@ -470,6 +470,8 @@ export interface TaskProSettings {
   showRepeatBadges: boolean; // Toggle recurrence chip rendering
   showTagBadges: boolean; // Toggle tag chip rendering
   showScheduleBadges: boolean; // Toggle schedule chip rendering
+  /** Typing `@` on a task line lists the properties it can be given. */
+  propertySuggest: boolean;
   /** User-defined tags: key written into notes, name and colour kept here. */
   tags: TaskTag[];
   /** How the all-tasks board was last left. */
@@ -512,6 +514,7 @@ export const DEFAULT_SETTINGS: TaskProSettings = {
   showRepeatBadges: true,
   showTagBadges: true,
   showScheduleBadges: true,
+  propertySuggest: true,
   tags: [],
   board: DEFAULT_BOARD_PREFERENCES,
   calendar: DEFAULT_CALENDAR_SETTINGS,

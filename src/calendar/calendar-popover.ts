@@ -29,7 +29,7 @@ export interface PopoverOptions {
 const GAP = 8;
 
 /** Things a click can land on without meaning "close the card": menus and panels it opened. */
-const KEEP_OPEN = '.menu, .taskpro-panel-overlay, .notice-container, .tooltip, .suggestion-container';
+const KEEP_OPEN = '.taskpro-menu, .menu, .taskpro-panel-overlay, .notice-container, .tooltip, .suggestion-container';
 
 export function openCalendarPopover(options: PopoverOptions): PopoverHandle {
   const { container } = options;

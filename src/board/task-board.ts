@@ -24,6 +24,7 @@ import {
   TASK_PRIORITIES,
   TaskPriority,
   TaskProgress,
+  TaskRepeat,
   TaskSchedule,
   TaskStatus,
 } from '../types';
@@ -47,6 +48,8 @@ import { BoardLabels, getBoardLabels } from './board-localization';
 import { BoardTask, TaskStore } from './task-store';
 import { TaskCalendar } from '../calendar/calendar-view';
 import { getCalendarLabels } from '../calendar/calendar-localization';
+import { MenuEntry, closeContextMenu, openContextMenu } from '../ui/context-menu';
+import { getActionLabels, taskActionSections } from './task-actions';
 
 /** Rows drawn per group before a "Show more" row; keeps a huge vault responsive. */
 const ROWS_PER_PAGE = 150;
@@ -88,6 +91,23 @@ export interface TaskBoardHost {
   notify(message: string): void;
   /** Shows the board as a floating window over the whole app. */
   openFloating?(): void;
+
+  // Quick edits from the right-click menu. Without them the menu leaves the
+  // matching rows out, or falls back to the editors above.
+  /** Writes a deadline, or removes it with `null`. */
+  setDeadline?(task: BoardTask, deadline: string | null): Promise<void>;
+  /** Writes a repeat rule, or removes it with `null`. */
+  setRepeat?(task: BoardTask, repeat: TaskRepeat | null): Promise<void>;
+  /** Sets a progress bar's steps, or removes the bar with `null`. */
+  setProgress?(task: BoardTask, progress: TaskProgress | null): Promise<void>;
+  /** Asks for a day and a time, and plans the task for them. */
+  editSchedule?(task: BoardTask): Promise<void>;
+  /**
+   * Writes a new task line next to `task`: indented under it as its last
+   * subtask, or after it and its subtasks as a sibling. Resolves whether it
+   * was written.
+   */
+  insertTask?(task: BoardTask, line: string, as: 'child' | 'sibling'): Promise<boolean>;
 
   // The calendar layout. A host without these still shows the calendar,
   // read-only.
@@ -191,6 +211,7 @@ export class TaskBoard {
     if (this.searchTimer) clearTimeout(this.searchTimer);
     this.calendarView?.destroy();
     this.calendarView = null;
+    closeContextMenu();
   }
 
   /** Settings changed (language, tags, target folder): rebuild everything. */
@@ -245,10 +266,8 @@ export class TaskBoard {
             : all.filter((task) => isWithinTargetFolder(task.filePath, folder) || dailyNotes.has(task.filePath));
         return filterTasks(scoped, this.prefs, this.search, { tags: this.settings.tags });
       },
-      hold: (on) => {
-        this.holds = Math.max(0, this.holds + (on ? 1 : -1));
-        if (!this.holds && this.renderQueued) this.renderBody();
-      },
+      hold: (on) => this.hold(on),
+      openTaskActions: (task, at, anchor, lead) => this.openTaskActions(task, at, anchor, lead),
       refresh: () => {
         if (this.calendarNavEl) this.calendarView?.renderNav(this.calendarNavEl);
         this.renderBody();
@@ -262,6 +281,49 @@ export class TaskBoard {
       segmented: (parent, cls, items, current, onPick) => this.segmented(parent, cls, items, current, onPick),
     });
     return this.calendarView;
+  }
+
+  private hold(on: boolean): void {
+    this.holds = Math.max(0, this.holds + (on ? 1 : -1));
+    if (!this.holds && this.renderQueued) this.renderBody();
+  }
+
+  /**
+   * The right-click menu of a task, at a point or under a button. Repaints
+   * wait while it is open, so the row it belongs to stays where it was.
+   */
+  openTaskActions(task: BoardTask, at: { x: number; y: number } | DOMRect, anchor: HTMLElement, lead?: MenuEntry[]): void {
+    const settings = this.settings;
+    const language = settings.language;
+    this.hold(true);
+    openContextMenu({
+      container: this.el,
+      at,
+      rtl: language === 'fa',
+      header: displayTitle(task.text) || '—',
+      searchPlaceholder: getActionLabels(language).search,
+      sections: taskActionSections({
+        host: this.host,
+        task,
+        language,
+        calendarSystem: this.prefs.calendarSystem ?? settings.calendarSystem,
+        timeFormat: settings.calendar.timeFormat,
+        tags: settings.tags,
+        anchor,
+        lead,
+      }),
+      onClose: () => this.hold(false),
+    });
+  }
+
+  /** Right click, or the context-menu key, on a row or a card. */
+  private withTaskActions(el: HTMLElement, task: BoardTask): void {
+    el.addEventListener('contextmenu', (event) => {
+      if ((event.target as HTMLElement).closest('input, textarea')) return;
+      event.preventDefault();
+      event.stopPropagation();
+      this.openTaskActions(task, { x: event.clientX, y: event.clientY }, el);
+    });
   }
 
   private async updatePrefs(patch: Partial<BoardPreferences>, rebuildChrome = true): Promise<void> {
@@ -1001,7 +1063,10 @@ export class TaskBoard {
     this.noteLink(noteCell, task);
 
     const moreCell = row.createEl('td', { cls: 'taskpro-table__more' });
-    const more = this.iconButton(moreCell, 'more-horizontal', labels.more, () => this.host.openTaskMenu(task, more));
+    const more = this.iconButton(moreCell, 'more-horizontal', labels.more, () =>
+      this.openTaskActions(task, more.getBoundingClientRect(), more)
+    );
+    this.withTaskActions(row, task);
   }
 
   // ── Cells, shared by rows and cards ──────────────────────────────────────
@@ -1419,8 +1484,11 @@ export class TaskBoard {
     const top = card.createDiv({ cls: 'taskpro-card__top' });
     this.checkButton(top, task);
     this.titleBlock(top, task, false);
-    const more = this.iconButton(top, 'more-horizontal', labels.more, () => this.host.openTaskMenu(task, more));
+    const more = this.iconButton(top, 'more-horizontal', labels.more, () =>
+      this.openTaskActions(task, more.getBoundingClientRect(), more)
+    );
     more.addClass('taskpro-card__more');
+    this.withTaskActions(card, task);
 
     const props = card.createDiv({ cls: 'taskpro-card__props' });
     if (task.tags.length) {

@@ -70,6 +70,7 @@ import { getCalendarLabels } from './src/calendar/calendar-localization';
 import { scheduleText } from './src/calendar/schedule-text';
 import { openSchedulePanel } from './src/ui/schedule-editor';
 import { useKeymapOf } from './src/ui/escape-scope';
+import { TaskPropertySuggest } from './src/editor/property-suggest';
 
 /**
  * A task as the editing API addresses it. `lineNumber` is a hint: it is used
@@ -226,6 +227,23 @@ export default class TaskProPlugin extends Plugin {
     this.app.workspace.onLayoutReady(() => {
       void this.markOverdueTasksAsNotDone();
     });
+
+    // `@` on a task line: every property a task can be given, as suggestions
+    this.registerEditorSuggest(
+      new TaskPropertySuggest({
+        app: this.app,
+        settings: () => ({
+          enabled: this.settings.propertySuggest,
+          language: this.settings.badgeLanguage,
+          calendarSystem: this.settings.calendarSystem,
+          timeFormat: this.settings.calendar.timeFormat,
+          tags: this.settings.tags,
+          defaultDuration: this.settings.calendar.defaultDurationMinutes,
+        }),
+        appliesTo: (file) => !file || this.isFileInTargetFolder(file.path),
+        refresh: () => this.refreshDecorations(),
+      })
+    );
 
     // Register CodeMirror 6 extension for Live Preview badges
     this.registerEditorExtension(
@@ -1318,7 +1336,71 @@ export default class TaskProPlugin extends Plugin {
       dayNoteTarget: (day, system) => this.dayNoteTarget(day, system),
       addTaskOnDay: (day, line, system) => this.addTaskOnDay(day, line, system),
       openDailyNote: (day, system) => this.openDailyNote(day, system),
+      setDeadline: (task, deadline) => this.setTaskDeadlineFor(this.boardTaskRef(task), deadline),
+      setRepeat: (task, repeat) =>
+        this.handleRepeatUpdate(task.filePath, task.line, this.boardTaskRef(task).blockId, repeat, task.lineNumber),
+      setProgress: (task, progress) =>
+        this.handleProgressUpdate(task.filePath, task.line, this.boardTaskRef(task).blockId, progress),
+      editSchedule: async (task) => {
+        const choice = await openSchedulePanel({
+          language: this.settings.badgeLanguage,
+          calendarSystem: this.settings.board.calendarSystem ?? this.settings.calendarSystem,
+          schedule: task.schedule,
+          defaultDuration: this.settings.calendar.defaultDurationMinutes,
+          timeFormat: this.settings.calendar.timeFormat,
+        });
+        if (choice !== undefined) await this.setTaskScheduleFor(this.boardTaskRef(task), choice);
+      },
+      insertTask: (task, line, as) => this.insertTaskNear(this.boardTaskRef(task), line, as),
     };
+  }
+
+  /**
+   * Writes a task line beside another: as its last subtask, indented one step
+   * further (by the note's own indent, a tab unless the note uses spaces), or
+   * after it and everything nested under it, at its own depth.
+   */
+  private async insertTaskNear(ref: TaskRef, line: string, as: 'child' | 'sibling'): Promise<boolean> {
+    const file = ref.filePath ? this.app.vault.getFileByPath(ref.filePath) : null;
+    if (!file) return false;
+    let written = false;
+    await this.app.vault.process(file, (content) => {
+      const lines = content.split('\n');
+      const index =
+        ref.lineNumber !== undefined && lines[ref.lineNumber] === ref.lineContent
+          ? ref.lineNumber
+          : this.findTaskLineIndex(lines, ref.lineContent, ref.blockId);
+      if (index === -1) return content;
+
+      const indentOf = (text: string) => /^\s*/.exec(text)![0];
+      const width = (indent: string) => indent.replace(/\t/g, '    ').length;
+      const own = indentOf(lines[index]);
+      let end = index;
+      let firstChild: string | null = null;
+      for (let i = index + 1; i < lines.length; i++) {
+        if (!lines[i].trim()) continue;
+        if (width(indentOf(lines[i])) <= width(own)) break;
+        const indent = indentOf(lines[i]);
+        // The shallowest list item under it is the depth its children use.
+        if (/^\s*(?:[-*+]|\d+[.)]) /.test(lines[i]) && (firstChild === null || width(indent) < width(firstChild))) firstChild = indent;
+        end = i;
+      }
+
+      let indent = own;
+      if (as === 'child') {
+        if (firstChild !== null) indent = firstChild;
+        else {
+          const spaced = lines.find((text) => /^ +[-*+] /.test(text));
+          const tabbed = lines.some((text) => /^\t+[-*+] /.test(text));
+          indent = own + (!tabbed && spaced ? ' '.repeat(Math.min(4, indentOf(spaced).length) || 4) : '\t');
+        }
+      }
+      lines.splice(end + 1, 0, indent + line.trimStart());
+      written = true;
+      return lines.join('\n');
+    });
+    if (written) this.refreshDecorations();
+    return written;
   }
 
   private boardMenuDetail(task: BoardTask, anchor: HTMLElement): TaskMenuDetail {
@@ -2252,7 +2334,8 @@ export default class TaskProPlugin extends Plugin {
     filePath: string,
     lineContent: string,
     blockId: string | undefined,
-    newRepeat: TaskRepeat | null
+    newRepeat: TaskRepeat | null,
+    lineHint?: number
   ): Promise<void> {
     const resolvedFilePath = filePath || this.app.workspace.getActiveFile()?.path || '';
     if (!resolvedFilePath) return;
@@ -2270,7 +2353,8 @@ export default class TaskProPlugin extends Plugin {
       file,
       lineContent,
       effectiveBlockId,
-      (content) => setRepeat(content, newRepeat)
+      (content) => setRepeat(content, newRepeat),
+      lineHint
     );
     if (updated) this.refreshDecorations();
   }
