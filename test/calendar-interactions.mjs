@@ -99,7 +99,7 @@ try {
   const daily = (await notes(page))[`Daily/${target}.md`];
   ok(daily, 'the day’s note was created');
   eq(daily.split('\n').slice(0, 1)[0].startsWith('# '), true, 'from the template');
-  ok(/## Tasks\n- \[ \] Plan the offsite\n/.test(daily), 'the task went under the template’s heading');
+  ok(/## Tasks\n\n- \[ \] Plan the offsite\n/.test(daily), 'the task went a line under the template’s heading');
   eq(daily.includes('@schedule('), false, 'an untimed task in its own day’s note needs no marker');
   ok(await page.locator(`.taskpro-cal__cell[data-day="${target}"] .taskpro-cal__chip`, { hasText: 'Plan the offsite' }).count(), 'and it shows on its day');
 
@@ -230,7 +230,7 @@ try {
   });
   await page.waitForTimeout(250);
   ok((await lineWith(page, morningTitle)).includes('-23:00)'), 'the card’s end time is written');
-  await page.locator('.taskpro-cal-inspector__remove').click();
+  await page.locator('.taskpro-cal-inspector__remove:not(.is-delete)').click();
   await page.waitForTimeout(250);
   eq((await lineWith(page, morningTitle)).includes('@schedule('), false, '“Remove from calendar” unschedules it');
   eq(await page.locator('.taskpro-cal-inspector').count(), 0, 'and closes the card');
@@ -320,6 +320,24 @@ try {
   eq(await page.locator('.taskpro-cal-inspector__subtask').count(), 4, 'and shows in the card at once');
   await page.locator('.taskpro-cal-inspector__subtask:has-text("Prototyping")').click();
   ok((await page.locator('.taskpro-cal-inspector__parent').textContent()).includes('Learn Figma'), 'a subtask’s card links back to its parent');
+  await page.keyboard.press('Escape');
+
+  // Deleting: from the menu, from a card, and with the Delete key.
+  await page.locator('.taskpro-cal__block:has-text("Prototyping")').click({ button: 'right' });
+  await page.locator('.taskpro-menu__item.is-warning').click();
+  await page.waitForTimeout(100);
+  eq(await lineWith(page, 'Prototyping'), null, 'Delete in the menu takes the task out of its note');
+  await page.locator('.taskpro-cal__block:has-text("Auto layout")').click();
+  await page.locator('.taskpro-cal-inspector__remove.is-delete').click();
+  await page.waitForTimeout(100);
+  eq(await lineWith(page, 'Auto layout'), null, 'and so does Delete in the card');
+  const review = page.locator('.taskpro-cal__block:has-text("Design review")');
+  await review.focus();
+  await page.keyboard.press('Delete');
+  await page.waitForTimeout(100);
+  eq(await lineWith(page, 'Design review'), null, 'and the Delete key on a focused task');
+  await page.locator('.taskpro-cal__free:has-text("Learn Figma")').click({ button: 'right' });
+  eq((await page.locator('.taskpro-menu__item.is-warning .taskpro-menu__label').textContent()), 'Delete with its 2 subtasks', 'deleting a parent says how many subtasks go with it');
   await page.keyboard.press('Escape');
 
   // Right click on an empty slot offers a task at that time.

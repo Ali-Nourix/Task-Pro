@@ -20,6 +20,7 @@ import {
   TimeFormat,
 } from '../types';
 import type { TaskTag } from '../tags';
+import { isolate } from '../bidi';
 import { resolveTag, resolveTagColor } from '../tags';
 import type { MenuEntry, MenuSection } from '../ui/context-menu';
 import { addPanelButtonRow, addPanelField, openTaskProPanel } from '../ui/panel';
@@ -28,6 +29,7 @@ import { getRepeatLabels } from '../timer-localization';
 import { getDeadlineInfo } from '../widget-localization';
 import { addDays, formatClock, parseClock, shortDay, todayKey } from '../calendar/calendar-dates';
 import { scheduleDayText } from '../calendar/schedule-text';
+import { descendantsOf, indexFamilies } from '../calendar/calendar-items';
 import { BOARD_STATUS_ORDER } from './board-query';
 import { displayTitle } from './board-text';
 import type { BoardTask } from './task-store';
@@ -69,6 +71,10 @@ interface ActionLabels {
   addSubtask: string;
   subtaskTitle: string;
   duplicate: string;
+  deleteTask: string;
+  deleteWithSubtasks: (count: number) => string;
+  deleted: (title: string, subtasks: number) => string;
+  undo: string;
   allActions: string;
   search: string;
   add: string;
@@ -104,6 +110,10 @@ const EN: ActionLabels = {
   addSubtask: 'Add a subtask…',
   subtaskTitle: 'New subtask',
   duplicate: 'Duplicate',
+  deleteTask: 'Delete',
+  deleteWithSubtasks: (count) => (count === 1 ? 'Delete with its subtask' : `Delete with its ${count} subtasks`),
+  deleted: (title, subtasks) => `Deleted “${isolate(title)}”${subtasks ? (subtasks === 1 ? ' and its subtask' : ` and its ${subtasks} subtasks`) : ''}`,
+  undo: 'Undo',
   allActions: 'Timer, sync and more…',
   search: 'Search actions…',
   add: 'Add',
@@ -139,6 +149,10 @@ const FA: ActionLabels = {
   addSubtask: 'افزودن زیرتسک…',
   subtaskTitle: 'زیرتسک جدید',
   duplicate: 'تکثیر',
+  deleteTask: 'حذف',
+  deleteWithSubtasks: (count) => `حذف همراه با ${count} زیرتسک`,
+  deleted: (title, subtasks) => `«${isolate(title)}»${subtasks ? ` و ${subtasks} زیرتسکش` : ''} حذف شد`,
+  undo: 'بازگردانی',
   allActions: 'تایمر، همگام‌سازی و بیشتر…',
   search: 'جستجوی کارها…',
   add: 'افزودن',
@@ -482,5 +496,29 @@ export function taskActionSections(o: TaskActionOptions): MenuSection[] {
     { title: labels.properties, entries: properties },
     { entries: create },
     { entries: [withKeywords({ label: labels.allActions, icon: 'more-horizontal', onSelect: () => host.openTaskMenu(task, o.anchor) }, 'timer focus sync more')] },
+    { entries: deleteEntries(o) },
+  ];
+}
+
+/**
+ * Delete, last and in the warning colour. The label says when subtasks go
+ * with it, since a task's subtasks are nested under it in the note.
+ */
+export function deleteEntries(o: TaskActionOptions): MenuEntry[] {
+  const { host, task } = o;
+  if (!host.deleteTask) return [];
+  const labels = getActionLabels(o.language);
+  const subtasks = descendantsOf(task, indexFamilies(host.store.inFile(task.filePath))).length;
+  return [
+    withKeywords(
+      {
+        label: subtasks ? labels.deleteWithSubtasks(subtasks) : labels.deleteTask,
+        icon: 'trash-2',
+        hint: 'Del',
+        warning: true,
+        onSelect: () => host.deleteTask!(task),
+      },
+      'delete remove trash'
+    ),
   ];
 }

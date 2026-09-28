@@ -98,13 +98,15 @@ export class TaskProSettingTab extends PluginSettingTab {
     title: string,
     description?: string
   ): void {
+    // The icon beside the title, and the description under the title, not under the icon.
     const header = container.createDiv({ cls: 'taskpro-settings-section' });
     const iconEl = header.createSpan({ cls: 'taskpro-settings-section__icon' });
     iconEl.setAttribute('aria-hidden', 'true');
     setIcon(iconEl, icon);
-    header.createEl('h3', { cls: 'taskpro-settings-section__title', text: title });
+    const text = header.createDiv({ cls: 'taskpro-settings-section__text' });
+    text.createEl('h3', { cls: 'taskpro-settings-section__title', text: title });
     if (description) {
-      container.createEl('p', {
+      text.createEl('p', {
         cls: 'setting-item-description taskpro-settings-section__desc',
         text: description,
       });
@@ -192,12 +194,16 @@ export class TaskProSettingTab extends PluginSettingTab {
       'Where TaskPro reads tasks from and where it stays active.'
     );
 
-    // Reference Note Path
+    // Reference Note Path, with the note chosen shown beside its button
     let pathDisplay: HTMLElement;
-    
-    new Setting(containerEl)
+
+    const reference = new Setting(containerEl)
       .setName('Reference Note Path')
-      .setDesc('Select the note containing your reference tasks')
+      .setDesc('Select the note containing your reference tasks');
+    pathDisplay = reference.controlEl.createSpan({ cls: 'taskpro-settings-path' });
+    pathDisplay.setText(this.plugin.settings.referenceNotePath || 'No note selected');
+    pathDisplay.toggleClass('is-empty', !this.plugin.settings.referenceNotePath);
+    reference
       .addButton(button => button
         .setButtonText('Select Note')
         .onClick(() => {
@@ -205,15 +211,12 @@ export class TaskProSettingTab extends PluginSettingTab {
             this.plugin.settings.referenceNotePath = file.path;
             await this.plugin.saveSettings();
             pathDisplay.setText(file.path);
+            pathDisplay.removeClass('is-empty');
             new Notice(`Reference note set to: ${file.path}`);
           });
           modal.open();
         }));
     
-    // Display current selection
-    pathDisplay = containerEl.createDiv('reference-note-display');
-    pathDisplay.setText(this.plugin.settings.referenceNotePath || 'No note selected');
-    pathDisplay.addClass('taskpro-settings-path');
 
     // Target Folder Restriction
     new Setting(containerEl)

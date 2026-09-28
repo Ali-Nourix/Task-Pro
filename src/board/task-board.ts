@@ -108,6 +108,11 @@ export interface TaskBoardHost {
    * was written.
    */
   insertTask?(task: BoardTask, line: string, as: 'child' | 'sibling'): Promise<boolean>;
+  /**
+   * Deletes a task from its note with everything nested under it, offering
+   * to undo. Resolves whether it was deleted.
+   */
+  deleteTask?(task: BoardTask): Promise<boolean>;
 
   // The calendar layout. A host without these still shows the calendar,
   // read-only.
