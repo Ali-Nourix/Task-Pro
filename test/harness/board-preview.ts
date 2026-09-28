@@ -181,6 +181,20 @@ const CALENDAR_NOTES: Record<string, string> =
         'Templates/Daily.md': TEMPLATE,
       };
 if (params.get('layout') === 'calendar') Object.assign(NOTES, CALENDAR_NOTES);
+else {
+  // A few plans for the table's Plan column and the cards, at the ends of
+  // their lines so the checks on each line's markers still hold.
+  const plan = (path: string, title: string, schedule: string) => {
+    NOTES[path] = NOTES[path]
+      .split('\n')
+      .map((line) => (line.includes(title) ? `${line} @schedule(${schedule})` : line))
+      .join('\n');
+  };
+  const week = language === 'fa' ? 'Planner/1405-W27.md' : 'Planner/2026-W39.md';
+  plan(week, language === 'fa' ? 'آماده کردن پیش‌فاکتور' : 'Send the quote to Acme', `${inDays(0)} 14:00-15:30`);
+  plan(week, language === 'fa' ? 'نوشتن پست معرفی محصول' : 'Draft the launch post', `${inDays(1)} 09:00-11:30`);
+  plan(week, language === 'fa' ? 'مرور هفتگی' : 'Weekly review and planning', inDays(4));
+}
 
 const PROGRESS: Record<string, TaskProgress> = {
   launch: { enabled: true, currentSteps: 3, totalSteps: 8 },

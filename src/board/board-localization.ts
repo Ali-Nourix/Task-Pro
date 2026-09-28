@@ -35,9 +35,32 @@ export interface BoardLabels {
     tags: string;
     priority: string;
     deadline: string;
+    plan: string;
+    repeat: string;
     progress: string;
     note: string;
   };
+  /** The properties menu: which properties the table or the cards show. */
+  properties: string;
+  /** The heading over the list of properties in the properties menu. */
+  propertiesIn: { tableColumns: string; cardProperties: string };
+  resetColumns: string;
+  /** The board's columns: move one, hide one, show the hidden ones again. */
+  columnMenu: string;
+  resetColumnWidth: string;
+  newTagColumn: string;
+  hideProperty: string;
+  moveBefore: string;
+  moveAfter: string;
+  resetWidth: string;
+  sortAscending: string;
+  sortDescending: string;
+  hideColumn: string;
+  hiddenColumns: (count: number) => string;
+  showColumn: string;
+  showAllColumns: string;
+  resetOrder: string;
+  noPlan: string;
   noTag: string;
   noPriority: string;
   noDeadline: string;
@@ -100,6 +123,7 @@ const EN: BoardLabels = {
     status: 'Status',
     priority: 'Priority',
     deadline: 'Deadline',
+    plan: 'Plan',
     progress: 'Progress',
     note: 'Note',
   },
@@ -116,9 +140,29 @@ const EN: BoardLabels = {
     tags: 'Tags',
     priority: 'Priority',
     deadline: 'Deadline',
+    plan: 'Plan',
+    repeat: 'Repeat',
     progress: 'Progress',
     note: 'Note',
   },
+  properties: 'Properties',
+  propertiesIn: { tableColumns: 'Shown in the table', cardProperties: 'Shown on cards' },
+  resetColumns: 'Reset to default',
+  columnMenu: 'Column options',
+  resetColumnWidth: 'Reset column width',
+  newTagColumn: 'New tag',
+  hideProperty: 'Hide property',
+  moveBefore: 'Move left',
+  moveAfter: 'Move right',
+  resetWidth: 'Reset width',
+  sortAscending: 'Sort ascending',
+  sortDescending: 'Sort descending',
+  hideColumn: 'Hide column',
+  hiddenColumns: (count) => (count === 1 ? '1 hidden column' : `${count} hidden columns`),
+  showColumn: 'Show column',
+  showAllColumns: 'Show all columns',
+  resetOrder: 'Reset column order',
+  noPlan: 'Not planned',
   noTag: 'No tag',
   noPriority: 'No priority',
   noDeadline: 'No deadline',
@@ -186,6 +230,7 @@ const FA: BoardLabels = {
     status: 'وضعیت',
     priority: 'اولویت',
     deadline: 'سررسید',
+    plan: 'برنامه',
     progress: 'پیشرفت',
     note: 'یادداشت',
   },
@@ -202,9 +247,29 @@ const FA: BoardLabels = {
     tags: 'برچسب‌ها',
     priority: 'اولویت',
     deadline: 'سررسید',
+    plan: 'برنامه',
+    repeat: 'تکرار',
     progress: 'پیشرفت',
     note: 'یادداشت',
   },
+  properties: 'ویژگی‌ها',
+  propertiesIn: { tableColumns: 'نمایش در جدول', cardProperties: 'نمایش روی کارت‌ها' },
+  resetColumns: 'بازگشت به پیش‌فرض',
+  columnMenu: 'گزینه‌های ستون',
+  resetColumnWidth: 'بازگشت به عرض پیش‌فرض ستون‌ها',
+  newTagColumn: 'برچسب تازه',
+  hideProperty: 'پنهان کردن ویژگی',
+  moveBefore: 'جابه‌جایی به راست',
+  moveAfter: 'جابه‌جایی به چپ',
+  resetWidth: 'بازگشت به عرض پیش‌فرض',
+  sortAscending: 'مرتب‌سازی صعودی',
+  sortDescending: 'مرتب‌سازی نزولی',
+  hideColumn: 'پنهان کردن ستون',
+  hiddenColumns: (count) => `${count} ستون پنهان`,
+  showColumn: 'نمایش ستون',
+  showAllColumns: 'نمایش همه ستون‌ها',
+  resetOrder: 'بازگشت به ترتیب پیش‌فرض',
+  noPlan: 'برنامه‌ریزی نشده',
   noTag: 'بدون برچسب',
   noPriority: 'بدون اولویت',
   noDeadline: 'بدون سررسید',

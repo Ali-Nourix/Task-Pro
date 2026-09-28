@@ -84,6 +84,32 @@
   gives its title are worked out from its height, so nothing is cut through
   the middle.
 
+### Table and board columns
+
+- The table has a **Plan** column: the day in a chip and the hours beside it
+  ("Today · 14:00 – 15:30"), so a task's time is on the board, not only on the
+  calendar. Cards show the plan the way the chip in a note does. Sort by plan
+  puts the earliest first.
+- Columns move, resize, and come and go. Drag a header to move its column
+  (a line shows where it lands; `Escape` cancels), drag its edge to resize it
+  and double-click the edge to reset it, or right-click the header to sort,
+  move, reset its width or hide it. `Alt` with the arrow keys moves a focused
+  header. The **+** at the end of the header row and **Properties** in the
+  toolbar list every property with a switch and a grip to drag it into order,
+  and stay open while you switch several; **Reset to default** undoes it all.
+  **Repeat** is a column that starts hidden.
+- On the board, **Properties** picks what a card shows and in what order,
+  status and repeat included.
+- The board's columns move by dragging their headers, and share one width
+  that dragging any column's edge changes. A column's **⋯** menu (or a right
+  click on its header) moves or hides it and resets the width or the order.
+  Hidden columns are listed at the end of the board, where a click brings one
+  back; grouped by tag, **New tag** there adds a column.
+- A status, priority, deadline, plan or repeat cell opens the same menu as
+  the task menu's submenu, right under the cell.
+- All of it is remembered per board, and mirrored in Persian: a column's edge
+  is on its left there, and "move right" moves it earlier.
+
 ### Deleting a task
 
 - **Delete** in the task menu, at the foot of a card, or the `Delete` key on

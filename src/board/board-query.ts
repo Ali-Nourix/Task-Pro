@@ -121,6 +121,8 @@ export function sortTasks(
         return task.priority ? -PRIORITY_RANK[task.priority] : undefined;
       case 'deadline':
         return task.deadline ? daysUntil(task.deadline, context.today) : undefined;
+      case 'plan':
+        return task.schedule ? `${task.schedule.date} ${task.schedule.start ?? '00:00'}` : undefined;
       case 'progress': {
         const progress = context.getProgress(task);
         return progress?.enabled ? progress.currentSteps / progress.totalSteps : undefined;

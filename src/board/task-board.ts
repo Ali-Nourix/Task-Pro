@@ -48,11 +48,42 @@ import { BoardLabels, getBoardLabels } from './board-localization';
 import { BoardTask, TaskStore } from './task-store';
 import { TaskCalendar } from '../calendar/calendar-view';
 import { getCalendarLabels } from '../calendar/calendar-localization';
-import { MenuEntry, closeContextMenu, openContextMenu } from '../ui/context-menu';
-import { getActionLabels, taskActionSections } from './task-actions';
+import { MenuEntry, MenuSection, closeContextMenu, openContextMenu } from '../ui/context-menu';
+import {
+  TaskActionOptions,
+  deadlineSections,
+  getActionLabels,
+  planSections,
+  prioritySections,
+  repeatSections,
+  statusSections,
+  taskActionSections,
+} from './task-actions';
+import {
+  BOARD_PROPERTIES,
+  BoardColumnPref,
+  BoardPropertyId,
+  DEFAULT_CARD_PROPERTIES,
+  KANBAN_WIDTH,
+  TITLE_MIN_WIDTH,
+  clampKanbanWidth,
+  clampWidth,
+  columnWidth,
+  moveColumn,
+  moveValue,
+  orderGroups,
+  resolveColumns,
+  setColumn,
+  visibleColumns,
+} from './board-columns';
+import { isSchedulePast, scheduleDayText, scheduleText, scheduleTimeText } from '../calendar/schedule-text';
 
 /** Rows drawn per group before a "Show more" row; keeps a huge vault responsive. */
 const ROWS_PER_PAGE = 150;
+
+/** The widths of the table's fixed columns: the checkbox, and the ⋯ at the end. */
+const CHECK_COLUMN = 34;
+const END_COLUMN = 40;
 
 export interface BoardSettingsView {
   language: Language;
@@ -192,6 +223,8 @@ export class TaskBoard {
   private calendarNavEl: HTMLElement | null = null;
   /** Open holds on repaints: a calendar drag or picker in progress. */
   private holds = 0;
+  /** Set for the moment between the end of a header drag and the click it makes. */
+  private swallowClick = false;
 
   constructor(
     container: HTMLElement,
@@ -298,8 +331,7 @@ export class TaskBoard {
    * wait while it is open, so the row it belongs to stays where it was.
    */
   openTaskActions(task: BoardTask, at: { x: number; y: number } | DOMRect, anchor: HTMLElement, lead?: MenuEntry[]): void {
-    const settings = this.settings;
-    const language = settings.language;
+    const language = this.settings.language;
     this.hold(true);
     openContextMenu({
       container: this.el,
@@ -307,16 +339,32 @@ export class TaskBoard {
       rtl: language === 'fa',
       header: displayTitle(task.text) || '—',
       searchPlaceholder: getActionLabels(language).search,
-      sections: taskActionSections({
-        host: this.host,
-        task,
-        language,
-        calendarSystem: this.prefs.calendarSystem ?? settings.calendarSystem,
-        timeFormat: settings.calendar.timeFormat,
-        tags: settings.tags,
-        anchor,
-        lead,
-      }),
+      sections: taskActionSections({ ...this.actionOptions(task, anchor), lead }),
+      onClose: () => this.hold(false),
+    });
+  }
+
+  private actionOptions(task: BoardTask, anchor: HTMLElement): TaskActionOptions {
+    const settings = this.settings;
+    return {
+      host: this.host,
+      task,
+      language: settings.language,
+      calendarSystem: this.prefs.calendarSystem ?? settings.calendarSystem,
+      timeFormat: settings.calendar.timeFormat,
+      tags: settings.tags,
+      anchor,
+    };
+  }
+
+  /** One property's choices, opened right under its cell or chip. */
+  private dropdown(anchor: HTMLElement, sections: MenuSection[]): void {
+    this.hold(true);
+    openContextMenu({
+      container: this.el,
+      at: anchor.getBoundingClientRect(),
+      rtl: this.language === 'fa',
+      sections,
       onClose: () => this.hold(false),
     });
   }
@@ -404,6 +452,7 @@ export class TaskBoard {
     if (!this.isCalendar) {
       this.renderGroupControl(controls);
       this.renderSortControl(controls);
+      this.renderPropertiesControl(controls);
     }
     this.renderFilterControl(controls);
 
@@ -537,7 +586,7 @@ export class TaskBoard {
     );
     button.addEventListener('click', (event) => {
       const menu = new Menu();
-      const keys: BoardSortKey[] = ['document', 'title', 'status', 'priority', 'deadline', 'progress', 'note'];
+      const keys: BoardSortKey[] = ['document', 'title', 'status', 'priority', 'deadline', 'plan', 'progress', 'note'];
       for (const key of keys) {
         menu.addItem((item) =>
           item
@@ -563,6 +612,15 @@ export class TaskBoard {
       );
       menu.showAtMouseEvent(event);
     });
+  }
+
+  /** Which properties the table's columns, or the board's cards, show, and in what order. */
+  private renderPropertiesControl(parent: HTMLElement): void {
+    const button = this.controlButton(parent, 'sliders-horizontal', this.labels.properties);
+    button.addClass('taskpro-board__properties');
+    button.addEventListener('click', () =>
+      this.openPropertiesMenu(button, this.prefs.layout === 'board' ? 'cardProperties' : 'tableColumns')
+    );
   }
 
   private activeFilterCount(): number {
@@ -868,72 +926,66 @@ export class TaskBoard {
 
   // ── Table ────────────────────────────────────────────────────────────────
 
+  private tableColumns(): BoardColumnPref[] {
+    return resolveColumns(this.prefs.tableColumns);
+  }
+
+  private cardProperties(): BoardColumnPref[] {
+    return resolveColumns(this.prefs.cardProperties, DEFAULT_CARD_PROPERTIES);
+  }
+
+  /** Keeps a new arrangement of the properties and draws the body again; the toolbar stays. */
+  private saveColumns(key: 'tableColumns' | 'cardProperties', columns: BoardColumnPref[]): void {
+    void this.updatePrefs({ [key]: columns }, false);
+  }
+
   private renderTable(tasks: BoardTask[], today: Date): void {
     const labels = this.labels;
     const groupBy = this.prefs.groupBy;
     const groups = groupTasks(tasks, groupBy, { tags: this.settings.tags, today });
+    const columns = visibleColumns(this.tableColumns());
+    // The check, the title, the properties and the ⋯ column.
+    const span = String(columns.length + 3);
 
     const table = this.bodyEl.createEl('table', { cls: 'taskpro-table' });
     table.toggleClass('is-document-order', this.prefs.sortKey === 'document' && (groupBy === 'none' || groupBy === 'note'));
     const colgroup = table.createEl('colgroup');
-    for (const cls of ['check', 'task', 'status', 'tags', 'priority', 'deadline', 'progress', 'note', 'more']) {
-      colgroup.createEl('col', { cls: `taskpro-table__col--${cls}` });
+    colgroup.createEl('col', { cls: 'taskpro-table__col--check' });
+    colgroup.createEl('col', { cls: 'taskpro-table__col--task' });
+    for (const column of columns) {
+      const col = colgroup.createEl('col', { cls: `taskpro-table__col--${column.id}` });
+      col.dataset.column = column.id;
+      col.style.width = `${columnWidth(column)}px`;
     }
+    colgroup.createEl('col', { cls: 'taskpro-table__col--more' });
+    this.fitTable(table);
 
     const head = table.createEl('thead').createEl('tr');
     head.createEl('th', { cls: 'taskpro-table__check' });
-    const headers: Array<{ key: BoardSortKey | null; label: string; icon: string; cls: string }> = [
-      { key: 'title', label: labels.columns.task, icon: 'text', cls: 'task' },
-      { key: 'status', label: labels.columns.status, icon: 'circle-dot', cls: 'status' },
-      { key: null, label: labels.columns.tags, icon: 'tags', cls: 'tags' },
-      { key: 'priority', label: labels.columns.priority, icon: 'flag', cls: 'priority' },
-      { key: 'deadline', label: labels.columns.deadline, icon: 'calendar', cls: 'deadline' },
-      { key: 'progress', label: labels.columns.progress, icon: 'pie-chart', cls: 'progress' },
-      { key: 'note', label: labels.columns.note, icon: 'file-text', cls: 'note' },
-    ];
-    for (const header of headers) {
-      const th = head.createEl('th', { cls: `taskpro-table__${header.cls}` });
-      const inner = th.createDiv({ cls: 'taskpro-table__th' });
-      setIcon(inner.createSpan({ cls: 'taskpro-table__th-icon' }), header.icon);
-      inner.createSpan({ text: header.label });
-      if (header.key) {
-        const key = header.key;
-        th.addClass('is-sortable');
-        th.setAttribute('role', 'button');
-        th.tabIndex = 0;
-        if (this.prefs.sortKey === key) {
-          th.addClass('is-sorted');
-          setIcon(inner.createSpan({ cls: 'taskpro-table__sort' }), this.prefs.sortDir === 'desc' ? 'arrow-up' : 'arrow-down');
-        }
-        const sort = () => {
-          // Click once to sort, again to flip, a third time to go back to note order.
-          if (this.prefs.sortKey !== key) void this.updatePrefs({ sortKey: key, sortDir: 'asc' });
-          else if (this.prefs.sortDir === 'asc') void this.updatePrefs({ sortDir: 'desc' });
-          else void this.updatePrefs({ sortKey: 'document', sortDir: 'asc' });
-        };
-        th.addEventListener('click', sort);
-        th.addEventListener('keydown', (event) => {
-          if (event.key === 'Enter' || event.key === ' ') {
-            event.preventDefault();
-            sort();
-          }
-        });
-      }
-    }
-    head.createEl('th', { cls: 'taskpro-table__more' });
+    const titleHead = this.headerCell(head, 'task', 'text', labels.columns.task, 'title');
+    this.onHeaderActivate(titleHead, () => this.sortBy('title'));
+    titleHead.addEventListener('contextmenu', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      this.openHeaderMenu(null, { x: event.clientX, y: event.clientY });
+    });
+    for (const column of columns) this.renderColumnHeader(head, table, column);
+    const end = head.createEl('th', { cls: 'taskpro-table__more taskpro-table__add-column' });
+    const add = this.iconButton(end, 'plus', labels.properties, () => this.openPropertiesMenu(add, 'tableColumns'));
+    add.addClass('taskpro-table__add-btn');
 
     const body = table.createEl('tbody');
     for (const group of groups) {
       if (groupBy !== 'none') {
         if (!group.tasks.length && groupBy === 'status') continue;
-        this.renderGroupRow(body, group, groupBy);
+        this.renderGroupRow(body, group, groupBy, span);
         if (this.prefs.collapsedGroups.includes(group.id)) continue;
       }
       const limit = this.rowLimits.get(group.id) ?? ROWS_PER_PAGE;
-      for (const task of group.tasks.slice(0, limit)) this.renderRow(body, task);
+      for (const task of group.tasks.slice(0, limit)) this.renderRow(body, task, columns);
       if (group.tasks.length > limit) {
         const more = body.createEl('tr', { cls: 'taskpro-table__more-row' });
-        const cell = more.createEl('td', { attr: { colspan: '9' } });
+        const cell = more.createEl('td', { attr: { colspan: span } });
         const button = cell.createEl('button', { text: labels.showMore(Math.min(ROWS_PER_PAGE, group.tasks.length - limit)) });
         button.addEventListener('click', () => {
           this.rowLimits.set(group.id, limit + ROWS_PER_PAGE);
@@ -943,12 +995,349 @@ export class TaskBoard {
     }
   }
 
-  private renderGroupRow(body: HTMLElement, group: BoardGroup, groupBy: BoardGroupBy): void {
+  /** The table is never narrower than its columns, with room left for a title of a few words. */
+  private fitTable(table: HTMLElement): void {
+    let width = CHECK_COLUMN + TITLE_MIN_WIDTH + END_COLUMN;
+    table.querySelectorAll<HTMLElement>('col[data-column]').forEach((col) => (width += parseFloat(col.style.width) || 0));
+    table.style.minWidth = `${width}px`;
+  }
+
+  private headerCell(head: HTMLElement, cls: string, icon: string, label: string, sortKey?: BoardSortKey): HTMLElement {
+    const th = head.createEl('th', { cls: `taskpro-table__${cls}` });
+    th.setAttribute('role', 'button');
+    th.tabIndex = 0;
+    const inner = th.createDiv({ cls: 'taskpro-table__th' });
+    setIcon(inner.createSpan({ cls: 'taskpro-table__th-icon' }), icon);
+    inner.createSpan({ cls: 'taskpro-table__th-label', text: label });
+    if (sortKey) {
+      th.addClass('is-sortable');
+      if (this.prefs.sortKey === sortKey) {
+        th.addClass('is-sorted');
+        setIcon(inner.createSpan({ cls: 'taskpro-table__sort' }), this.prefs.sortDir === 'desc' ? 'arrow-up' : 'arrow-down');
+      }
+    }
+    return th;
+  }
+
+  /** A click, Enter or Space; not the click that ends a drag. */
+  private onHeaderActivate(th: HTMLElement, activate: () => void): void {
+    th.addEventListener('click', () => {
+      if (this.swallowClick) return;
+      activate();
+    });
+    th.addEventListener('keydown', (event) => {
+      if (event.target !== th || (event.key !== 'Enter' && event.key !== ' ')) return;
+      event.preventDefault();
+      activate();
+    });
+  }
+
+  /** Click once to sort, again to flip, a third time to go back to note order. */
+  private sortBy(key: BoardSortKey): void {
+    if (this.prefs.sortKey !== key) void this.updatePrefs({ sortKey: key, sortDir: 'asc' });
+    else if (this.prefs.sortDir === 'asc') void this.updatePrefs({ sortDir: 'desc' });
+    else void this.updatePrefs({ sortKey: 'document', sortDir: 'asc' });
+  }
+
+  private renderColumnHeader(head: HTMLElement, table: HTMLElement, column: BoardColumnPref): void {
+    const info = BOARD_PROPERTIES[column.id];
+    const th = this.headerCell(head, column.id, info.icon, this.labels.columns[column.id], info.sortKey);
+    th.dataset.column = column.id;
+    th.addClass('is-movable');
+    // A property that does not sort opens its menu instead.
+    this.onHeaderActivate(th, () =>
+      info.sortKey ? this.sortBy(info.sortKey) : this.openHeaderMenu(column.id, th.getBoundingClientRect())
+    );
+    th.addEventListener('contextmenu', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      this.openHeaderMenu(column.id, { x: event.clientX, y: event.clientY });
+    });
+    th.addEventListener('keydown', (event) => {
+      if (!event.altKey || event.target !== th || (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight')) return;
+      event.preventDefault();
+      const earlier = (event.key === 'ArrowLeft') !== (this.language === 'fa');
+      this.shiftColumn(column.id, earlier ? -1 : 1, true);
+    });
+    this.columnDrag(th, table, column.id);
+
+    const handle = th.createSpan({ cls: 'taskpro-table__resize' });
+    handle.setAttribute('aria-hidden', 'true');
+    this.columnResize(handle, table, column);
+  }
+
+  /** Moves a column one place earlier or later among the columns that show. */
+  private shiftColumn(id: BoardPropertyId, step: -1 | 1, refocus = false): void {
+    const all = this.tableColumns();
+    const shown = visibleColumns(all);
+    const index = shown.findIndex((column) => column.id === id);
+    const to = index + step;
+    if (index === -1 || to < 0 || to >= shown.length) return;
+    this.saveColumns('tableColumns', moveColumn(all, id, step === -1 ? shown[to].id : shown[to + 1]?.id ?? null));
+    if (refocus) this.bodyEl.querySelector<HTMLElement>(`th[data-column="${id}"]`)?.focus();
+  }
+
+  /**
+   * Dragging a header moves its column. A copy of the header follows the
+   * pointer and a line shows where the column will land; Escape puts it back.
+   */
+  private columnDrag(th: HTMLElement, table: HTMLElement, id: BoardPropertyId): void {
+    th.addEventListener('pointerdown', (event) => {
+      if (event.button !== 0 || (event.target as HTMLElement).closest('.taskpro-table__resize')) return;
+      const doc = this.el.ownerDocument;
+      const rtl = this.language === 'fa';
+      const startX = event.clientX;
+      const startY = event.clientY;
+      let dragging = false;
+      let before: BoardPropertyId | null = null;
+      let changes = false;
+      let ghost: HTMLElement | null = null;
+      let line: HTMLElement | null = null;
+
+      const heads = () => Array.from(table.querySelectorAll<HTMLElement>('thead th[data-column]'));
+      const begin = () => {
+        dragging = true;
+        this.hold(true);
+        table.addClass('is-moving-column');
+        th.addClass('is-dragging');
+        ghost = this.el.createDiv({ cls: 'taskpro-table__ghost' });
+        ghost.appendChild(th.querySelector('.taskpro-table__th')!.cloneNode(true));
+        ghost.style.width = `${th.offsetWidth}px`;
+        line = this.el.createDiv({ cls: 'taskpro-table__drop' });
+      };
+      const onMove = (e: PointerEvent) => {
+        if (!dragging) {
+          if (Math.abs(e.clientX - startX) < 5 && Math.abs(e.clientY - startY) < 5) return;
+          begin();
+        }
+        const box = this.el.getBoundingClientRect();
+        const view = this.bodyEl.getBoundingClientRect();
+        // Near an edge of a table wider than the view, the view scrolls along.
+        if (e.clientX < view.left + 36) this.bodyEl.scrollLeft -= 14;
+        else if (e.clientX > view.right - 36) this.bodyEl.scrollLeft += 14;
+
+        const cells = heads();
+        const target = cells.find((cell) => {
+          const r = cell.getBoundingClientRect();
+          const mid = (r.left + r.right) / 2;
+          return rtl ? e.clientX > mid : e.clientX < mid;
+        });
+        before = (target?.dataset.column as BoardPropertyId | undefined) ?? null;
+        const order = cells.map((cell) => cell.dataset.column);
+        const at = order.indexOf(id);
+        changes = before !== id && (order[at + 1] ?? null) !== before;
+
+        const edge = (target ?? cells[cells.length - 1]).getBoundingClientRect();
+        const x = target ? (rtl ? edge.right : edge.left) : rtl ? edge.left : edge.right;
+        const rect = table.getBoundingClientRect();
+        const top = Math.max(rect.top, view.top);
+        const bottom = Math.min(rect.bottom, view.bottom);
+        line!.toggleClass('is-idle', !changes);
+        line!.style.left = `${Math.round(x - box.left - 1)}px`;
+        line!.style.top = `${Math.round(top - box.top)}px`;
+        line!.style.height = `${Math.max(0, Math.round(bottom - top))}px`;
+        const head = th.getBoundingClientRect();
+        ghost!.style.left = `${Math.round(e.clientX - box.left - ghost!.offsetWidth / 2)}px`;
+        ghost!.style.top = `${Math.round(head.top - box.top)}px`;
+      };
+      const finish = (drop: boolean) => {
+        doc.removeEventListener('pointermove', onMove, true);
+        doc.removeEventListener('pointerup', onUp, true);
+        doc.removeEventListener('pointercancel', onCancel, true);
+        doc.removeEventListener('keydown', onKey, true);
+        if (!dragging) return;
+        ghost?.remove();
+        line?.remove();
+        table.removeClass('is-moving-column');
+        th.removeClass('is-dragging');
+        // The click that ends the drag is not a sort.
+        this.swallowClick = true;
+        window.setTimeout(() => (this.swallowClick = false), 0);
+        if (drop && changes) this.saveColumns('tableColumns', moveColumn(this.tableColumns(), id, before));
+        this.hold(false);
+      };
+      const onUp = () => finish(true);
+      const onCancel = () => finish(false);
+      const onKey = (e: KeyboardEvent) => {
+        if (e.key !== 'Escape') return;
+        e.preventDefault();
+        e.stopPropagation();
+        finish(false);
+      };
+      doc.addEventListener('pointermove', onMove, true);
+      doc.addEventListener('pointerup', onUp, true);
+      doc.addEventListener('pointercancel', onCancel, true);
+      doc.addEventListener('keydown', onKey, true);
+    });
+  }
+
+  /** Dragging a header's edge resizes its column; a double click puts its width back. */
+  private columnResize(handle: HTMLElement, table: HTMLElement, column: BoardColumnPref): void {
+    const id = column.id;
+    handle.addEventListener('click', (event) => event.stopPropagation());
+    handle.addEventListener('dblclick', (event) => {
+      event.stopPropagation();
+      if (column.width !== undefined) this.saveColumns('tableColumns', setColumn(this.tableColumns(), id, { width: undefined }));
+    });
+    handle.addEventListener('pointerdown', (event) => {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const col = table.querySelector<HTMLElement>(`col[data-column="${id}"]`);
+      if (!col) return;
+      const doc = this.el.ownerDocument;
+      // The edge is on the column's far side: to the left in Persian.
+      const sign = this.language === 'fa' ? -1 : 1;
+      const startX = event.clientX;
+      const start = columnWidth(column);
+      let width = start;
+      this.hold(true);
+      this.el.addClass('is-resizing-column');
+      handle.addClass('is-active');
+      const onMove = (e: PointerEvent) => {
+        width = clampWidth(id, start + (e.clientX - startX) * sign);
+        col.style.width = `${width}px`;
+        this.fitTable(table);
+      };
+      const onUp = () => {
+        doc.removeEventListener('pointermove', onMove, true);
+        doc.removeEventListener('pointerup', onUp, true);
+        doc.removeEventListener('pointercancel', onUp, true);
+        this.el.removeClass('is-resizing-column');
+        handle.removeClass('is-active');
+        if (width !== start) this.saveColumns('tableColumns', setColumn(this.tableColumns(), id, { width }));
+        this.hold(false);
+      };
+      doc.addEventListener('pointermove', onMove, true);
+      doc.addEventListener('pointerup', onUp, true);
+      doc.addEventListener('pointercancel', onUp, true);
+    });
+  }
+
+  private sortEntries(key: BoardSortKey): MenuEntry[] {
+    const labels = this.labels;
+    const sorted = this.prefs.sortKey === key;
+    return [
+      {
+        label: labels.sortAscending,
+        icon: 'arrow-down',
+        checked: sorted && this.prefs.sortDir === 'asc',
+        onSelect: () => void this.updatePrefs({ sortKey: key, sortDir: 'asc' }),
+      },
+      {
+        label: labels.sortDescending,
+        icon: 'arrow-up',
+        checked: sorted && this.prefs.sortDir === 'desc',
+        onSelect: () => void this.updatePrefs({ sortKey: key, sortDir: 'desc' }),
+      },
+    ];
+  }
+
+  /** A column header's menu: sort, move, width, hide. The title column only sorts. */
+  private openHeaderMenu(id: BoardPropertyId | null, at: { x: number; y: number } | DOMRect): void {
+    const labels = this.labels;
+    const rtl = this.language === 'fa';
+    const sections: MenuSection[] = [];
+    if (!id) {
+      sections.push({ entries: this.sortEntries('title') });
+      sections.push({ entries: [{ label: labels.properties, icon: 'sliders-horizontal', submenu: () => this.propertySections('tableColumns') }] });
+    } else {
+      const info = BOARD_PROPERTIES[id];
+      const all = this.tableColumns();
+      const shown = visibleColumns(all);
+      const index = shown.findIndex((column) => column.id === id);
+      if (info.sortKey) sections.push({ entries: this.sortEntries(info.sortKey) });
+      sections.push({
+        entries: [
+          { label: labels.moveBefore, icon: rtl ? 'arrow-right' : 'arrow-left', disabled: index <= 0, onSelect: () => this.shiftColumn(id, -1) },
+          {
+            label: labels.moveAfter,
+            icon: rtl ? 'arrow-left' : 'arrow-right',
+            disabled: index >= shown.length - 1,
+            onSelect: () => this.shiftColumn(id, 1),
+          },
+        ],
+      });
+      sections.push({
+        entries: [
+          {
+            label: labels.resetWidth,
+            icon: 'move-horizontal',
+            disabled: all[all.findIndex((column) => column.id === id)]?.width === undefined,
+            onSelect: () => this.saveColumns('tableColumns', setColumn(this.tableColumns(), id, { width: undefined })),
+          },
+          {
+            label: labels.hideProperty,
+            icon: 'eye-off',
+            onSelect: () => this.saveColumns('tableColumns', setColumn(this.tableColumns(), id, { hidden: true })),
+          },
+        ],
+      });
+    }
+    this.hold(true);
+    openContextMenu({
+      container: this.el,
+      at,
+      rtl,
+      header: id ? labels.columns[id] : labels.columns.task,
+      sections,
+      onClose: () => this.hold(false),
+    });
+  }
+
+  /**
+   * Every property with a switch that shows or hides it, in the order it
+   * shows; a grip beside each one drags it to another place.
+   */
+  private propertySections(key: 'tableColumns' | 'cardProperties'): MenuSection[] {
+    const labels = this.labels;
+    const read = () => (key === 'tableColumns' ? this.tableColumns() : this.cardProperties());
+    const columns = read();
+    return [
+      {
+        title: labels.propertiesIn[key],
+        reorder: (from, before) => this.saveColumns(key, moveColumn(read(), columns[from].id, columns[before]?.id ?? null)),
+        entries: columns.map((column) => ({
+          label: labels.columns[column.id],
+          icon: BOARD_PROPERTIES[column.id].icon,
+          toggle: !column.hidden,
+          keepOpen: true,
+          onSelect: () => this.saveColumns(key, setColumn(read(), column.id, { hidden: !column.hidden })),
+        })),
+      },
+      {
+        entries: [
+          {
+            label: labels.resetColumns,
+            icon: 'rotate-ccw',
+            disabled: this.prefs[key] === undefined,
+            keepOpen: true,
+            onSelect: () => void this.updatePrefs({ [key]: undefined }, false),
+          },
+        ],
+      },
+    ];
+  }
+
+  /** The properties menu, under the table's + or the toolbar's Properties button. */
+  private openPropertiesMenu(anchor: HTMLElement, key: 'tableColumns' | 'cardProperties'): void {
+    this.hold(true);
+    openContextMenu({
+      container: this.el,
+      at: anchor.getBoundingClientRect(),
+      rtl: this.language === 'fa',
+      header: this.labels.properties,
+      sections: () => this.propertySections(key),
+      onClose: () => this.hold(false),
+    });
+  }
+
+  private renderGroupRow(body: HTMLElement, group: BoardGroup, groupBy: BoardGroupBy, span: string): void {
     const labels = this.labels;
     const collapsed = this.prefs.collapsedGroups.includes(group.id);
     const row = body.createEl('tr', { cls: 'taskpro-table__group' });
     row.toggleClass('is-collapsed', collapsed);
-    const cell = row.createEl('td', { attr: { colspan: '9' } });
+    const cell = row.createEl('td', { attr: { colspan: span } });
     const toggle = cell.createEl('button', { cls: 'taskpro-table__group-toggle' });
     toggle.type = 'button';
     toggle.setAttribute('aria-expanded', String(!collapsed));
@@ -1037,7 +1426,7 @@ export class TaskBoard {
     return folder.split('/').pop() ?? '';
   }
 
-  private renderRow(body: HTMLElement, task: BoardTask): void {
+  private renderRow(body: HTMLElement, task: BoardTask, columns: readonly BoardColumnPref[]): void {
     const labels = this.labels;
     const row = body.createEl('tr', { cls: 'taskpro-table__row' });
     row.dataset.status = task.status;
@@ -1046,32 +1435,45 @@ export class TaskBoard {
     this.checkButton(row.createEl('td', { cls: 'taskpro-table__check' }), task);
 
     const titleCell = row.createEl('td', { cls: 'taskpro-table__task' });
-    this.titleBlock(titleCell, task);
+    this.titleBlock(titleCell, task, true, !columns.some((column) => column.id === 'repeat'));
 
-    const statusCell = row.createEl('td', { cls: 'taskpro-table__status' });
-    this.statusChip(statusCell, task);
-
-    const tagsCell = row.createEl('td', { cls: 'taskpro-table__tags is-editable' });
-    this.tagChips(tagsCell, task);
-    tagsCell.addEventListener('click', () => this.host.editTags(task));
-
-    const priorityCell = row.createEl('td', { cls: 'taskpro-table__priority is-editable' });
-    this.priorityChip(priorityCell, task);
-
-    const deadlineCell = row.createEl('td', { cls: 'taskpro-table__deadline is-editable' });
-    this.deadlineChip(deadlineCell, task);
-
-    const progressCell = row.createEl('td', { cls: 'taskpro-table__progress' });
-    this.progressBar(progressCell, task);
-
-    const noteCell = row.createEl('td', { cls: 'taskpro-table__note' });
-    this.noteLink(noteCell, task);
+    for (const column of columns) this.renderCell(row, task, column.id);
 
     const moreCell = row.createEl('td', { cls: 'taskpro-table__more' });
     const more = this.iconButton(moreCell, 'more-horizontal', labels.more, () =>
       this.openTaskActions(task, more.getBoundingClientRect(), more)
     );
     this.withTaskActions(row, task);
+  }
+
+  private renderCell(row: HTMLElement, task: BoardTask, id: BoardPropertyId): void {
+    const cell = row.createEl('td', { cls: `taskpro-table__${id}` });
+    cell.dataset.column = id;
+    switch (id) {
+      case 'status':
+        return this.statusChip(cell, task);
+      case 'tags':
+        cell.addClass('is-editable');
+        this.tagChips(cell, task);
+        cell.addEventListener('click', () => this.host.editTags(task));
+        return;
+      case 'priority':
+        cell.addClass('is-editable');
+        return this.priorityChip(cell, task);
+      case 'deadline':
+        cell.addClass('is-editable');
+        return this.deadlineChip(cell, task);
+      case 'plan':
+        cell.toggleClass('is-editable', !!this.host.setSchedule);
+        return this.planChip(cell, task, true);
+      case 'repeat':
+        cell.toggleClass('is-editable', !!this.host.setRepeat);
+        return this.repeatChip(cell, task);
+      case 'progress':
+        return this.progressBar(cell, task);
+      case 'note':
+        return this.noteLink(cell, task);
+    }
   }
 
   // ── Cells, shared by rows and cards ──────────────────────────────────────
@@ -1093,7 +1495,8 @@ export class TaskBoard {
     });
   }
 
-  private titleBlock(parent: HTMLElement, task: BoardTask, withOpen = true): void {
+  /** The title, editable in place; `withRepeat` marks a repeating task when no repeat column says so. */
+  private titleBlock(parent: HTMLElement, task: BoardTask, withOpen = true, withRepeat = true): void {
     const labels = this.labels;
     const wrap = parent.createDiv({ cls: 'taskpro-board__title-wrap' });
     if (task.depth > 0) {
@@ -1116,7 +1519,7 @@ export class TaskBoard {
       }
     });
 
-    if (task.repeat) {
+    if (task.repeat && withRepeat) {
       const repeat = wrap.createSpan({ cls: 'taskpro-board__repeat' });
       setIcon(repeat, 'repeat');
       const text = getRepeatLabels(this.language).chip(task.repeat);
@@ -1180,19 +1583,7 @@ export class TaskBoard {
     parent.appendChild(chip);
     chip.addEventListener('click', (event) => {
       event.stopPropagation();
-      const menu = new Menu();
-      for (const status of BOARD_STATUS_ORDER) {
-        menu.addItem((item) =>
-          item
-            .setTitle(STATUS_LABELS[this.language][status])
-            .setIcon(STATUS_ICON_NAMES[status])
-            .setChecked(task.status === status)
-            .onClick(() => {
-              if (status !== task.status) void this.host.setStatus(task, status);
-            })
-        );
-      }
-      menu.showAtMouseEvent(event);
+      this.dropdown(chip, statusSections(this.actionOptions(task, chip)));
     });
   }
 
@@ -1212,7 +1603,6 @@ export class TaskBoard {
   }
 
   private priorityChip(parent: HTMLElement, task: BoardTask): void {
-    const labels = this.labels;
     if (task.priority) {
       const chip = buildChip(
         'taskpro-priority-badge',
@@ -1226,28 +1616,7 @@ export class TaskBoard {
     }
     parent.addEventListener('click', (event) => {
       event.stopPropagation();
-      const menu = new Menu();
-      for (const level of TASK_PRIORITIES) {
-        menu.addItem((item) =>
-          item
-            .setTitle(PRIORITY_LABELS[this.language][level])
-            .setIcon(PRIORITY_ICON_NAMES[level])
-            .setChecked(task.priority === level)
-            .onClick(() => {
-              if (level !== task.priority) void this.host.setPriority(task, level);
-            })
-        );
-      }
-      if (task.priority) {
-        menu.addSeparator();
-        menu.addItem((item) =>
-          item
-            .setTitle(labels.noPriority)
-            .setIcon('x')
-            .onClick(() => void this.host.setPriority(task, null))
-        );
-      }
-      menu.showAtMouseEvent(event);
+      this.dropdown(parent, prioritySections(this.actionOptions(task, parent)));
     });
   }
 
@@ -1280,7 +1649,56 @@ export class TaskBoard {
     }
     parent.addEventListener('click', (event) => {
       event.stopPropagation();
-      void this.host.editDeadline(task);
+      this.dropdown(parent, deadlineSections(this.actionOptions(task, parent)));
+    });
+  }
+
+  /**
+   * When the task is planned. A card says it the way the chip in a note
+   * does ("Today, 09:00 – 10:30"); a table cell puts the day in the chip and
+   * the hours beside it, so a narrow column still shows from when to when.
+   */
+  private planChip(parent: HTMLElement, task: BoardTask, split = false): void {
+    const schedule = task.schedule;
+    if (schedule) {
+      const options = {
+        language: this.language,
+        calendarSystem: this.prefs.calendarSystem ?? this.settings.calendarSystem,
+        timeFormat: this.settings.calendar.timeFormat,
+      };
+      const full = scheduleText(schedule, options);
+      const time = scheduleTimeText(schedule, options);
+      const wrap = split ? parent.createDiv({ cls: 'taskpro-board__plan' }) : parent;
+      const chip = buildChip(
+        'taskpro-schedule-badge',
+        schedule.start ? CHIP_ICON_NAMES.schedule : CHIP_ICON_NAMES.scheduleDay,
+        split ? scheduleDayText(schedule.date, options) : full
+      );
+      if (task.status !== '[x]' && isSchedulePast(schedule)) chip.dataset.state = 'past';
+      chip.title = full;
+      wrap.appendChild(chip);
+      if (split && time) wrap.createSpan({ cls: 'taskpro-board__time', text: time });
+    } else {
+      setIcon(parent.createSpan({ cls: 'taskpro-board__placeholder' }), 'plus');
+    }
+    if (!this.host.setSchedule) return;
+    parent.addEventListener('click', (event) => {
+      event.stopPropagation();
+      this.dropdown(parent, planSections(this.actionOptions(task, parent)));
+    });
+  }
+
+  private repeatChip(parent: HTMLElement, task: BoardTask): void {
+    if (task.repeat) {
+      const text = getRepeatLabels(this.language).chip(task.repeat);
+      parent.appendChild(buildChip('taskpro-repeat-badge', CHIP_ICON_NAMES.repeat, text));
+    } else {
+      setIcon(parent.createSpan({ cls: 'taskpro-board__placeholder' }), 'plus');
+    }
+    if (!this.host.setRepeat) return;
+    parent.addEventListener('click', (event) => {
+      event.stopPropagation();
+      this.dropdown(parent, repeatSections(this.actionOptions(task, parent)));
     });
   }
 
@@ -1322,9 +1740,15 @@ export class TaskBoard {
   private renderKanban(tasks: BoardTask[], today: Date): void {
     const labels = this.labels;
     const groupBy = this.kanbanGrouping();
-    const groups = this.kanbanColumns(groupTasks(tasks, groupBy, { tags: this.settings.tags, today }), groupBy);
+    const all = orderGroups(
+      this.kanbanColumns(groupTasks(tasks, groupBy, { tags: this.settings.tags, today }), groupBy),
+      this.prefs.groupOrder?.[groupBy]
+    );
+    const hidden = new Set(this.prefs.hiddenGroups ?? []);
+    const groups = all.filter((group) => !hidden.has(group.id));
 
     const board = this.bodyEl.createDiv({ cls: 'taskpro-kanban' });
+    if (this.prefs.kanbanColumnWidth) board.style.setProperty('--taskpro-kanban-width', `${clampKanbanWidth(this.prefs.kanbanColumnWidth)}px`);
     const droppable = this.canDropInto(groupBy);
 
     for (const group of groups) {
@@ -1335,6 +1759,21 @@ export class TaskBoard {
       const header = column.createDiv({ cls: 'taskpro-kanban__header' });
       this.groupLabel(header, groupBy, group.value);
       header.createSpan({ cls: 'taskpro-kanban__count', text: String(group.tasks.length) });
+      const menu = this.iconButton(header, 'more-horizontal', labels.columnMenu, () =>
+        this.openKanbanColumnMenu(group, groupBy, all, menu.getBoundingClientRect())
+      );
+      menu.addClass('taskpro-kanban__menu');
+      header.addEventListener('contextmenu', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        this.openKanbanColumnMenu(group, groupBy, all, { x: event.clientX, y: event.clientY });
+      });
+      this.kanbanColumnDrag(header, column, board, (before) =>
+        this.moveKanbanColumn(all, groupBy, group.value, before)
+      );
+      const handle = column.createDiv({ cls: 'taskpro-kanban__resize' });
+      handle.setAttribute('aria-hidden', 'true');
+      this.kanbanResize(handle, board, column);
 
       const cards = column.createDiv({ cls: 'taskpro-kanban__cards' });
       const limit = this.rowLimits.get(group.id) ?? ROWS_PER_PAGE;
@@ -1373,6 +1812,219 @@ export class TaskBoard {
         });
       }
     }
+
+    const aside = all.filter((group) => hidden.has(group.id));
+    if (aside.length || groupBy === 'tag') {
+      const end = board.createDiv({ cls: 'taskpro-kanban__aside' });
+      if (groupBy === 'tag') {
+        const add = end.createEl('button', { cls: 'taskpro-kanban__new-column' });
+        add.type = 'button';
+        setIcon(add.createSpan({ cls: 'taskpro-kanban__add-icon' }), 'plus');
+        add.createSpan({ text: labels.newTagColumn });
+        add.addEventListener('click', () => this.host.manageTags());
+      }
+      if (aside.length) this.renderHiddenColumns(end, aside, groupBy);
+    }
+  }
+
+  /** The columns taken off the board, listed at its end; a click puts one back. */
+  private renderHiddenColumns(parent: HTMLElement, groups: BoardGroup[], groupBy: BoardGroupBy): void {
+    const labels = this.labels;
+    const list = parent.createDiv({ cls: 'taskpro-kanban__hidden' });
+    const head = list.createDiv({ cls: 'taskpro-kanban__hidden-head' });
+    setIcon(head.createSpan({ cls: 'taskpro-kanban__hidden-icon' }), 'eye-off');
+    head.createSpan({ text: labels.hiddenColumns(groups.length) });
+    for (const group of groups) {
+      const item = list.createEl('button', { cls: 'taskpro-kanban__hidden-item' });
+      item.type = 'button';
+      item.dataset.group = group.value;
+      item.setAttribute('aria-label', labels.showColumn);
+      item.title = labels.showColumn;
+      this.groupLabel(item, groupBy, group.value);
+      item.createSpan({ cls: 'taskpro-kanban__count', text: String(group.tasks.length) });
+      setIcon(item.createSpan({ cls: 'taskpro-kanban__hidden-show' }), 'eye');
+      item.addEventListener('click', () => this.setGroupHidden([group.id], false));
+    }
+    if (groups.length > 1) {
+      const all = list.createEl('button', { cls: 'taskpro-kanban__hidden-all', text: labels.showAllColumns });
+      all.type = 'button';
+      all.addEventListener('click', () => this.setGroupHidden(groups.map((group) => group.id), false));
+    }
+  }
+
+  private setGroupHidden(ids: string[], hidden: boolean): void {
+    const list = (this.prefs.hiddenGroups ?? []).filter((id) => !ids.includes(id));
+    if (hidden) list.push(...ids);
+    void this.updatePrefs({ hiddenGroups: list.length ? list : undefined }, false);
+  }
+
+  private moveKanbanColumn(all: BoardGroup[], groupBy: BoardGroupBy, value: string, before: string | null): void {
+    const order = moveValue(all.map((group) => group.value), value, before);
+    void this.updatePrefs({ groupOrder: { ...this.prefs.groupOrder, [groupBy]: order } }, false);
+  }
+
+  private openKanbanColumnMenu(group: BoardGroup, groupBy: BoardGroupBy, all: BoardGroup[], at: { x: number; y: number } | DOMRect): void {
+    const labels = this.labels;
+    const rtl = this.language === 'fa';
+    const hidden = new Set(this.prefs.hiddenGroups ?? []);
+    const shown = all.filter((g) => !hidden.has(g.id));
+    const index = shown.findIndex((g) => g.id === group.id);
+    const sections: MenuSection[] = [
+      {
+        entries: [
+          {
+            label: labels.moveBefore,
+            icon: rtl ? 'arrow-right' : 'arrow-left',
+            disabled: index <= 0,
+            onSelect: () => this.moveKanbanColumn(all, groupBy, group.value, shown[index - 1].value),
+          },
+          {
+            label: labels.moveAfter,
+            icon: rtl ? 'arrow-left' : 'arrow-right',
+            disabled: index >= shown.length - 1,
+            onSelect: () => this.moveKanbanColumn(all, groupBy, group.value, shown[index + 2]?.value ?? null),
+          },
+          { label: labels.hideColumn, icon: 'eye-off', onSelect: () => this.setGroupHidden([group.id], true) },
+        ],
+      },
+      {
+        entries: [
+          {
+            label: labels.resetColumnWidth,
+            icon: 'move-horizontal',
+            disabled: this.prefs.kanbanColumnWidth === undefined,
+            onSelect: () => void this.updatePrefs({ kanbanColumnWidth: undefined }, false),
+          },
+          {
+            label: labels.resetOrder,
+            icon: 'rotate-ccw',
+            disabled: !this.prefs.groupOrder?.[groupBy]?.length,
+            onSelect: () => {
+              const next = { ...this.prefs.groupOrder };
+              delete next[groupBy];
+              void this.updatePrefs({ groupOrder: next }, false);
+            },
+          },
+        ],
+      },
+      { entries: [{ label: labels.properties, icon: 'sliders-horizontal', submenu: () => this.propertySections('cardProperties') }] },
+    ];
+    this.hold(true);
+    openContextMenu({ container: this.el, at, rtl, header: labels.columnMenu, sections, onClose: () => this.hold(false) });
+  }
+
+  /** Dragging a column by its header moves it; a line between columns shows where it will go. */
+  private kanbanColumnDrag(header: HTMLElement, column: HTMLElement, board: HTMLElement, drop: (before: string | null) => void): void {
+    header.addEventListener('pointerdown', (event) => {
+      if (event.button !== 0 || (event.target as HTMLElement).closest('button, input')) return;
+      const doc = this.el.ownerDocument;
+      const rtl = this.language === 'fa';
+      const startX = event.clientX;
+      const startY = event.clientY;
+      let dragging = false;
+      let before: string | null = null;
+      let changes = false;
+      let line: HTMLElement | null = null;
+      const columns = () => Array.from(board.querySelectorAll<HTMLElement>(':scope > .taskpro-kanban__column'));
+
+      const onMove = (e: PointerEvent) => {
+        if (!dragging) {
+          if (Math.abs(e.clientX - startX) < 5 && Math.abs(e.clientY - startY) < 5) return;
+          dragging = true;
+          this.hold(true);
+          column.addClass('is-moving');
+          board.addClass('is-moving-column');
+          line = this.el.createDiv({ cls: 'taskpro-kanban__drop' });
+        }
+        const box = this.el.getBoundingClientRect();
+        const view = this.bodyEl.getBoundingClientRect();
+        if (e.clientX < view.left + 48) this.bodyEl.scrollLeft -= 16;
+        else if (e.clientX > view.right - 48) this.bodyEl.scrollLeft += 16;
+
+        const list = columns();
+        const target = list.find((el) => {
+          const r = el.getBoundingClientRect();
+          const mid = (r.left + r.right) / 2;
+          return rtl ? e.clientX > mid : e.clientX < mid;
+        });
+        before = target?.dataset.group ?? null;
+        const at = list.indexOf(column);
+        const next = list[at + 1];
+        changes = target !== column && (next ? target !== next : target !== undefined);
+
+        const gap = parseFloat(getComputedStyle(board).columnGap) || 12;
+        const edge = (target ?? list[list.length - 1]).getBoundingClientRect();
+        const x = target ? (rtl ? edge.right + gap / 2 : edge.left - gap / 2) : rtl ? edge.left - gap / 2 : edge.right + gap / 2;
+        const rect = board.getBoundingClientRect();
+        const top = Math.max(rect.top, view.top);
+        const bottom = Math.min(Math.max(...list.map((el) => el.getBoundingClientRect().bottom)), view.bottom);
+        line!.toggleClass('is-idle', !changes);
+        line!.style.left = `${Math.round(x - box.left - 1)}px`;
+        line!.style.top = `${Math.round(top - box.top)}px`;
+        line!.style.height = `${Math.max(0, Math.round(bottom - top))}px`;
+      };
+      const finish = (ok: boolean) => {
+        doc.removeEventListener('pointermove', onMove, true);
+        doc.removeEventListener('pointerup', onUp, true);
+        doc.removeEventListener('pointercancel', onCancel, true);
+        doc.removeEventListener('keydown', onKey, true);
+        if (!dragging) return;
+        line?.remove();
+        column.removeClass('is-moving');
+        board.removeClass('is-moving-column');
+        if (ok && changes) drop(before);
+        this.hold(false);
+      };
+      const onUp = () => finish(true);
+      const onCancel = () => finish(false);
+      const onKey = (e: KeyboardEvent) => {
+        if (e.key !== 'Escape') return;
+        e.preventDefault();
+        e.stopPropagation();
+        finish(false);
+      };
+      doc.addEventListener('pointermove', onMove, true);
+      doc.addEventListener('pointerup', onUp, true);
+      doc.addEventListener('pointercancel', onCancel, true);
+      doc.addEventListener('keydown', onKey, true);
+    });
+  }
+
+  /** Every column is as wide as the others; dragging one's edge resizes them all, a double click resets them. */
+  private kanbanResize(handle: HTMLElement, board: HTMLElement, column: HTMLElement): void {
+    handle.addEventListener('dblclick', (event) => {
+      event.stopPropagation();
+      if (this.prefs.kanbanColumnWidth !== undefined) void this.updatePrefs({ kanbanColumnWidth: undefined }, false);
+    });
+    handle.addEventListener('pointerdown', (event) => {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const doc = this.el.ownerDocument;
+      const sign = this.language === 'fa' ? -1 : 1;
+      const startX = event.clientX;
+      const start = Math.round(column.getBoundingClientRect().width);
+      let width = start;
+      this.hold(true);
+      this.el.addClass('is-resizing-column');
+      handle.addClass('is-active');
+      const onMove = (e: PointerEvent) => {
+        width = clampKanbanWidth(start + (e.clientX - startX) * sign);
+        board.style.setProperty('--taskpro-kanban-width', `${width}px`);
+      };
+      const onUp = () => {
+        doc.removeEventListener('pointermove', onMove, true);
+        doc.removeEventListener('pointerup', onUp, true);
+        doc.removeEventListener('pointercancel', onUp, true);
+        this.el.removeClass('is-resizing-column');
+        handle.removeClass('is-active');
+        if (width !== start) void this.updatePrefs({ kanbanColumnWidth: width === KANBAN_WIDTH.initial ? undefined : width }, false);
+        this.hold(false);
+      };
+      doc.addEventListener('pointermove', onMove, true);
+      doc.addEventListener('pointerup', onUp, true);
+      doc.addEventListener('pointercancel', onUp, true);
+    });
   }
 
   /** A faint tint that ties a column to its chip colour. */
@@ -1486,9 +2138,10 @@ export class TaskBoard {
       });
     }
 
+    const shown = visibleColumns(this.cardProperties());
     const top = card.createDiv({ cls: 'taskpro-card__top' });
     this.checkButton(top, task);
-    this.titleBlock(top, task, false);
+    this.titleBlock(top, task, false, !shown.some((column) => column.id === 'repeat'));
     const more = this.iconButton(top, 'more-horizontal', labels.more, () =>
       this.openTaskActions(task, more.getBoundingClientRect(), more)
     );
@@ -1496,17 +2149,41 @@ export class TaskBoard {
     this.withTaskActions(card, task);
 
     const props = card.createDiv({ cls: 'taskpro-card__props' });
-    if (task.tags.length) {
-      const tags = props.createDiv({ cls: 'is-editable taskpro-card__tags' });
-      this.tagChips(tags, task);
-      tags.addEventListener('click', () => this.host.editTags(task));
+    let withNote = false;
+    for (const { id } of shown) {
+      switch (id) {
+        case 'status':
+          this.statusChip(props.createDiv({ cls: 'is-editable' }), task);
+          break;
+        case 'tags':
+          if (task.tags.length) {
+            const tags = props.createDiv({ cls: 'is-editable taskpro-card__tags' });
+            this.tagChips(tags, task);
+            tags.addEventListener('click', () => this.host.editTags(task));
+          }
+          break;
+        case 'priority':
+          if (task.priority) this.priorityChip(props.createDiv({ cls: 'is-editable' }), task);
+          break;
+        case 'deadline':
+          if (task.deadline) this.deadlineChip(props.createDiv({ cls: 'is-editable' }), task);
+          break;
+        case 'plan':
+          if (task.schedule) this.planChip(props.createDiv({ cls: 'is-editable' }), task);
+          break;
+        case 'repeat':
+          if (task.repeat) this.repeatChip(props.createDiv({ cls: 'is-editable' }), task);
+          break;
+        case 'progress':
+          this.progressBar(props, task);
+          break;
+        case 'note':
+          withNote = true;
+          break;
+      }
     }
-    if (task.priority) this.priorityChip(props.createDiv({ cls: 'is-editable' }), task);
-    if (task.deadline) this.deadlineChip(props.createDiv({ cls: 'is-editable' }), task);
-    this.progressBar(props, task);
     if (!props.childElementCount) props.remove();
 
-    const foot = card.createDiv({ cls: 'taskpro-card__foot' });
-    this.noteLink(foot, task);
+    if (withNote) this.noteLink(card.createDiv({ cls: 'taskpro-card__foot' }), task);
   }
 }

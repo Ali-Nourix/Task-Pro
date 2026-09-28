@@ -1921,21 +1921,16 @@ button.taskpro-chip:focus-visible {
 
 /* ── Table ───────────────────────────────────────────────────────────────── */
 .taskpro-board .taskpro-table {
+  /* The property columns' widths, and so the table's least width, are set
+     inline from the board's saved columns; the title takes what is left. */
   width: 100%;
-  min-width: 880px;
   border-collapse: separate;
   border-spacing: 0;
   table-layout: fixed;
 }
 
 .taskpro-board .taskpro-table__col--check { width: 34px; }
-.taskpro-board .taskpro-table__col--status { width: 136px; }
-.taskpro-board .taskpro-table__col--tags { width: 180px; }
-.taskpro-board .taskpro-table__col--priority { width: 112px; }
-.taskpro-board .taskpro-table__col--deadline { width: 196px; }
-.taskpro-board .taskpro-table__col--progress { width: 112px; }
-.taskpro-board .taskpro-table__col--note { width: 150px; }
-.taskpro-board .taskpro-table__col--more { width: 36px; }
+.taskpro-board .taskpro-table__col--more { width: 40px; }
 
 .taskpro-board .taskpro-table th {
   position: sticky;
@@ -1953,6 +1948,12 @@ button.taskpro-chip:focus-visible {
   display: flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
+}
+.taskpro-board .taskpro-table__th-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .taskpro-board .taskpro-table__th-icon {
   display: inline-flex;
@@ -1962,11 +1963,18 @@ button.taskpro-chip:focus-visible {
   width: 13px;
   height: 13px;
 }
-.taskpro-board .taskpro-table th.is-sortable {
+.taskpro-board .taskpro-table th.is-sortable,
+.taskpro-board .taskpro-table th.is-movable {
   cursor: pointer;
   user-select: none;
+  -webkit-user-select: none;
 }
-.taskpro-board .taskpro-table th.is-sortable:hover {
+.taskpro-board .taskpro-table th:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: -2px;
+}
+.taskpro-board .taskpro-table th.is-sortable:hover,
+.taskpro-board .taskpro-table th.is-movable:hover {
   background: var(--background-primary-alt);
   color: var(--text-normal);
 }
@@ -1980,6 +1988,100 @@ button.taskpro-chip:focus-visible {
 .taskpro-board .taskpro-table__sort .svg-icon {
   width: 12px;
   height: 12px;
+}
+
+/* Column edges: a handle on each property header's far side. A faint line
+   marks every edge while the pointer is over the header row, and the edge
+   under the pointer turns the accent colour. */
+.taskpro-board .taskpro-table__resize {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  inset-inline-end: 0;
+  z-index: 2;
+  width: 7px;
+  cursor: col-resize;
+  touch-action: none;
+}
+.taskpro-board .taskpro-table__resize::after {
+  content: "";
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  inset-inline-end: 0;
+  width: 1px;
+  background: transparent;
+  transition: background-color 120ms var(--taskpro-ease);
+}
+.taskpro-board .taskpro-table thead:hover .taskpro-table__resize::after {
+  background: var(--background-modifier-border);
+}
+.taskpro-board .taskpro-table .taskpro-table__resize:hover::after,
+.taskpro-board .taskpro-table .taskpro-table__resize.is-active::after {
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--interactive-accent);
+}
+.taskpro-board.is-resizing-column,
+.taskpro-board.is-resizing-column * {
+  cursor: col-resize !important;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Moving a column: its header dims, a copy follows the pointer and a line
+   shows where it lands. */
+.taskpro-board .taskpro-table.is-moving-column th {
+  cursor: grabbing;
+}
+.taskpro-board .taskpro-table th.is-dragging {
+  color: var(--text-faint);
+}
+.taskpro-board .taskpro-table th.is-dragging .taskpro-table__th {
+  opacity: 0.4;
+}
+.taskpro-board .taskpro-table__ghost {
+  position: absolute;
+  z-index: calc(var(--layer-popover, 30) + 1);
+  box-sizing: border-box;
+  padding: 8px;
+  overflow: hidden;
+  border: 1px solid var(--taskpro-panel-edge);
+  border-radius: var(--taskpro-radius-inner);
+  background: var(--taskpro-board-surface);
+  box-shadow: var(--taskpro-float-shadow);
+  color: var(--text-normal);
+  font-weight: var(--font-medium);
+  white-space: nowrap;
+  pointer-events: none;
+}
+.taskpro-board .taskpro-table__drop,
+.taskpro-board .taskpro-kanban__drop {
+  position: absolute;
+  z-index: var(--layer-popover, 30);
+  width: 2px;
+  border-radius: 1px;
+  background: var(--interactive-accent);
+  pointer-events: none;
+}
+.taskpro-board .taskpro-table__drop.is-idle,
+.taskpro-board .taskpro-kanban__drop.is-idle {
+  opacity: 0;
+}
+
+/* The + at the end of the header row opens the properties menu. */
+.taskpro-board .taskpro-table th.taskpro-table__add-column {
+  padding: 4px;
+  text-align: end;
+}
+.taskpro-board .taskpro-table button.taskpro-table__add-btn {
+  color: var(--text-faint);
+  opacity: 0.7;
+}
+.taskpro-board .taskpro-table thead:hover button.taskpro-table__add-btn,
+.taskpro-board .taskpro-table button.taskpro-table__add-btn:focus-visible {
+  opacity: 1;
 }
 
 .taskpro-board .taskpro-table td {
@@ -2268,6 +2370,19 @@ button.taskpro-chip:focus-visible {
   gap: 2px 6px;
   min-width: 0;
 }
+.taskpro-board .taskpro-board__plan {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 6px;
+  min-width: 0;
+}
+.taskpro-board .taskpro-board__time {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
 .taskpro-board .taskpro-board__date {
   color: var(--text-faint);
   white-space: nowrap;
@@ -2354,8 +2469,9 @@ button.taskpro-chip:focus-visible {
 
 .taskpro-board .taskpro-kanban__column {
   --taskpro-column-accent: var(--text-faint);
+  position: relative;
   display: flex;
-  flex: 0 0 272px;
+  flex: 0 0 var(--taskpro-kanban-width, 272px);
   flex-direction: column;
   gap: 8px;
   max-height: 100%;
@@ -2373,7 +2489,163 @@ button.taskpro-chip:focus-visible {
   align-items: center;
   gap: 8px;
   min-width: 0;
-  padding: 2px 4px;
+  min-height: 26px;
+  padding: 2px 0 2px 4px;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.taskpro-board[dir="rtl"] .taskpro-kanban__header {
+  padding: 2px 4px 2px 0;
+}
+.taskpro-board .taskpro-kanban.is-moving-column,
+.taskpro-board .taskpro-kanban.is-moving-column * {
+  cursor: grabbing;
+}
+.taskpro-board .taskpro-kanban__column.is-moving {
+  opacity: 0.45;
+}
+.taskpro-board .taskpro-kanban__header button.taskpro-kanban__menu {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  margin-inline-start: auto;
+  color: var(--text-faint);
+  opacity: 0;
+  cursor: pointer;
+}
+.taskpro-board .taskpro-kanban__header:hover button.taskpro-kanban__menu,
+.taskpro-board .taskpro-kanban__header button.taskpro-kanban__menu:focus-visible {
+  opacity: 1;
+}
+
+/* A column's edge, in the gap beside it: every column shares one width, so
+   dragging any edge resizes them all. */
+.taskpro-board .taskpro-kanban__resize {
+  position: absolute;
+  top: 10px;
+  bottom: 10px;
+  inset-inline-end: -10px;
+  z-index: 1;
+  width: 8px;
+  cursor: col-resize;
+  touch-action: none;
+}
+.taskpro-board .taskpro-kanban__resize::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  inset-inline-start: 3px;
+  width: 2px;
+  border-radius: 1px;
+  background: transparent;
+  transition: background-color 120ms var(--taskpro-ease);
+}
+.taskpro-board .taskpro-kanban__resize:hover::after,
+.taskpro-board .taskpro-kanban__resize.is-active::after {
+  background: var(--interactive-accent);
+}
+
+/* After the columns: a new tag column, and the columns taken off the board. */
+.taskpro-board .taskpro-kanban__aside {
+  display: flex;
+  flex: 0 0 216px;
+  flex-direction: column;
+  gap: 8px;
+}
+.taskpro-board button.taskpro-kanban__new-column {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  height: 34px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--radius-l);
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-faint);
+  font-size: var(--font-ui-small);
+  cursor: pointer;
+}
+.taskpro-board button.taskpro-kanban__new-column:hover {
+  background: color-mix(in srgb, var(--text-normal) 6%, transparent);
+  color: var(--text-muted);
+}
+.taskpro-board .taskpro-kanban__hidden {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+  border-radius: var(--radius-l);
+  background: var(--background-secondary);
+}
+.taskpro-board .taskpro-kanban__hidden-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px 6px;
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-semibold);
+}
+.taskpro-board .taskpro-kanban__hidden-icon {
+  display: inline-flex;
+}
+.taskpro-board .taskpro-kanban__hidden-icon .svg-icon {
+  width: 13px;
+  height: 13px;
+}
+.taskpro-board button.taskpro-kanban__hidden-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  height: auto;
+  min-height: 30px;
+  padding: 3px 6px;
+  border: 0;
+  border-radius: var(--taskpro-radius-inner);
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  cursor: pointer;
+}
+.taskpro-board button.taskpro-kanban__hidden-item:hover {
+  background: var(--background-modifier-hover);
+}
+.taskpro-board .taskpro-kanban__hidden-item .taskpro-chip {
+  min-width: 0;
+  max-width: 100%;
+}
+.taskpro-board .taskpro-kanban__hidden-show {
+  display: inline-flex;
+  margin-inline-start: auto;
+  color: var(--text-faint);
+  opacity: 0;
+}
+.taskpro-board .taskpro-kanban__hidden-item:hover .taskpro-kanban__hidden-show,
+.taskpro-board .taskpro-kanban__hidden-item:focus-visible .taskpro-kanban__hidden-show {
+  opacity: 1;
+}
+.taskpro-board .taskpro-kanban__hidden-show .svg-icon {
+  width: 14px;
+  height: 14px;
+}
+.taskpro-board button.taskpro-kanban__hidden-all {
+  align-self: flex-start;
+  height: auto;
+  margin-top: 4px;
+  padding: 3px 6px;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  color: var(--text-accent);
+  font-size: var(--font-ui-smaller);
+  cursor: pointer;
 }
 .taskpro-board .taskpro-kanban__header .taskpro-board__group-note {
   flex: 0 1 auto;
@@ -4579,6 +4851,69 @@ button.taskpro-chip:focus-visible {
 }
 .taskpro-board .taskpro-menu__check {
   color: var(--interactive-accent);
+}
+/* A property's switch, and the grip that drags it to another place. */
+.taskpro-board .taskpro-menu__switch {
+  position: relative;
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  width: 26px;
+  height: 16px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-normal) 16%, transparent);
+  transition: background-color 140ms var(--taskpro-ease);
+}
+.taskpro-board .taskpro-menu__switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  inset-inline-start: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--background-primary);
+  box-shadow: 0 1px 2px color-mix(in srgb, #000 22%, transparent);
+  transition: inset-inline-start 140ms var(--taskpro-ease);
+}
+.taskpro-board .taskpro-menu__switch.is-on {
+  background: var(--interactive-accent);
+}
+.taskpro-board .taskpro-menu__switch.is-on::after {
+  inset-inline-start: 12px;
+}
+.taskpro-board .taskpro-menu__grip {
+  display: inline-flex;
+  flex: 0 0 12px;
+  justify-content: center;
+  margin-inline: -4px -4px;
+  color: var(--text-faint);
+  opacity: 0;
+  cursor: grab;
+  touch-action: none;
+}
+.taskpro-board .taskpro-menu__grip svg {
+  width: 13px;
+  height: 13px;
+}
+.taskpro-board .taskpro-menu__item:hover .taskpro-menu__grip,
+.taskpro-board .taskpro-menu__item.is-active .taskpro-menu__grip,
+.taskpro-board .taskpro-menu__item.is-dragging .taskpro-menu__grip {
+  opacity: 1;
+}
+.taskpro-board .taskpro-menu__item.is-dragging {
+  opacity: 0.5;
+}
+.taskpro-board .taskpro-menu__item.is-drop-before {
+  box-shadow: inset 0 2px 0 var(--interactive-accent);
+}
+.taskpro-board .taskpro-menu__item.is-drop-after {
+  box-shadow: inset 0 -2px 0 var(--interactive-accent);
+}
+@media (prefers-reduced-motion: reduce) {
+  .taskpro-board .taskpro-menu__switch,
+  .taskpro-board .taskpro-menu__switch::after {
+    transition: none;
+  }
 }
 .taskpro-board .taskpro-menu__empty {
   padding: 10px;
