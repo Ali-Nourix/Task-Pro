@@ -249,6 +249,8 @@ export class TaskCalendar {
   private scroller: HTMLElement | null = null;
   private stickyEl: HTMLElement | null = null;
   private savedScroll: number | null = null;
+  /** On a phone, how far across the week the finger has moved it, for the week that starts `from`. */
+  private savedScrollX: { from: DayKey; left: number } | null = null;
   private resizeObserver: ResizeObserver | null = null;
   private clock: number | null = null;
   private renderedToday = '';
@@ -356,6 +358,7 @@ export class TaskCalendar {
   goToday(): void {
     this.anchor = todayKey();
     this.savedScroll = null;
+    this.savedScrollX = null;
     this.ctx.refresh();
   }
 
@@ -602,6 +605,32 @@ export class TaskCalendar {
   private nowMinutes(): number {
     const now = new Date();
     return now.getHours() * 60 + now.getMinutes();
+  }
+
+  /**
+   * A phone shows three days of the week at a time: where the finger left
+   * them, or from today when the week has it.
+   */
+  private placeThreeDays(scroller: HTMLElement, days: DayKey[]): void {
+    const saved = this.savedScrollX;
+    if (saved && saved.from === days[0]) {
+      scroller.scrollLeft = saved.left;
+    } else {
+      const col = scroller.querySelector<HTMLElement>('.taskpro-cal__col.is-today');
+      if (col) {
+        const gutter = scroller.querySelector<HTMLElement>('.taskpro-cal__hours')?.offsetWidth ?? 0;
+        const box = scroller.getBoundingClientRect();
+        const at = col.getBoundingClientRect();
+        scroller.scrollLeft += this.rtl ? at.right - (box.right - gutter) : at.left - (box.left + gutter);
+      }
+    }
+    scroller.addEventListener(
+      'scroll',
+      () => {
+        this.savedScrollX = { from: days[0], left: scroller.scrollLeft };
+      },
+      { passive: true }
+    );
   }
 
   private markDay(el: HTMLElement, day: DayKey, today: DayKey): void {
@@ -892,6 +921,7 @@ export class TaskCalendar {
     if (this.prefs.calendarSidebar) this.renderSidebar(root, tasks, noteDays);
 
     scroller.scrollTop = this.savedScroll ?? this.initialScroll(days);
+    if (this.compact && this.view === 'week') this.placeThreeDays(scroller, days);
     scroller.addEventListener(
       'scroll',
       () => {

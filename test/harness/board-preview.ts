@@ -232,7 +232,10 @@ const edit = async (task: BoardTask, transform: (line: string) => string) => {
 const store = {
   isLoaded: true,
   ensureLoaded: async () => undefined,
-  reload: async () => undefined,
+  reload: async () => {
+    reparse();
+    listeners.forEach((fn) => fn());
+  },
   all: () => tasks,
   inFile: (path: string) => tasks.filter((task) => task.filePath === path),
   subscribe: (fn: () => void) => {

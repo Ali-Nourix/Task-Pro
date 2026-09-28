@@ -38,7 +38,7 @@ import {
   weekdayOf,
 } from '../calendar/calendar-dates';
 import { getCalendarLabels } from '../calendar/calendar-localization';
-import { TimelineRow, buildTimeline } from './timeline-model';
+import { TimelineRow, buildTimeline, finishesAfterStart } from './timeline-model';
 import { TimelineLabels, TimelineZoom, getTimelineLabels } from './timeline-localization';
 import { holdToDrag } from '../ui/touch';
 
@@ -86,6 +86,15 @@ export interface TimelineContext {
     current: string,
     onPick: (value: string) => void
   ): void;
+}
+
+/** Where a row's bar is, in days from the chart's first; what the dependency arrows join. */
+interface TimelinePosition {
+  index: number;
+  start: number;
+  /** The day after the last it covers. */
+  end: number;
+  milestone: boolean;
 }
 
 interface Drag {
@@ -280,11 +289,18 @@ export class TaskTimeline {
       line.style.setProperty('--x', String(daysBetween(from, today) + 0.5));
     }
 
-    const positions = new Map<string, { index: number; start: number; end: number }>();
+    const positions = new Map<string, TimelinePosition>();
     model.rows.forEach((row, index) => {
       this.renderRow(rowsEl, row, from, to);
       const span = row.span;
-      if (span) positions.set(row.task.id, { index, start: daysBetween(from, span.start), end: daysBetween(from, span.end) + 1 });
+      if (span) {
+        positions.set(row.task.id, {
+          index,
+          start: daysBetween(from, span.start),
+          end: daysBetween(from, span.end) + 1,
+          milestone: span.kind === 'milestone',
+        });
+      }
     });
     this.renderLinks(rowsEl, model.rows, positions, count);
 
@@ -498,9 +514,10 @@ export class TaskTimeline {
     bar.title = this.describe(task);
     const progress = this.ctx.progress(task);
     if (progress !== null) bar.createDiv({ cls: 'taskpro-tl__bar-fill' }).style.setProperty('--progress', String(progress));
-    const label = bar.createSpan({ cls: 'taskpro-tl__bar-label', attr: { dir: 'auto' } });
+    // The board's direction places the name; the name's own script only orders its letters.
+    const label = bar.createSpan({ cls: 'taskpro-tl__bar-label' });
     if (task.status !== '[ ]') setIcon(label.createSpan({ cls: 'taskpro-tl__bar-icon' }), STATUS_ICON_NAMES[task.status]);
-    label.createSpan({ text: displayTitle(task.text) || '—' });
+    label.createSpan({ text: displayTitle(task.text) || '—', attr: { dir: 'auto' } });
     const canPlan = !!this.ctx.host.setDates || !!this.ctx.host.setSchedule;
     if (canPlan) {
       bar.createDiv({ cls: 'taskpro-tl__handle is-start' });
@@ -514,7 +531,8 @@ export class TaskTimeline {
     diamond.style.setProperty('--x', String(daysBetween(from, day) + 0.5));
     diamond.toggleClass('is-done', task.status === '[x]');
     diamond.title = this.describe(task);
-    const label = diamond.createSpan({ cls: 'taskpro-tl__milestone-label', text: displayTitle(task.text) || '—', attr: { dir: 'auto' } });
+    const label = diamond.createSpan({ cls: 'taskpro-tl__milestone-label' });
+    label.createSpan({ text: displayTitle(task.text) || '—', attr: { dir: 'auto' } });
     label.toggleClass('is-hidden', this.zoom === 'month');
     this.draggable(diamond, lane, task, day, day);
   }
@@ -693,32 +711,42 @@ export class TaskTimeline {
 
   // ── Dependencies ─────────────────────────────────────────────────────
 
-  /** An arrow from the end of each task waited on to the start of the task waiting, both on screen. */
+  /**
+   * An arrow from the end of each task waited on to the start of the task
+   * waiting, both on screen. It leaves through the bar's top or bottom edge
+   * rather than past its end, where the names of bars ending that day sit,
+   * and runs behind any bar it crosses on the way.
+   */
   private renderLinks(
     rowsEl: HTMLElement,
     rows: TimelineRow[],
-    positions: Map<string, { index: number; start: number; end: number }>,
+    positions: Map<string, TimelinePosition>,
     count: number
   ): void {
     const relations = this.ctx.relations();
     const px = this.scale.px;
     const ROW_HEIGHT = this.rowHeight;
+    // Bars stand 6px in from their row's edges; a milestone's diamond is about 16px across.
+    const reach = (pos: TimelinePosition) => (pos.milestone ? 8 : ROW_HEIGHT / 2 - 6);
     const paths: Array<{ d: string; late: boolean }> = [];
     for (const row of rows) {
       const to = positions.get(row.task.id);
       if (!to) continue;
       for (const blocker of relations.blockersOf(row.task)) {
-        const fromPos = blocker.task ? positions.get(blocker.task.id) : undefined;
-        if (!fromPos) continue;
-        const x1 = fromPos.end * px;
-        const y1 = fromPos.index * ROW_HEIGHT + ROW_HEIGHT / 2;
-        const x2 = to.start * px;
-        const y2 = to.index * ROW_HEIGHT + ROW_HEIGHT / 2;
-        const late = to.start < fromPos.end && blocker.task!.status !== '[x]';
+        const from = blocker.task ? positions.get(blocker.task.id) : undefined;
+        if (!from || from.index === to.index) continue;
+        const down = to.index > from.index;
+        const exitX = from.milestone ? (from.start + 0.5) * px : from.end * px - Math.min(8, ((from.end - from.start) * px) / 2);
+        const exitY = from.index * ROW_HEIGHT + ROW_HEIGHT / 2 + (down ? reach(from) : -reach(from));
+        const tipX = to.milestone ? (to.start + 0.5) * px - 9 : to.start * px;
+        const y = to.index * ROW_HEIGHT + ROW_HEIGHT / 2;
+        const late = blocker.task!.status !== '[x]' && finishesAfterStart(blocker.task!, row.task);
+        // Starting before the other ends: round by the line between the rows, to come in from before.
+        const gap = down ? to.index * ROW_HEIGHT : (to.index + 1) * ROW_HEIGHT;
         const d =
-          x2 - x1 >= 16
-            ? `M${x1} ${y1} H${x1 + 8} V${y2} H${x2 - 2}`
-            : `M${x1} ${y1} H${x1 + 8} V${(y1 + y2) / 2} H${x2 - 10} V${y2} H${x2 - 2}`;
+          tipX - exitX >= 10
+            ? `M${exitX} ${exitY} V${y} H${tipX}`
+            : `M${exitX} ${exitY} V${gap} H${tipX - 10} V${y} H${tipX}`;
         paths.push({ d, late });
       }
     }
