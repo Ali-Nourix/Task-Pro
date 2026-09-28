@@ -5152,3 +5152,568 @@ button.taskpro-chip:focus-visible {
 .notice button.taskpro-plan-notice__action.mod-cta {
   margin-inline-start: auto;
 }
+
+/* ==========================================================================
+   Timeline
+
+   The board's fourth layout: a row per task, and a bar from the day it is
+   planned to the day it is due. One scroller holds both sides, so the rows
+   of the list and the chart can never drift apart: the list is sticky on
+   the leading side and the scale is sticky on top. Every position is in
+   days (`--x`, `--w`) times the zoom's width of a day, and set with
+   inline-start, so Persian mirrors the whole chart.
+   ========================================================================== */
+.taskpro-board .taskpro-board__body.is-timeline {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0 var(--taskpro-board-gutter) 16px;
+}
+.taskpro-board .taskpro-tl {
+  --tl-list: 280px;
+  --tl-line: var(--taskpro-board-row-line);
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--taskpro-panel-edge, var(--background-modifier-border));
+  border-radius: var(--taskpro-radius-panel, 10px);
+  background: var(--taskpro-board-surface);
+}
+.taskpro-board .taskpro-tl__canvas {
+  position: relative;
+  width: calc(var(--tl-list) + var(--tl-days) * var(--tl-day));
+  min-width: 100%;
+}
+
+/* Scale */
+.taskpro-board .taskpro-tl__head {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  display: flex;
+  border-bottom: 1px solid var(--background-modifier-border);
+  background: var(--taskpro-board-surface);
+}
+.taskpro-board .taskpro-tl__corner {
+  position: sticky;
+  inset-inline-start: 0;
+  z-index: 7;
+  display: flex;
+  flex: 0 0 var(--tl-list);
+  align-items: flex-end;
+  box-sizing: border-box;
+  padding: 0 14px 8px;
+  border-inline-end: 1px solid var(--background-modifier-border);
+  background: var(--taskpro-board-surface);
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-medium);
+}
+.taskpro-board .taskpro-tl__scale {
+  flex: 0 0 calc(var(--tl-days) * var(--tl-day));
+}
+.taskpro-board .taskpro-tl__units {
+  position: relative;
+  height: 26px;
+}
+.taskpro-board .taskpro-tl__units.is-bottom {
+  height: 28px;
+}
+.taskpro-board .taskpro-tl__unit {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: calc(var(--x) * var(--tl-day));
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  box-sizing: border-box;
+  width: calc(var(--w) * var(--tl-day));
+  padding-inline: 6px;
+  overflow: hidden;
+  border-inline-start: 1px solid var(--tl-line);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.taskpro-board .taskpro-tl__units.is-top .taskpro-tl__unit {
+  color: var(--text-normal);
+  font-weight: var(--font-semibold);
+}
+/* A month's name stays in view while its month is scrolled through. */
+.taskpro-board .taskpro-tl__units.is-top .taskpro-tl__unit-label {
+  position: sticky;
+  inset-inline-start: calc(var(--tl-list) + 8px);
+}
+.taskpro-board .taskpro-tl[data-zoom="day"] .taskpro-tl__units.is-bottom .taskpro-tl__unit {
+  justify-content: center;
+  flex-direction: column;
+  gap: 0;
+  padding: 0;
+  line-height: 1.1;
+}
+.taskpro-board .taskpro-tl__unit-sub {
+  color: var(--text-faint);
+  font-size: 10px;
+}
+.taskpro-board .taskpro-tl__unit.is-weekend {
+  background: var(--taskpro-cal-weekend);
+}
+.taskpro-board .taskpro-tl__unit.is-today .taskpro-tl__unit-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 16px;
+  padding-inline: 3px;
+  border-radius: 8px;
+  background: var(--taskpro-cal-now);
+  color: #fff;
+  font-weight: var(--font-semibold);
+}
+
+/* Rows */
+.taskpro-board .taskpro-tl__rows {
+  position: relative;
+}
+.taskpro-board .taskpro-tl__grid {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: var(--tl-list);
+  width: calc(var(--tl-days) * var(--tl-day));
+  pointer-events: none;
+}
+.taskpro-board .taskpro-tl__gridline {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: calc(var(--x) * var(--tl-day));
+  width: 1px;
+  background: var(--tl-line);
+}
+.taskpro-board .taskpro-tl[data-zoom="day"] .taskpro-tl__gridline {
+  background: color-mix(in srgb, var(--tl-line) 55%, transparent);
+}
+.taskpro-board .taskpro-tl__weekend {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: calc(var(--x) * var(--tl-day));
+  width: var(--tl-day);
+  background: var(--taskpro-cal-weekend);
+}
+.taskpro-board .taskpro-tl__today {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: calc(var(--tl-list) + var(--x) * var(--tl-day));
+  z-index: 2;
+  width: 2px;
+  margin-inline-start: -1px;
+  background: var(--taskpro-cal-now);
+  pointer-events: none;
+}
+.taskpro-board .taskpro-tl__row {
+  position: relative;
+  display: flex;
+  height: var(--tl-row);
+  border-bottom: 1px solid var(--tl-line);
+}
+.taskpro-board .taskpro-tl__row:hover {
+  background: var(--background-modifier-hover);
+}
+.taskpro-board .taskpro-tl__cell {
+  position: sticky;
+  inset-inline-start: 0;
+  z-index: 4;
+  display: flex;
+  flex: 0 0 var(--tl-list);
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+  min-width: 0;
+  padding-inline: calc(14px + var(--depth, 0) * 18px) 10px;
+  border-inline-end: 1px solid var(--background-modifier-border);
+  background: var(--taskpro-board-surface);
+}
+.taskpro-board .taskpro-tl__row:hover .taskpro-tl__cell {
+  background-image: linear-gradient(var(--background-modifier-hover), var(--background-modifier-hover));
+}
+.taskpro-board .taskpro-tl__title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+  unicode-bidi: plaintext;
+}
+.taskpro-board .taskpro-tl__title:hover {
+  text-decoration: underline;
+  text-decoration-color: var(--text-faint);
+  text-underline-offset: 3px;
+}
+.taskpro-board .taskpro-tl__cell.is-parent .taskpro-tl__title {
+  font-weight: var(--font-semibold);
+}
+.taskpro-board .taskpro-tl__row[data-status="[x]"] .taskpro-tl__title {
+  color: var(--text-faint);
+  text-decoration: line-through;
+}
+.taskpro-board button.taskpro-tl__jump {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 2px;
+  height: 20px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--tl-accent) 12%, transparent);
+  box-shadow: none;
+  color: color-mix(in srgb, var(--tl-accent) 55%, var(--text-normal));
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.taskpro-board .taskpro-tl__jump-icon {
+  display: inline-flex;
+}
+.taskpro-board .taskpro-tl__jump-icon .svg-icon {
+  width: 12px;
+  height: 12px;
+}
+.taskpro-board .taskpro-tl__lane {
+  position: relative;
+  flex: 0 0 calc(var(--tl-days) * var(--tl-day));
+}
+
+/* Bars */
+.taskpro-board .taskpro-tl__bar {
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  inset-inline-start: calc(var(--x) * var(--tl-day) + 2px);
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  width: calc(var(--w) * var(--tl-day) - 4px);
+  min-width: 10px;
+  border: 1px solid color-mix(in srgb, var(--tl-accent) 50%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--tl-accent) 20%, var(--taskpro-board-surface));
+  box-shadow: 0 1px 1px color-mix(in srgb, var(--text-normal) 6%, transparent);
+  cursor: grab;
+  touch-action: pan-y;
+  transition: box-shadow 120ms var(--taskpro-ease, ease);
+}
+.taskpro-board .taskpro-tl__bar:hover {
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--text-normal) 14%, transparent);
+}
+.taskpro-board .taskpro-tl__bar:focus-visible,
+.taskpro-board .taskpro-tl__milestone:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 1px;
+}
+.taskpro-board .taskpro-tl__bar-fill {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  width: calc(var(--progress) * 100%);
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--tl-accent) 34%, var(--taskpro-board-surface));
+  pointer-events: none;
+}
+.taskpro-board .taskpro-tl__bar-label {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding-inline: 8px;
+  overflow: hidden;
+  color: color-mix(in srgb, var(--tl-accent) 40%, var(--text-normal));
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-medium);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.taskpro-board .taskpro-tl__bar-label > span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  unicode-bidi: plaintext;
+}
+.taskpro-board .taskpro-tl__bar-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+.taskpro-board .taskpro-tl__bar-icon .svg-icon {
+  width: 11px;
+  height: 11px;
+}
+/* Too short for its name: the name follows the bar instead. */
+.taskpro-board .taskpro-tl__bar.is-narrow .taskpro-tl__bar-label {
+  position: absolute;
+  inset-inline-start: calc(100% + 6px);
+  max-width: 220px;
+  overflow: visible;
+  padding: 0;
+  color: var(--text-muted);
+  font-weight: var(--font-normal);
+}
+.taskpro-board .taskpro-tl__bar.is-done {
+  opacity: 0.55;
+}
+.taskpro-board .taskpro-tl__bar.is-done .taskpro-tl__bar-label > span:last-child {
+  text-decoration: line-through;
+}
+/* Waiting on another task: hatched until it can start. */
+.taskpro-board .taskpro-tl__bar.is-waiting {
+  background-image: repeating-linear-gradient(
+    135deg,
+    transparent 0 5px,
+    color-mix(in srgb, var(--taskpro-accent-waiting) 22%, transparent) 5px 9px
+  );
+  border-style: dashed;
+}
+.taskpro-board .taskpro-tl__bar.is-dragging {
+  z-index: 8;
+  box-shadow: var(--taskpro-float-shadow, 0 8px 24px rgba(0, 0, 0, 0.18));
+  cursor: grabbing;
+}
+.taskpro-board .taskpro-tl.is-dragging,
+.taskpro-board .taskpro-tl.is-dragging * {
+  cursor: grabbing;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.taskpro-board .taskpro-tl__handle {
+  position: absolute;
+  inset-block: -1px;
+  z-index: 1;
+  width: 9px;
+  cursor: ew-resize;
+  touch-action: none;
+}
+.taskpro-board .taskpro-tl__handle.is-start {
+  inset-inline-start: -3px;
+}
+.taskpro-board .taskpro-tl__handle.is-end {
+  inset-inline-end: -3px;
+}
+.taskpro-board .taskpro-tl__handle::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  inset-inline-start: 3px;
+  width: 3px;
+  height: 12px;
+  margin-top: -6px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--tl-accent) 70%, var(--text-normal));
+  opacity: 0;
+  transition: opacity 120ms var(--taskpro-ease, ease);
+}
+.taskpro-board .taskpro-tl__bar:hover .taskpro-tl__handle::after,
+.taskpro-board .taskpro-tl__bar.is-dragging .taskpro-tl__handle::after {
+  opacity: 0.8;
+}
+
+/* A deadline alone: a diamond, its name beside it. */
+.taskpro-board .taskpro-tl__milestone {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: calc(var(--x) * var(--tl-day) - 8px);
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  width: 16px;
+  cursor: grab;
+  touch-action: pan-y;
+}
+.taskpro-board .taskpro-tl__milestone::before {
+  content: "";
+  width: 11px;
+  height: 11px;
+  margin: auto;
+  border-radius: 2px;
+  background: var(--tl-accent);
+  box-shadow: 0 0 0 2px var(--taskpro-board-surface);
+  transform: rotate(45deg);
+}
+.taskpro-board .taskpro-tl__milestone.is-done {
+  opacity: 0.55;
+}
+.taskpro-board .taskpro-tl__milestone-label {
+  position: absolute;
+  inset-inline-start: calc(100% + 4px);
+  max-width: 220px;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+  unicode-bidi: plaintext;
+}
+.taskpro-board .taskpro-tl__milestone-label.is-hidden {
+  display: none;
+}
+.taskpro-board .taskpro-tl__late {
+  position: absolute;
+  top: 50%;
+  inset-inline-start: calc(var(--x) * var(--tl-day) - 7px);
+  z-index: 3;
+  display: inline-flex;
+  margin-top: -7px;
+  color: var(--taskpro-accent-overdue);
+}
+.taskpro-board .taskpro-tl__late .svg-icon {
+  width: 14px;
+  height: 14px;
+}
+/* A parent's family, from its first day to its last. */
+.taskpro-board .taskpro-tl__summary {
+  position: absolute;
+  bottom: 4px;
+  inset-inline-start: calc(var(--x) * var(--tl-day) + 2px);
+  z-index: 2;
+  width: calc(var(--w) * var(--tl-day) - 4px);
+  height: 3px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--tl-accent) 55%, transparent);
+  pointer-events: none;
+}
+.taskpro-board .taskpro-tl__summary::before,
+.taskpro-board .taskpro-tl__summary::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  width: 3px;
+  height: 8px;
+  border-radius: 1px;
+  background: inherit;
+}
+.taskpro-board .taskpro-tl__summary::before {
+  inset-inline-start: 0;
+}
+.taskpro-board .taskpro-tl__summary::after {
+  inset-inline-end: 0;
+}
+.taskpro-board .taskpro-tl__drag-label {
+  position: absolute;
+  top: -4px;
+  inset-inline-start: calc(var(--x) * var(--tl-day));
+  z-index: 9;
+  padding: 3px 8px;
+  border: 1px solid var(--taskpro-panel-edge, var(--background-modifier-border));
+  border-radius: 6px;
+  background: var(--taskpro-board-surface);
+  box-shadow: var(--taskpro-float-shadow, 0 6px 18px rgba(0, 0, 0, 0.16));
+  color: var(--text-normal);
+  font-size: var(--font-ui-smaller);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  transform: translateY(-100%);
+  pointer-events: none;
+}
+
+/* Dependencies */
+.taskpro-board .taskpro-tl__links {
+  position: absolute;
+  top: 0;
+  inset-inline-start: var(--tl-list);
+  z-index: 2;
+  overflow: visible;
+  pointer-events: none;
+}
+.taskpro-board[dir="rtl"] .taskpro-tl__links {
+  transform: scaleX(-1);
+}
+.taskpro-board .taskpro-tl__link {
+  fill: none;
+  stroke: color-mix(in srgb, var(--text-muted) 70%, transparent);
+  stroke-width: 1.4;
+}
+.taskpro-board .taskpro-tl__link.is-late {
+  stroke: var(--taskpro-accent-overdue);
+}
+.taskpro-board .taskpro-tl__link-tip {
+  fill: color-mix(in srgb, var(--text-muted) 70%, transparent);
+}
+.taskpro-board .taskpro-tl__link-tip-late {
+  fill: var(--taskpro-accent-overdue);
+}
+
+/* Tasks with no dates */
+.taskpro-board .taskpro-tl__undated-head {
+  position: sticky;
+  inset-inline-start: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  box-sizing: border-box;
+  width: fit-content;
+  max-width: 100%;
+  padding: 14px 10px 6px;
+}
+.taskpro-board button.taskpro-tl__undated-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: auto;
+  padding: 2px 4px;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-semibold);
+  cursor: pointer;
+}
+.taskpro-board .taskpro-tl__undated:not(.is-open) .taskpro-table__caret {
+  transform: rotate(-90deg);
+}
+.taskpro-board[dir="rtl"] .taskpro-tl__undated:not(.is-open) .taskpro-table__caret {
+  transform: rotate(90deg);
+}
+.taskpro-board .taskpro-tl__undated-hint {
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+}
+.taskpro-board .taskpro-tl__row.is-undated .taskpro-tl__lane {
+  cursor: pointer;
+}
+.taskpro-board .taskpro-tl__ghost {
+  position: absolute;
+  top: 7px;
+  bottom: 7px;
+  inset-inline-start: calc(var(--x, 0) * var(--tl-day) + 2px);
+  width: calc(var(--tl-day) - 4px);
+  min-width: 10px;
+  border: 1px dashed color-mix(in srgb, var(--tl-accent) 60%, transparent);
+  border-radius: 6px;
+  opacity: 0;
+  pointer-events: none;
+}
+.taskpro-board .taskpro-tl__row.is-undated:hover .taskpro-tl__ghost {
+  opacity: 1;
+}
+.taskpro-board .taskpro-tl__hint {
+  position: sticky;
+  inset-inline-start: 0;
+  width: min(100%, 520px);
+  padding: 24px 16px;
+  color: var(--text-faint);
+}
+
+@container taskpro-board (max-width: 720px) {
+  .taskpro-board .taskpro-tl {
+    --tl-list: 180px;
+  }
+}

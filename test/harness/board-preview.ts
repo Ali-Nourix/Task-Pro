@@ -181,8 +181,8 @@ const CALENDAR_NOTES: Record<string, string> =
         [dailyPath(0)]: ['# Today', '', '## Tasks', '- [ ] Buy bread', '- [x] Water the plants', ''].join('\n'),
         'Templates/Daily.md': TEMPLATE,
       };
-if (params.get('layout') === 'calendar') Object.assign(NOTES, CALENDAR_NOTES);
-else {
+if (params.get('layout') === 'calendar' || params.get('layout') === 'timeline') Object.assign(NOTES, CALENDAR_NOTES);
+if (params.get('layout') !== 'calendar') {
   // A few plans for the table's Plan column and the cards, at the ends of
   // their lines so the checks on each line's markers still hold.
   const plan = (path: string, title: string, schedule: string) => {
@@ -240,7 +240,8 @@ const store = {
 };
 
 const layoutParam = params.get('layout');
-const layout: BoardLayout = layoutParam === 'board' || layoutParam === 'calendar' ? layoutParam : 'table';
+const layout: BoardLayout =
+  layoutParam === 'board' || layoutParam === 'calendar' || layoutParam === 'timeline' ? layoutParam : 'table';
 const groupBy = (params.get('group') ?? (layout === 'board' ? 'status' : 'status')) as BoardGroupBy;
 const calendarSystem = (params.get('system') ?? (language === 'fa' ? 'jalali' : 'gregorian')) as CalendarSystem;
 const settings = {
@@ -355,6 +356,13 @@ const host = {
     await edit(fresh, (line) => setWaiting(line, links));
   },
   setRemind: (task: BoardTask, minutes: number | null | undefined) => edit(task, (line) => setRemind(line, minutes)),
+  setDates: (task: BoardTask, patch: { schedule?: TaskSchedule | null; deadline?: string | null }) =>
+    edit(task, (line) => {
+      let next = line;
+      if (patch.schedule !== undefined) next = setSchedule(next, patch.schedule);
+      if (patch.deadline !== undefined) next = setDeadline(next, patch.deadline);
+      return next;
+    }),
   deleteTask: async (task: BoardTask) => {
     const { lines } = removeBlock(NOTES[task.filePath].split('\n'), task.lineNumber);
     NOTES[task.filePath] = lines.join('\n');

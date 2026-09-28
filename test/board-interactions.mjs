@@ -334,6 +334,67 @@ try {
   eq(page.errors, [], 'no page errors with subtask progress');
   await page.close();
 
+  // ── Timeline ────────────────────────────────────────────────────────────
+  page = await open('?layout=timeline&scope=vault', 1500);
+  const tlRow = (title) => page.locator('.taskpro-tl__row').filter({ has: page.locator('.taskpro-tl__title', { hasText: title }) });
+  const lineOf = async (path, text) => (await note(page, path)).split('\n').find((l) => l.includes(text));
+  const iso = (days) => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() + days);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+  eq(await tlRow('Draft the launch post').locator('.taskpro-tl__bar').count(), 1, 'planned and due later: a bar');
+  eq(await tlRow('Dentist appointment').locator('.taskpro-tl__milestone').count(), 1, 'only a deadline: a milestone');
+  eq(await tlRow('Weekly review and planning').locator('.taskpro-tl__late').count(), 1, 'due before it is planned: flagged');
+  eq(await page.locator('.taskpro-tl__links .taskpro-tl__link').count(), 1, 'an arrow for the dependency');
+  eq(await tlRow('Learn Figma').locator('.taskpro-tl__summary').count(), 1, 'a parent spans its family');
+  eq(await tlRow('Auto layout').locator('.taskpro-tl__cell').evaluate((el) => getComputedStyle(el).getPropertyValue('--depth').trim()), '1', 'subtasks indented');
+
+  // Drag the monthly report two days later: plan moves, and so would a deadline.
+  const px = 40;
+  const report = await tlRow('Write the monthly report').locator('.taskpro-tl__bar').boundingBox();
+  await drag({ x: report.x + report.width / 2, y: report.y + report.height / 2 }, { x: report.x + report.width / 2 + px * 2, y: report.y + report.height / 2 });
+  eq((await lineOf('Planner/Focus.md', 'monthly report')).includes(`@schedule(${iso(4)} 14:00-16:00)`), true, 'a dragged bar moves the plan, keeping its time');
+  // Drag its end three days on: that gives it a deadline.
+  const moved = await tlRow('Write the monthly report').locator('.taskpro-tl__handle.is-end').boundingBox();
+  await drag({ x: moved.x + moved.width / 2, y: moved.y + moved.height / 2 }, { x: moved.x + moved.width / 2 + px * 3, y: moved.y + moved.height / 2 });
+  eq((await lineOf('Planner/Focus.md', 'monthly report')).includes(`@due(${iso(7)})`), true, 'dragging the end sets the deadline');
+  eq(await tlRow('Write the monthly report').locator('.taskpro-tl__bar').evaluate((el) => el.style.getPropertyValue('--w')), '4', 'now a four-day bar');
+  // A milestone drags as its deadline.
+  const dentist = await tlRow('Dentist appointment').locator('.taskpro-tl__milestone').boundingBox();
+  await drag({ x: dentist.x + dentist.width / 2, y: dentist.y + dentist.height / 2 }, { x: dentist.x + dentist.width / 2 - px, y: dentist.y + dentist.height / 2 });
+  eq((await lineOf('Life/Home.md', 'Dentist')).includes(`@due(${iso(8)})`), true, 'a milestone moves its deadline');
+  // A click opens the task menu; the drag above did not.
+  await tlRow('Call the accountant').locator('.taskpro-tl__bar').click();
+  eq(await page.locator('.taskpro-menu__header').textContent(), 'Call the accountant', 'a click on a bar opens its menu');
+  await page.keyboard.press('Escape');
+
+  // Tasks with no dates: folded away, then a click on a day plans one.
+  await page.locator('.taskpro-tl__undated-toggle').click();
+  const typeface = tlRow('Pick the display typeface').locator('.taskpro-tl__lane');
+  const laneBox = await typeface.boundingBox();
+  const todayX = await page.locator('.taskpro-tl__today').evaluate((el) => el.getBoundingClientRect().left);
+  await page.mouse.click(todayX + px * 2, laneBox.y + laneBox.height / 2);
+  await page.waitForTimeout(80);
+  eq((await lineOf('Projects/Website redesign.md', 'typeface')).includes(`@schedule(${iso(2)})`), true, 'a click on a day plans an undated task');
+
+  // Zoom and calendar.
+  await page.locator('.taskpro-tl-nav__zooms .taskpro-segmented__item', { hasText: 'Months' }).click();
+  eq(await page.locator('.taskpro-tl').getAttribute('data-zoom'), 'month', 'zoomed out to months');
+  await page.locator('.taskpro-cal-nav__systems .taskpro-segmented__item', { hasText: 'Jalali' }).click();
+  eq((await page.locator('.taskpro-tl__units.is-bottom .taskpro-tl__unit-label').allTextContents()).includes('Meh'), true, 'Jalali months on the scale');
+  eq(page.errors, [], 'no page errors on the timeline');
+  await page.close();
+
+  // Persian: the chart runs right to left, and so do drags.
+  page = await open('?layout=timeline&scope=vault&lang=fa', 1500);
+  const faReport = await page.locator('.taskpro-tl__row').filter({ has: page.locator('.taskpro-tl__title', { hasText: 'گزارش ماهانه' }) }).locator('.taskpro-tl__bar').boundingBox();
+  await drag({ x: faReport.x + faReport.width / 2, y: faReport.y + faReport.height / 2 }, { x: faReport.x + faReport.width / 2 - 40, y: faReport.y + faReport.height / 2 });
+  eq((await note(page, 'Planner/Focus.md')).split('\n').find((l) => l.includes('گزارش ماهانه')).includes(`@schedule(${iso(3)} 14:00-16:00)`), true, 'RTL: dragging left is later');
+  eq(page.errors, [], 'no page errors on the Persian timeline');
+  await page.close();
+
   // ── Board: what cards show, and the columns' order, width and hiding ─────
   page = await open('?layout=board&scope=vault', 1800);
   const cardOf = (title) => page.locator('.taskpro-card', { hasText: title });

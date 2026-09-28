@@ -12,6 +12,7 @@ const build = await esbuild.build({
       export * from "../src/board/task-relations";
       export { extractWaiting, setWaiting, extractRemind, setRemind, stripTaskMetadata, replaceTaskText, setSchedule } from "../src/task-metadata";
       export { dueReminders, planStartsAt, reminderKey } from "../src/reminders/plan-reminders";
+      export { taskSpan, buildTimeline } from "../src/timeline/timeline-model";
     `,
     resolveDir: new URL('.', import.meta.url).pathname,
     loader: 'ts',
@@ -51,6 +52,8 @@ const {
   setSchedule,
   dueReminders,
   planStartsAt,
+  taskSpan,
+  buildTimeline,
 } = mod;
 
 let checked = 0;
@@ -154,5 +157,30 @@ eq(dueReminders(planned, at('09:20'), settings, new Set()).map((r) => r.task.tex
 eq(dueReminders(planned, at('08:52'), { planReminders: false, planLeadMinutes: 10 }, new Set()).map((r) => r.task.text), ['Review'], 'the setting off: only tasks with a time of their own');
 eq(dueReminders(planned, at('08:46'), { planReminders: false, planLeadMinutes: 10 }, new Set()).map((r) => r.task.text), ['Review'], 'a task’s own time still counts');
 eq(setSchedule(`- [ ] x @remind(5m)`, { date: day, start: '10:00' }).includes('@remind(5m)'), true, 'a new plan keeps the reminder');
+
+// ── Timeline ───────────────────────────────────────────────────────────────
+eq(taskSpan({ schedule: { date: '2026-10-01' }, deadline: '2026-10-05' }), { start: '2026-10-01', end: '2026-10-05', kind: 'span' }, 'plan to deadline');
+eq(taskSpan({ schedule: { date: '2026-10-01' } }), { start: '2026-10-01', end: '2026-10-01', kind: 'day' }, 'a plan alone is a day');
+eq(taskSpan({ deadline: '2026-10-05' }), { start: '2026-10-05', end: '2026-10-05', kind: 'milestone' }, 'a deadline alone is a milestone');
+eq(taskSpan({ schedule: { date: '2026-10-05' }, deadline: '2026-10-01' }), { start: '2026-10-05', end: '2026-10-05', kind: 'day', late: '2026-10-01' }, 'due before planned: flagged');
+eq(taskSpan({}), null, 'no dates, no span');
+const family = parseBoardTasks(
+  'Projects/Launch.md',
+  [
+    '- [ ] Launch',
+    '    - [ ] Write @schedule(2026-10-03)',
+    '    - [ ] Design @schedule(2026-10-01) @due(2026-10-02)',
+    '    - [ ] Someday',
+    '- [ ] Ship @due(2026-09-30)',
+    '- [ ] Loose end',
+  ].join('\n')
+);
+const timeline = buildTimeline(family, family);
+eq(timeline.rows.map((r) => `${'  '.repeat(r.depth)}${r.task.text}`), ['Ship', 'Launch', '  Design', '  Write'], 'families together, each level by its first day');
+eq(timeline.rows[1].summary, { start: '2026-10-01', end: '2026-10-03' }, 'a parent spans its subtasks');
+eq(timeline.rows[1].span, null, 'a parent with no dates of its own has no bar');
+eq(timeline.undated.map((t) => t.text), ['Someday', 'Loose end'], 'the rest have no dates');
+const filtered = buildTimeline([family[1]], family);
+eq(filtered.rows.map((r) => r.task.text), ['Launch', 'Write'], 'a filtered subtask keeps its parent for context');
 
 console.log(`RELATIONS_OK (${checked} checks)`);
