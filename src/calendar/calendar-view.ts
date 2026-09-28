@@ -93,7 +93,7 @@ import {
 import { CalendarLabels, getCalendarLabels } from './calendar-localization';
 import { PopoverHandle, openCalendarPopover } from './calendar-popover';
 import { scheduleDayText } from './schedule-text';
-import { MenuEntry, MenuSection, openContextMenu } from '../ui/context-menu';
+import { MenuEntry, MenuSection, closeContextMenu, openContextMenu } from '../ui/context-menu';
 import {
   TaskActionOptions,
   getActionLabels,
@@ -1059,7 +1059,7 @@ export class TaskCalendar {
           if (el.isConnected) this.openInspector(item, el);
         },
       };
-      this.ctx.openTaskActions(item.task, { x: event.clientX, y: event.clientY }, el, [openCard]);
+      this.openActions(item.task, { x: event.clientX, y: event.clientY }, el, [openCard]);
     });
   }
 
@@ -1089,6 +1089,26 @@ export class TaskCalendar {
     const crumb = parent.createDiv({ cls: `taskpro-cal__crumb ${cls}` });
     this.icon(crumb, this.rtl ? 'corner-down-left' : 'corner-down-right', 'taskpro-cal__crumb-icon');
     crumb.createSpan({ cls: 'taskpro-cal__crumb-text', text: displayTitle(up.text) || '—', attr: { dir: 'auto' } });
+  }
+
+  /**
+   * The task menu, as the only panel open: a card, a picker or the + goes
+   * first, so the menu never sits over a card. `anchor` is where the full
+   * chip menu opens from, so it has to outlive the card.
+   */
+  private openActions(task: BoardTask, at: { x: number; y: number } | DOMRect, anchor: HTMLElement, lead?: MenuEntry[]): void {
+    this.closePopover();
+    this.hideQuickAdd();
+    this.ctx.openTaskActions(task, at, anchor, lead);
+  }
+
+  /** The task's item on screen, or the calendar itself when it has none. */
+  private itemElement(task: BoardTask): HTMLElement {
+    const items = this.rootEl?.querySelectorAll<HTMLElement>('.taskpro-cal__item') ?? [];
+    for (const el of Array.from(items)) {
+      if (el.dataset.itemId?.endsWith(`:${task.id}`)) return el;
+    }
+    return this.rootEl ?? this.ctx.root;
   }
 
   /** What the task menus need to know, for one task. */
@@ -1862,6 +1882,7 @@ export class TaskCalendar {
     anchor: HTMLElement | DOMRect,
     onClosed?: () => void
   ): void {
+    closeContextMenu();
     this.closePopover();
     const suggested = this.suggestStart(day);
     const state: TimeState = {
@@ -2025,6 +2046,8 @@ export class TaskCalendar {
 
   private openInspector(item: CalendarItem, anchor: HTMLElement | DOMRect): void {
     const rect = anchor instanceof DOMRect ? anchor : anchor.getBoundingClientRect();
+    closeContextMenu();
+    this.hideQuickAdd();
     this.closePopover();
     this.inspected = { task: item.task, kind: item.kind, day: item.day };
     this.inspectorStale = false;
@@ -2138,7 +2161,7 @@ export class TaskCalendar {
     const tools = head.createDiv({ cls: 'taskpro-cal-inspector__tools' });
     this.iconButton(tools, 'arrow-up-right', labels.openNote, () => void host.reveal(task));
     const more = this.iconButton(tools, 'more-horizontal', labels.moreActions, () =>
-      this.ctx.openTaskActions(task, more.getBoundingClientRect(), more)
+      this.openActions(task, more.getBoundingClientRect(), this.itemElement(task))
     );
 
     // Properties
@@ -2313,10 +2336,20 @@ export class TaskCalendar {
       row.toggleClass('is-done', sub.status === '[x]');
       this.check(row, sub);
       row.createSpan({ cls: 'taskpro-cal-inspector__subtask-title', text: displayTitle(sub.text) || '—', attr: { dir: 'auto' } });
-      row.createSpan({
-        cls: 'taskpro-cal-inspector__subtask-when',
-        text: sub.schedule ? this.shortScheduleText(sub.schedule) : labels.notPlanned,
-      }).toggleClass('is-unplanned', !sub.schedule);
+      if (sub.schedule) {
+        row.createSpan({ cls: 'taskpro-cal-inspector__subtask-when', text: this.shortScheduleText(sub.schedule) });
+      } else {
+        // Not planned: nothing to read, and a way to plan it on hover.
+        const plan = row.createEl('button', { cls: 'taskpro-cal-inspector__subtask-plan' });
+        plan.type = 'button';
+        plan.setAttribute('aria-label', labels.notPlanned);
+        plan.title = labels.notPlanned;
+        this.icon(plan, 'calendar-plus');
+        plan.addEventListener('click', (event) => {
+          event.stopPropagation();
+          this.dropdown(plan, planSections(this.actionOptions(sub, plan)));
+        });
+      }
       row.setAttribute('role', 'button');
       row.tabIndex = 0;
       const open = () => this.openInspector(this.itemFor(sub), el.getBoundingClientRect());
@@ -2329,7 +2362,7 @@ export class TaskCalendar {
       row.addEventListener('contextmenu', (event) => {
         event.preventDefault();
         event.stopPropagation();
-        this.ctx.openTaskActions(sub, { x: event.clientX, y: event.clientY }, row);
+        this.openActions(sub, { x: event.clientX, y: event.clientY }, this.itemElement(sub));
       });
     }
 

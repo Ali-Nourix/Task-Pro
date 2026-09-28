@@ -2467,6 +2467,19 @@ button.taskpro-chip:focus-visible {
   --taskpro-cal-weekend: color-mix(in srgb, var(--text-normal) 4%, var(--taskpro-board-surface));
   --taskpro-cal-today: var(--interactive-accent);
   --taskpro-cal-now: var(--color-red, #e03e3e);
+  /* One look for everything that floats over the board: a hairline edge, a
+     soft diffuse shadow from above, a panel radius, and tighter corners on
+     what sits inside. */
+  --taskpro-panel-edge: color-mix(in srgb, var(--text-normal) 11%, transparent);
+  --taskpro-float-shadow: 0 1px 2px rgb(15 15 15 / 0.05), 0 8px 24px -4px rgb(15 15 15 / 0.12);
+  --taskpro-radius-panel: 10px;
+  --taskpro-radius-inner: 6px;
+  --taskpro-ease: cubic-bezier(0.2, 0, 0, 1);
+}
+.theme-dark .taskpro-board {
+  /* A dark surface needs a deeper shadow to lift off it at all. */
+  --taskpro-panel-edge: color-mix(in srgb, var(--text-normal) 14%, transparent);
+  --taskpro-float-shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 10px 28px -4px rgb(0 0 0 / 0.5);
 }
 
 .taskpro-board .taskpro-board__body.is-calendar {
@@ -3092,7 +3105,7 @@ button.taskpro-chip:focus-visible {
   border: 1px solid color-mix(in srgb, var(--taskpro-cal-accent) 55%, transparent);
   border-inline-start: 3px solid var(--taskpro-cal-accent);
   background: color-mix(in srgb, var(--taskpro-cal-accent) 24%, var(--taskpro-board-surface));
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.14);
+  box-shadow: var(--taskpro-float-shadow);
   color: color-mix(in srgb, var(--taskpro-cal-accent) 30%, var(--text-normal));
   pointer-events: none;
 }
@@ -3117,48 +3130,78 @@ button.taskpro-chip:focus-visible {
   padding-block: 0;
 }
 
-/* A click on an empty slot: the slot marked faintly, and a boxed + beside
-   the pointer that makes a task there. */
+/* A click on an empty slot: a hairline at the slot's start, and on it a
+   square + beside the pointer, centred on the line both ways. */
 .taskpro-board .taskpro-cal__quick {
   position: absolute;
   z-index: 4;
   inset-inline: 0;
   top: calc(var(--start) * var(--taskpro-cal-hour) / 60);
-  height: calc(var(--duration) * var(--taskpro-cal-hour) / 60);
-  background: color-mix(in srgb, var(--interactive-accent) 8%, transparent);
-  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--interactive-accent) 45%, transparent);
+  height: 0;
+  border-top: 1.5px solid color-mix(in srgb, var(--interactive-accent) 70%, transparent);
   pointer-events: none;
-  animation: taskpro-menu-in 90ms ease-out;
 }
-.taskpro-board button.taskpro-cal__quick-add {
+.taskpro-board .taskpro-cal__quick button.taskpro-cal__quick-add {
   position: absolute;
-  top: calc(50% - 11px);
-  display: inline-flex;
+  /* The line is 1.5px: the box's middle sits on the line's middle. */
+  top: calc(-11px - 0.75px);
+  display: flex;
+  flex: none;
   align-items: center;
   justify-content: center;
+  box-sizing: border-box;
   width: 22px;
+  min-width: 22px;
+  max-width: 22px;
   height: 22px;
+  min-height: 22px;
+  max-height: 22px;
+  margin: 0;
   padding: 0;
-  border: 1px solid color-mix(in srgb, var(--interactive-accent) 60%, var(--background-modifier-border));
+  border: 1.5px solid var(--interactive-accent);
   border-radius: 6px;
   background: var(--taskpro-board-surface);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.16);
+  box-shadow: var(--taskpro-float-shadow);
   color: var(--interactive-accent);
+  line-height: 0;
   cursor: pointer;
   pointer-events: auto;
+  transition: background-color 140ms ease, color 140ms ease, transform 140ms ease;
+  animation: taskpro-quick-in 120ms ease-out;
 }
-.taskpro-board button.taskpro-cal__quick-add:hover {
-  background-image: linear-gradient(var(--interactive-accent), var(--interactive-accent));
+@keyframes taskpro-quick-in {
+  from {
+    opacity: 0;
+    transform: scale(0.85);
+  }
+}
+.taskpro-board .taskpro-cal__quick button.taskpro-cal__quick-add:hover {
+  background: var(--interactive-accent);
   color: var(--text-on-accent);
 }
-.taskpro-board button.taskpro-cal__quick-add:focus {
+.taskpro-board .taskpro-cal__quick button.taskpro-cal__quick-add:active {
+  transform: scale(0.92);
+}
+.taskpro-board .taskpro-cal__quick button.taskpro-cal__quick-add:focus {
   outline: none;
 }
-.taskpro-board button.taskpro-cal__quick-add .taskpro-cal__icon,
-.taskpro-board button.taskpro-cal__quick-add svg {
-  display: inline-flex;
+.taskpro-board .taskpro-cal__quick button.taskpro-cal__quick-add:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--interactive-accent) 45%, transparent);
+  outline-offset: 2px;
+}
+.taskpro-board .taskpro-cal__quick-add .taskpro-cal__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 14px;
   height: 14px;
+}
+.taskpro-board .taskpro-cal__quick-add svg {
+  display: block;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  stroke-width: 2.5px;
 }
 
 /* In the card, an all-day plan shows no times, and the fields are compact. */
@@ -3602,12 +3645,25 @@ button.taskpro-chip:focus-visible {
   width: 344px;
   max-width: calc(100% - 16px);
   padding: 12px;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: var(--radius-l);
+  border: 1px solid var(--taskpro-panel-edge);
+  border-radius: var(--taskpro-radius-panel);
   background: var(--taskpro-board-surface);
-  box-shadow: var(--shadow-l);
+  box-shadow: var(--taskpro-float-shadow);
   color: var(--text-normal);
   font-size: var(--font-ui-small);
+  animation: taskpro-panel-in 140ms var(--taskpro-ease);
+}
+@keyframes taskpro-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .taskpro-board .taskpro-cal-popover,
+  .taskpro-board .taskpro-cal__quick button.taskpro-cal__quick-add {
+    animation: none;
+  }
 }
 .taskpro-board .taskpro-cal-popover__when {
   display: flex;
@@ -3675,7 +3731,7 @@ button.taskpro-chip:focus-visible {
   background: var(--background-primary);
   box-shadow: none;
   color: var(--text-muted);
-  font-family: var(--font-interface);
+  font-family: var(--font-monospace);
   font-size: 10px;
   font-weight: var(--font-medium);
   line-height: 1;
@@ -4067,8 +4123,34 @@ button.taskpro-chip:focus-visible {
   font-size: var(--font-ui-smaller);
   unicode-bidi: isolate;
 }
-.taskpro-board .taskpro-cal-inspector__subtask-when.is-unplanned {
+.taskpro-board button.taskpro-cal-inspector__subtask-plan {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--taskpro-radius-inner);
+  background: transparent;
+  box-shadow: none;
   color: var(--text-faint);
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity 120ms var(--taskpro-ease), background-color 120ms var(--taskpro-ease);
+}
+.taskpro-board .taskpro-cal-inspector__subtask:hover button.taskpro-cal-inspector__subtask-plan,
+.taskpro-board button.taskpro-cal-inspector__subtask-plan:focus-visible {
+  opacity: 1;
+}
+.taskpro-board button.taskpro-cal-inspector__subtask-plan:hover {
+  background-image: linear-gradient(var(--background-modifier-hover), var(--background-modifier-hover));
+  color: var(--taskpro-accent-schedule);
+}
+.taskpro-board button.taskpro-cal-inspector__subtask-plan svg {
+  width: 14px;
+  height: 14px;
 }
 .taskpro-board input.taskpro-cal-inspector__subtask-add {
   width: calc(100% + 12px);
@@ -4124,6 +4206,79 @@ button.taskpro-chip:focus-visible {
 .taskpro-board button.taskpro-cal-inspector__remove:hover {
   background-image: linear-gradient(var(--background-modifier-hover), var(--background-modifier-hover));
   color: var(--text-error);
+}
+
+/* A title keeps its own word order (a Latin title in a Persian board, or
+   the other way round) but sits at the start of its row like the rest, next
+   to its checkbox rather than drifting to the far side. (`match-parent`
+   would say this once, but Chromium drops it.) */
+.taskpro-board[dir="rtl"] .taskpro-cal__chip-title,
+.taskpro-board[dir="rtl"] .taskpro-cal__block-title,
+.taskpro-board[dir="rtl"] .taskpro-cal__free-title,
+.taskpro-board[dir="rtl"] .taskpro-cal__agenda-title,
+.taskpro-board[dir="rtl"] .taskpro-cal__preview-title,
+.taskpro-board[dir="rtl"] .taskpro-cal__crumb-text,
+.taskpro-board[dir="rtl"] .taskpro-cal-picker__option-title,
+.taskpro-board[dir="rtl"] .taskpro-cal-inspector__title,
+.taskpro-board[dir="rtl"] .taskpro-cal-inspector__subtask-title,
+.taskpro-board[dir="rtl"] .taskpro-cal-inspector__parent-title,
+.taskpro-board[dir="rtl"] .taskpro-cal__free-note,
+.taskpro-board[dir="rtl"] .taskpro-menu__label,
+.taskpro-board[dir="rtl"] .taskpro-menu__header {
+  text-align: right;
+}
+.taskpro-board[dir="ltr"] .taskpro-cal__chip-title,
+.taskpro-board[dir="ltr"] .taskpro-cal__block-title,
+.taskpro-board[dir="ltr"] .taskpro-cal__free-title,
+.taskpro-board[dir="ltr"] .taskpro-cal__agenda-title,
+.taskpro-board[dir="ltr"] .taskpro-cal__preview-title,
+.taskpro-board[dir="ltr"] .taskpro-cal__crumb-text,
+.taskpro-board[dir="ltr"] .taskpro-cal-picker__option-title,
+.taskpro-board[dir="ltr"] .taskpro-cal-inspector__title,
+.taskpro-board[dir="ltr"] .taskpro-cal-inspector__subtask-title,
+.taskpro-board[dir="ltr"] .taskpro-cal-inspector__parent-title,
+.taskpro-board[dir="ltr"] .taskpro-cal__free-note,
+.taskpro-board[dir="ltr"] .taskpro-menu__label,
+.taskpro-board[dir="ltr"] .taskpro-menu__header {
+  text-align: left;
+}
+
+/* ── States shared by the calendar's controls ────────────────────────────
+   Hover fades in rather than snapping, a keyboard focus is always visible,
+   and a press gives a little. */
+.taskpro-board .taskpro-cal__free,
+.taskpro-board .taskpro-cal__chip,
+.taskpro-board .taskpro-cal__block,
+.taskpro-board .taskpro-cal__agenda-item,
+.taskpro-board .taskpro-cal-prop__pick,
+.taskpro-board .taskpro-cal-inspector__subtask,
+.taskpro-board button.taskpro-cal__fold,
+.taskpro-board button.taskpro-cal-inspector__parent,
+.taskpro-board button.taskpro-cal-prop__link,
+.taskpro-board button.taskpro-cal-inspector__remove {
+  transition:
+    background-color 120ms var(--taskpro-ease),
+    box-shadow 120ms var(--taskpro-ease),
+    color 120ms var(--taskpro-ease);
+}
+.taskpro-board .taskpro-cal__free:focus-visible,
+.taskpro-board .taskpro-cal-prop__pick:focus-visible,
+.taskpro-board .taskpro-cal-inspector__subtask:focus-visible,
+.taskpro-board .taskpro-cal-inspector__title:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--interactive-accent) 55%, transparent);
+}
+.taskpro-board button.taskpro-cal-nav__today:active,
+.taskpro-board button.taskpro-cal__fold:active,
+.taskpro-board button.taskpro-cal__add:active,
+.taskpro-board button.taskpro-cal-inspector__remove:active,
+.taskpro-board .taskpro-cal-prop__pick:active {
+  transform: scale(0.97);
+}
+/* The Jalali date is typed: a field as wide as the date, not the row. */
+.taskpro-board .taskpro-cal-inspector input.taskpro-cal-date__input[type="text"] {
+  width: 118px;
+  text-align: center;
 }
 
 /* ── Narrow boards ───────────────────────────────────────────────────────── */
@@ -4219,17 +4374,14 @@ button.taskpro-chip:focus-visible {
   max-height: min(560px, calc(100% - 8px));
   padding: 4px;
   overflow: hidden;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 10px;
+  border: 1px solid var(--taskpro-panel-edge);
+  border-radius: var(--taskpro-radius-panel);
   background: var(--taskpro-board-surface);
-  box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--text-normal) 4%, transparent),
-    0 12px 32px rgba(0, 0, 0, 0.18),
-    0 2px 6px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--taskpro-float-shadow);
   color: var(--text-normal);
   font-size: var(--font-ui-small);
   outline: none;
-  animation: taskpro-menu-in 110ms ease-out;
+  animation: taskpro-menu-in 120ms var(--taskpro-ease);
 }
 .taskpro-board .taskpro-menu.is-submenu {
   z-index: calc(var(--layer-popover, 30) + 3);
@@ -4296,7 +4448,8 @@ button.taskpro-chip:focus-visible {
   gap: 8px;
   min-height: 28px;
   padding: 0 8px;
-  border-radius: 6px;
+  border-radius: var(--taskpro-radius-inner);
+  transition: background-color 100ms var(--taskpro-ease);
   cursor: pointer;
   user-select: none;
   -webkit-user-select: none;

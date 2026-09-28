@@ -285,8 +285,10 @@ can decide what to work on and when, in the Gregorian or the Jalali calendar.
   ![The month view in Persian, right to left, in the Jalali calendar](docs/images/task-calendar-month-fa-dark.png)
 
 - **Plan a block of time:** drag across the week or day grid. A click on an
-  empty slot only marks it with a small boxed **+** beside the pointer, so a
-  stray click never opens anything; click the **+** to plan there. A card
+  empty slot only marks it, with a hairline and a square **+** on it beside
+  the pointer, so a stray click never opens anything; click the **+** to plan
+  there. One panel is open at a time: a card and the task menu replace each
+  other rather than stack. A card
   opens on the spot: type a title and press `Enter` to create a new
   task there, or choose one of the tasks you already have to plan it for that
   time. The times are typed, not picked: `9`, `930`, `2:30 pm` and `21:30` all

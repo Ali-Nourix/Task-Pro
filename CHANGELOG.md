@@ -65,9 +65,21 @@
   place or from a dropdown under it, and an empty one says so.
 - **Tags** in the menu has a submenu listing every tag, ticked when the task
   has it.
-- A click on an empty slot shows a small boxed **+** beside the pointer, and
-  the picker opens only from the **+**. Dragging across the grid still opens
-  it at once. Blocks of an hour and a half or more show their
+- A click on an empty slot shows a hairline at the slot's start with a square
+  **+** on it, beside the pointer, and the picker opens only from the **+**.
+  Dragging across the grid still opens it at once.
+- One panel at a time: opening a card closes the menu, and the menu (a right
+  click, or a card's **⋯**) closes the card, so neither covers the other.
+- A design pass over the calendar:
+  - Every floating panel shares one hairline edge, a soft shadow (deeper in
+    dark mode) and a panel radius, with tighter corners inside.
+  - Hover states fade in, a keyboard focus is always visible, and buttons
+    give a little on press.
+  - Key caps use the monospace font.
+  - A subtask with no plan shows a plan button on hover instead of
+    repeating "Not planned yet".
+  - A Latin title on a Persian board, or the other way round, sits next to
+    its checkbox instead of drifting to the far side. Blocks of an hour and a half or more show their
   priority, repeat, deadline and tags when there is room. The lines a block
   gives its title are worked out from its height, so nothing is cut through
   the middle.
