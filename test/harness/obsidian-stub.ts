@@ -86,6 +86,23 @@ export function setIcon(parent: HTMLElement, name: string): void {
   );
 }
 
+/** `?mobile=1` in the preview's address plays Obsidian on a phone. */
+const onPhone = typeof location !== 'undefined' && new URLSearchParams(location.search).get('mobile') === '1';
+export const Platform = {
+  isMobile: onPhone,
+  isPhone: onPhone,
+  isTablet: false,
+  isDesktop: !onPhone,
+  isDesktopApp: !onPhone,
+  isMobileApp: onPhone,
+  isIosApp: false,
+  isAndroidApp: false,
+  isMacOS: false,
+  isWin: false,
+  isLinux: true,
+  isSafari: false,
+};
+
 export class Notice {
   constructor(message: string) {
     console.log(`[Notice] ${message}`);

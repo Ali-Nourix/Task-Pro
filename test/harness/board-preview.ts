@@ -31,7 +31,7 @@ import {
 } from '../../src/calendar/daily-notes';
 import { createScheduleChip } from '../../src/ui/chips';
 import { TaskLink, extractSchedule, setRemind, setSchedule, setWaiting } from '../../src/task-metadata';
-import { newBlockId } from '../../src/board/task-relations';
+import { RelationIndex, newBlockId, subtaskCounts } from '../../src/board/task-relations';
 import { TaskTag } from '../../src/tags';
 import { removeBlock } from '../../src/task-lines';
 import { openTagPicker } from '../../src/ui/tag-picker';
@@ -44,6 +44,8 @@ import {
   createProgressChip,
   createRepeatChip,
   createStatusChip,
+  createSubtaskChip,
+  createWaitingChip,
 } from '../../src/ui/chips';
 import {
   extractDeadline,
@@ -443,8 +445,16 @@ async function main(): Promise<void> {
           createScheduleChip({ ...common, schedule, status: task.status, language, calendarSystem, timeFormat: '24h' })
         );
       }
+      const waiting = task.waiting ?? [];
+      if (waiting.length) {
+        const index = new RelationIndex(tasks);
+        const items = index.blockersOf(task).map((b) => ({ title: b.task?.text ?? '', done: b.task?.status === '[x]', missing: !b.task }));
+        container.appendChild(createWaitingChip(items, language, () => undefined));
+      }
       const progress = task.blockId ? PROGRESS[task.blockId] : undefined;
+      const counts = subtaskCounts(tasks).get(task.id);
       if (progress) container.appendChild(createProgressChip({ ...common, ...progress, language }));
+      else if (counts) container.appendChild(createSubtaskChip(counts.done, counts.total, language));
       appendTagChips(container, extractTags(task.line).map((key) => resolveTag(key, TAGS)), common);
     }
   }

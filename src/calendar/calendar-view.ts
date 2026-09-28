@@ -42,6 +42,7 @@ import { OWN_ESCAPE_EVENT, claimEscape } from '../ui/escape-scope';
 import {
   DayKey,
   WEEKDAY_NAMES,
+  WEEKDAY_NAMES_MIN,
   WEEKDAY_NAMES_SHORT,
   addDays,
   addMonths,
@@ -94,6 +95,8 @@ import { CalendarLabels, getCalendarLabels } from './calendar-localization';
 import { PopoverHandle, openCalendarPopover } from './calendar-popover';
 import { scheduleDayText } from './schedule-text';
 import { MenuEntry, MenuSection, closeContextMenu, openContextMenu } from '../ui/context-menu';
+import { emptyPanel } from '../ui/sheet';
+import { holdToDrag, onContextPress } from '../ui/touch';
 import {
   TaskActionOptions,
   getActionLabels,
@@ -256,6 +259,9 @@ export class TaskCalendar {
   private inspectorStale = false;
   /** The tasks of the last render, for pickers opened from it. */
   private lastTasks: BoardTask[] = [];
+  private lastNoteDays = new Map<string, DayKey>();
+  /** The day a phone's month view lists under the grid. */
+  private selectedDay: DayKey | null = null;
   /** Parents and subtasks in the notes the last render drew from. */
   private families: FamilyIndex = indexFamilies([]);
   /** Families folded shut in the unscheduled list, by their outermost task's id. */
@@ -445,7 +451,11 @@ export class TaskCalendar {
       (value) => this.setSystem(value as CalendarSystem)
     );
     this.iconButton(end, 'sliders-horizontal', labels.viewOptions, (event) => this.showOptions(event));
-    if (this.view === 'week' || this.view === 'day') {
+    if (this.compact) {
+      // No room beside the grid on a phone: the unscheduled tasks are a sheet, in every view.
+      const free = this.iconButton(end, 'inbox', labels.unscheduled, () => this.openUnscheduledSheet(free));
+      free.addClass('taskpro-cal-nav__free');
+    } else if (this.view === 'week' || this.view === 'day') {
       const toggle = this.iconButton(end, this.rtl ? 'panel-left' : 'panel-right', labels.sidebar, () => {
         void this.ctx.updatePrefs({ calendarSidebar: !this.prefs.calendarSidebar });
       });
@@ -486,6 +496,7 @@ export class TaskCalendar {
     }
     const tasks = this.ctx.tasks(new Set(noteDays.keys()));
     this.lastTasks = tasks;
+    this.lastNoteDays = noteDays;
     this.families = this.familiesOf(tasks);
 
     const prefs = this.prefs;
@@ -526,6 +537,28 @@ export class TaskCalendar {
     const store = this.ctx.host.store;
     const paths = new Set(tasks.map((task) => task.filePath));
     return indexFamilies(Array.from(paths).flatMap((path) => store.inFile(path)));
+  }
+
+  /** Laid out for a phone: the board says so on its root. */
+  private get compact(): boolean {
+    return this.ctx.root.hasClass('is-compact');
+  }
+
+  /** The unscheduled tasks as a sheet; a tap on one opens its card, where it can be planned. */
+  private openUnscheduledSheet(anchor: HTMLElement): void {
+    this.closePopover();
+    this.ctx.hold(true);
+    this.popover = openCalendarPopover({
+      container: this.ctx.root,
+      anchor: anchor.getBoundingClientRect(),
+      cls: 'taskpro-cal-free-sheet',
+      rtl: this.rtl,
+      onClose: () => {
+        this.popover = null;
+        this.ctx.hold(false);
+      },
+      build: (el) => this.renderSidebar(el, this.lastTasks, this.lastNoteDays),
+    });
   }
 
   /** The task a subtask is nested under, if it is one. */
@@ -620,6 +653,10 @@ export class TaskCalendar {
   // ── Month ─────────────────────────────────────────────────────────────────
 
   private renderMonth(root: HTMLElement, range: Range, items: Map<DayKey, CalendarItem[]>): void {
+    if (this.compact) {
+      this.renderCompactMonth(root, range, items);
+      return;
+    }
     const system = this.system;
     const today = todayKey();
 
@@ -655,6 +692,67 @@ export class TaskCalendar {
 
     this.afterLayout(grid, () => this.fitMonth(grid));
     this.observeSize(grid, () => this.fitMonth(grid));
+  }
+
+  /**
+   * The month on a phone, the way a phone's calendar shows it: a dot for
+   * each task under its day, and the chosen day's tasks listed below the
+   * grid, each a tap away from its card. A seventh of a phone is too narrow
+   * for a task's name, so the names are in the list rather than the cells.
+   */
+  private renderCompactMonth(root: HTMLElement, range: Range, items: Map<DayKey, CalendarItem[]>): void {
+    const labels = this.labels;
+    const system = this.system;
+    const today = todayKey();
+    root.addClass('is-compact-month');
+    const inMonth = (day: DayKey) => isSameMonth(day, this.anchor, system);
+    if (!this.selectedDay || !inMonth(this.selectedDay)) this.selectedDay = inMonth(today) ? today : this.anchor;
+    const selected = this.selectedDay;
+
+    const head = root.createDiv({ cls: 'taskpro-cal__weekdays' });
+    for (const day of range.days.slice(0, 7)) {
+      const cell = head.createDiv({ cls: 'taskpro-cal__weekday', text: WEEKDAY_NAMES_MIN[this.language][weekdayOf(day)] });
+      cell.toggleClass('is-weekend', isWeekend(day, system));
+    }
+    const grid = root.createDiv({ cls: 'taskpro-cal__month is-dots' });
+    grid.style.setProperty('--taskpro-cal-rows', String(range.weeks.length));
+    for (const day of range.days) {
+      const cell = grid.createEl('button', { cls: 'taskpro-cal__cell' });
+      cell.type = 'button';
+      this.markDay(cell, day, today);
+      cell.dataset.drop = 'day';
+      cell.toggleClass('is-outside', !inMonth(day));
+      cell.toggleClass('is-selected', day === selected);
+      const dayItems = items.get(day) ?? [];
+      cell.setAttribute('aria-label', `${mediumDay(day, system, this.language)}${dayItems.length ? ` · ${dayItems.length}` : ''}`);
+      cell.createSpan({ cls: 'taskpro-cal__cell-number', text: String(partsIn(day, system).day) });
+      const dots = cell.createSpan({ cls: 'taskpro-cal__dots' });
+      for (const item of dayItems.slice(0, 3)) {
+        const dot = dots.createSpan({ cls: 'taskpro-cal__dot' });
+        dot.style.setProperty('--taskpro-cal-accent', this.accent(item));
+        dot.toggleClass('is-done', item.task.status === '[x]');
+        dot.toggleClass('is-due', item.kind === 'due');
+      }
+      if (dayItems.length > 3) dots.createSpan({ cls: 'taskpro-cal__dots-more', text: `+${dayItems.length - 3}` });
+      cell.addEventListener('click', () => {
+        this.selectedDay = day;
+        if (!inMonth(day)) this.anchor = day;
+        this.ctx.refresh();
+      });
+    }
+
+    const list = root.createDiv({ cls: 'taskpro-cal__day-list' });
+    const listHead = list.createDiv({ cls: 'taskpro-cal__day-list-head' });
+    listHead.createSpan({ cls: 'taskpro-cal__day-list-title', text: longDay(selected, system, this.language) });
+    const tools = listHead.createDiv({ cls: 'taskpro-cal__day-list-tools' });
+    this.iconButton(tools, 'calendar-clock', labels.views.day, () => this.openDay(selected));
+    if (this.ctx.host.openDailyNote) {
+      this.iconButton(tools, 'file-text', labels.openDailyNote, () => void this.ctx.host.openDailyNote?.(selected, this.system));
+    }
+    const add = this.iconButton(tools, 'plus', labels.addOn(mediumDay(selected, system, this.language)), () => this.openSlotPicker(selected, null, add));
+    const dayItems = items.get(selected) ?? [];
+    if (!dayItems.length) list.createDiv({ cls: 'taskpro-cal__day-list-empty', text: labels.nothingOnDay });
+    for (const item of dayItems) this.agendaRow(list, item);
   }
 
   /**
@@ -780,10 +878,14 @@ export class TaskCalendar {
       col.addEventListener('contextmenu', (event) => {
         if (event.target === col) this.openDayMenu(event, day, col);
       });
-      // Touch has no drag to make a block: a tap on an empty slot opens the picker there.
+      // On a touch screen a tap on an empty slot opens the new task's sheet
+      // right there; the small + that follows a mouse is for a pointer.
       col.addEventListener('click', (event) => {
         if (event.target !== col || this.clickGuard || (event as PointerEvent).pointerType !== 'touch') return;
-        this.showQuickAdd(col, day, this.floorSlot(this.minutesAt(event.clientY, col)), event.clientX);
+        const start = this.floorSlot(this.minutesAt(event.clientY, col));
+        const end = Math.min(DAY_MINUTES, start + this.defaultDuration);
+        const preview = this.createPreview(col, start, end);
+        this.openSlotPicker(day, { start, end }, preview, () => preview.remove());
       });
     }
 
@@ -1350,9 +1452,19 @@ export class TaskCalendar {
   }
 
   private onItemPointerDown(event: PointerEvent, item: CalendarItem, el: HTMLElement): void {
-    if (event.button !== 0 || event.pointerType === 'touch') return;
+    if (event.button !== 0) return;
     const target = event.target as HTMLElement;
     if (target.closest('button, input')) return;
+    // A finger holds a task to pick it up; one that moves at once scrolls the calendar.
+    if (event.pointerType === 'touch') {
+      holdToDrag(event, () => this.pressItem(event, item, el));
+      return;
+    }
+    this.pressItem(event, item, el);
+  }
+
+  private pressItem(event: PointerEvent, item: CalendarItem, el: HTMLElement): void {
+    const target = event.target as HTMLElement;
     // No default: that would start a text selection. Focus moves to the
     // calendar itself, so its keys work next.
     event.preventDefault();
@@ -1376,7 +1488,16 @@ export class TaskCalendar {
   }
 
   private onColumnPointerDown(event: PointerEvent, col: HTMLElement, day: DayKey): void {
-    if (event.button !== 0 || event.target !== col || event.pointerType === 'touch') return;
+    if (event.button !== 0 || event.target !== col) return;
+    if (event.pointerType === 'touch') {
+      holdToDrag(event, () => this.pressColumn(event, col, day));
+      return;
+    }
+    this.pressColumn(event, col, day);
+  }
+
+  /** A press on an empty part of a day: dragging it out makes a block. */
+  private pressColumn(event: PointerEvent, col: HTMLElement, day: DayKey): void {
     event.preventDefault();
     this.rootEl?.focus({ preventScroll: true });
     this.beginDrag(event, {
@@ -2155,7 +2276,7 @@ export class TaskCalendar {
     const actionLabels = getActionLabels(this.language);
     const language = this.language;
     const host = this.ctx.host;
-    el.empty();
+    emptyPanel(el);
     el.dataset.status = task.status;
     el.style.setProperty('--taskpro-cal-accent', this.accent({ kind: inspected.kind, task }));
     const options = () => this.actionOptions(task, el);
@@ -2540,6 +2661,15 @@ export class TaskCalendar {
    * N for a new task, while the calendar has focus. Keyed on the physical
    * key, so they work the same on a Persian keyboard layout.
    */
+  /** A new task on today, when today is on screen, or else on the day in view: the N key, and the phone's + button. */
+  addTask(): void {
+    const range = this.range();
+    const today = todayKey();
+    const day = compareDays(today, range.from) >= 0 && compareDays(today, range.to) <= 0 ? today : this.anchor;
+    const box = (this.rootEl ?? this.ctx.root).getBoundingClientRect();
+    this.openSlotPicker(day, null, new DOMRect(box.left + box.width / 2 - 1, box.top + 40, 2, 2));
+  }
+
   private onKey(event: KeyboardEvent): void {
     if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
     const target = event.target as HTMLElement;
@@ -2569,12 +2699,8 @@ export class TaskCalendar {
         this.setView('agenda');
         break;
       case 'KeyN': {
-        const range = this.range();
-        const today = todayKey();
-        const day = compareDays(today, range.from) >= 0 && compareDays(today, range.to) <= 0 ? today : this.anchor;
-        const box = this.rootEl?.getBoundingClientRect();
-        if (!box) return;
-        this.openSlotPicker(day, null, new DOMRect(box.left + box.width / 2 - 1, box.top + 40, 2, 2));
+        if (!this.rootEl) return;
+        this.addTask();
         break;
       }
       default:

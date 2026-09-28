@@ -13,6 +13,7 @@
 
 import { setIcon } from 'obsidian';
 import { claimEscape } from './escape-scope';
+import { makeSheet, wantsSheet } from './sheet';
 
 export interface MenuEntry {
   label: string;
@@ -120,7 +121,27 @@ export function openContextMenu(options: ContextMenuOptions): ContextMenuHandle 
   rootEl.dir = rtl ? 'rtl' : 'ltr';
   rootEl.tabIndex = -1;
 
+  // On a phone the menu is a sheet from the bottom, and a submenu is the
+  // sheet's next page, with a way back, rather than a panel beside its row.
+  const sheet = wantsSheet(container);
+  const pages: Array<{ title: string; sections: () => MenuSection[] }> = [];
+  let undoSheet: (() => void) | null = null;
+
   if (options.header) rootEl.createDiv({ cls: 'taskpro-menu__header', text: options.header, attr: { dir: 'auto' } });
+  let pageHead: HTMLElement | null = null;
+  let pageTitle: HTMLElement | null = null;
+  if (sheet) {
+    pageHead = rootEl.createDiv({ cls: 'taskpro-menu__page' });
+    const back = pageHead.createEl('button', { cls: 'taskpro-menu__back' });
+    back.type = 'button';
+    setIcon(back, rtl ? 'chevron-right' : 'chevron-left');
+    back.setAttribute('aria-label', 'Back');
+    back.addEventListener('click', (event) => {
+      event.stopPropagation();
+      popPage();
+    });
+    pageTitle = pageHead.createSpan({ cls: 'taskpro-menu__page-title', attr: { dir: 'auto' } });
+  }
   let search: HTMLInputElement | null = null;
   if (options.searchPlaceholder) {
     search = rootEl.createEl('input', {
@@ -196,6 +217,7 @@ export function openContextMenu(options: ContextMenuOptions): ContextMenuHandle 
         const index = panel.rows.push(row) - 1;
         el.addEventListener('pointerenter', () => {
           setActive(panel, index);
+          if (sheet) return;
           clearHover();
           hoverTimer = win.setTimeout(() => {
             hoverTimer = null;
@@ -215,7 +237,23 @@ export function openContextMenu(options: ContextMenuOptions): ContextMenuHandle 
     if (!panel.rows.length) list.createDiv({ cls: 'taskpro-menu__empty', text: '—' });
   };
 
+  const pushPage = (row: Row) => {
+    pages.push({ title: row.entry.label, sections: row.entry.submenu! });
+    renderRoot();
+    setActive(root, firstEnabled(root, 0, 1));
+  };
+
+  function popPage(): void {
+    if (!pages.length) return;
+    pages.pop();
+    renderRoot();
+  }
+
   const openSubmenu = (depth: number, row: Row) => {
+    if (sheet) {
+      pushPage(row);
+      return;
+    }
     if (panels[depth + 1]?.owner === row) return;
     closeFrom(depth + 1);
     const el = container.createDiv({ cls: 'taskpro-menu is-submenu' });
@@ -292,6 +330,7 @@ export function openContextMenu(options: ContextMenuOptions): ContextMenuHandle 
     if (entry.disabled) return;
     if (entry.submenu) {
       openSubmenu(depth, row);
+      if (sheet) return;
       const panel = panels[depth + 1];
       if (panel) setActive(panel, firstEnabled(panel, 0, 1));
       return;
@@ -338,6 +377,14 @@ export function openContextMenu(options: ContextMenuOptions): ContextMenuHandle 
 
   const renderRoot = () => {
     closeFrom(1);
+    const page = pages[pages.length - 1];
+    rootEl.toggleClass('is-paged', !!page);
+    if (pageTitle) pageTitle.setText(page?.title ?? '');
+    if (page) {
+      renderRows(root, rootList, page.sections(), 0);
+      place();
+      return;
+    }
     const query = search?.value.trim().toLowerCase() ?? '';
     if (!query) {
       renderRows(root, rootList, options.idleSections?.() ?? sections(), 0);
@@ -360,6 +407,8 @@ export function openContextMenu(options: ContextMenuOptions): ContextMenuHandle 
 
   // ── Placement ──
   const place = () => {
+    // A sheet's place is the bottom of the board, which its styles give it.
+    if (sheet) return;
     const box = container.getBoundingClientRect();
     const width = rootEl.offsetWidth;
     const height = rootEl.offsetHeight;
@@ -430,6 +479,10 @@ export function openContextMenu(options: ContextMenuOptions): ContextMenuHandle 
           closeFrom(depth);
           break;
         }
+        if (event.key === backKey && pages.length && !(search && doc.activeElement === search && search.value)) {
+          popPage();
+          break;
+        }
         return;
     }
     event.preventDefault();
@@ -460,6 +513,7 @@ export function openContextMenu(options: ContextMenuOptions): ContextMenuHandle 
       doc.removeEventListener('contextmenu', onContextMenu, true);
       win.removeEventListener('blur', handle.close);
       closeFrom(1);
+      undoSheet?.();
       rootEl.remove();
       if (current === handle) current = null;
       options.onClose?.();
@@ -470,12 +524,15 @@ export function openContextMenu(options: ContextMenuOptions): ContextMenuHandle 
   // The innermost panel closes first, then the menu, before anything under it.
   const releaseEscape = claimEscape(() => {
     if (panels.length > 1) closeFrom(panels.length - 1);
+    else if (pages.length) popPage();
     else handle.close();
   }, doc);
 
+  if (sheet) undoSheet = makeSheet(rootEl, container, () => handle.close());
   search?.addEventListener('input', renderRoot);
   renderRoot();
-  (search ?? rootEl).focus({ preventScroll: true });
+  // A sheet does not raise the keyboard over itself before anything is typed.
+  (sheet ? rootEl : search ?? rootEl).focus({ preventScroll: true });
   doc.addEventListener('keydown', onKeyDown, true);
   doc.addEventListener('contextmenu', onContextMenu, true);
   // After the press that opened the menu has finished.

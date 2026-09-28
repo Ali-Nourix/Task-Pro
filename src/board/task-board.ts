@@ -7,7 +7,7 @@
 // stub host in the preview harness and behaves the same inside Obsidian.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { App, Menu, setIcon } from 'obsidian';
+import { App, Menu, Platform, setIcon } from 'obsidian';
 import {
   BoardGroupBy,
   BoardPreferences,
@@ -47,6 +47,8 @@ import {
 import { BoardLabels, getBoardLabels } from './board-localization';
 import { BoardTask, TaskStore } from './task-store';
 import { TaskCalendar } from '../calendar/calendar-view';
+import { openCalendarPopover } from '../calendar/calendar-popover';
+import { holdToDrag, onContextPress } from '../ui/touch';
 import { TaskTimeline } from '../timeline/timeline-view';
 import { getTimelineLabels } from '../timeline/timeline-localization';
 import { getCalendarLabels } from '../calendar/calendar-localization';
@@ -84,6 +86,11 @@ import { isSchedulePast, scheduleDayText, scheduleText, scheduleTimeText } from 
 
 /** Rows drawn per group before a "Show more" row; keeps a huge vault responsive. */
 const ROWS_PER_PAGE = 150;
+
+/** Narrower than this, the board is laid out for a phone: one bar, sheets, a list. */
+const COMPACT_WIDTH = 640;
+/** How far a row is swiped before letting go acts on it. */
+const SWIPE_ACT = 76;
 
 /** The widths of the table's fixed columns: the checkbox, and the ⋯ at the end. */
 const CHECK_COLUMN = 34;
@@ -250,6 +257,15 @@ export class TaskBoard {
   /** How many of each task's subtasks are done, and what each task waits on; rebuilt with the body. */
   private subtasks = new Map<string, SubtaskCount>();
   private relationIndex: RelationIndex | null = null;
+  /** Laid out for a phone: narrow, whatever the device. */
+  private compact = false;
+  /** A touch screen: no hover, and a long press for the right click. */
+  private readonly touch: boolean;
+  private sizeObserver: ResizeObserver | null = null;
+  /** The phone bar's search field, open. */
+  private searchOpen = false;
+  /** A sheet changed a preference the bar shows; the bar is drawn again when it closes. */
+  private chromeDirty = false;
 
   constructor(
     container: HTMLElement,
@@ -258,9 +274,15 @@ export class TaskBoard {
   ) {
     this.el = container.createDiv({ cls: 'taskpro-board' });
     this.el.toggleClass('is-floating', !!options.floating);
+    const view = this.el.ownerDocument.defaultView ?? window;
+    this.touch = !!Platform.isMobile || !!view.matchMedia?.('(pointer: coarse)').matches;
+    this.el.toggleClass('is-touch', this.touch);
   }
 
   async mount(): Promise<void> {
+    this.compact = this.measureCompact();
+    this.el.toggleClass('is-compact', this.compact);
+    this.observeSize();
     this.renderChrome();
     this.renderBody();
     this.unsubscribe = this.host.store.subscribe(() => this.requestRender());
@@ -275,7 +297,32 @@ export class TaskBoard {
     this.calendarView?.destroy();
     this.calendarView = null;
     this.timelineView?.destroy();
+    this.sizeObserver?.disconnect();
+    this.sizeObserver = null;
     closeContextMenu();
+  }
+
+  /** A phone, or a board narrower than a phone's width of layout. */
+  private measureCompact(): boolean {
+    if (Platform.isPhone) return true;
+    const width = this.el.clientWidth;
+    return width > 0 ? width < COMPACT_WIDTH : this.compact;
+  }
+
+  /** Lays the board out again when it crosses the phone width, as a pane is resized or the board floats. */
+  private observeSize(): void {
+    const view = this.el.ownerDocument.defaultView ?? window;
+    if (typeof view.ResizeObserver === 'undefined') return;
+    this.sizeObserver = new view.ResizeObserver(() => {
+      const compact = this.measureCompact();
+      if (compact === this.compact) return;
+      this.compact = compact;
+      this.el.toggleClass('is-compact', compact);
+      closeContextMenu();
+      this.renderChrome();
+      this.renderBody();
+    });
+    this.sizeObserver.observe(this.el);
   }
 
   /** Settings changed (language, tags, target folder): rebuild everything. */
@@ -433,7 +480,16 @@ export class TaskBoard {
   }
 
   /** Right click, or the context-menu key, on a row or a card. */
-  private withTaskActions(el: HTMLElement, task: BoardTask): void {
+  /**
+   * Right click on a row or a card, or the context-menu key; on a touch
+   * screen a long press too, unless holding the element picks it up to
+   * drag it, where a tap opens the menu instead.
+   */
+  private withTaskActions(el: HTMLElement, task: BoardTask, longPress = true): void {
+    if (longPress) {
+      onContextPress(el, (at) => this.openTaskActions(task, at, el));
+      return;
+    }
     el.addEventListener('contextmenu', (event) => {
       if ((event.target as HTMLElement).closest('input, textarea')) return;
       event.preventDefault();
@@ -461,6 +517,10 @@ export class TaskBoard {
   // ── Chrome: title, toolbar, filters, quick add ──────────────────────────
 
   private renderChrome(): void {
+    if (this.compact) {
+      this.renderCompactChrome();
+      return;
+    }
     const labels = this.labels;
     // A card or ghost the calendar left open belongs to the old chrome.
     this.calendarView?.destroy();
@@ -598,20 +658,392 @@ export class TaskBoard {
     );
   }
 
-  private renderLayoutControl(parent: HTMLElement): void {
+  private layoutItems(): Array<{ value: BoardPreferences['layout']; label: string; icon: string }> {
     const labels = this.labels;
+    return [
+      { value: 'table', label: labels.layoutTable, icon: 'table-2' },
+      { value: 'board', label: labels.layoutBoard, icon: 'kanban' },
+      { value: 'calendar', label: getCalendarLabels(this.language).layout, icon: 'calendar-days' },
+      { value: 'timeline', label: getTimelineLabels(this.language).layout, icon: 'gantt-chart' },
+    ];
+  }
+
+  private renderLayoutControl(parent: HTMLElement): void {
     this.segmented(
       parent,
       'taskpro-board__layout',
-      [
-        { value: 'table', label: labels.layoutTable, icon: 'table-2' },
-        { value: 'board', label: labels.layoutBoard, icon: 'kanban' },
-        { value: 'calendar', label: getCalendarLabels(this.language).layout, icon: 'calendar-days' },
-        { value: 'timeline', label: getTimelineLabels(this.language).layout, icon: 'gantt-chart' },
-      ],
+      this.layoutItems(),
       this.prefs.layout,
       (value) => void this.updatePrefs({ layout: value as BoardPreferences['layout'] })
     );
+  }
+
+  // ── The phone layout's chrome ────────────────────────────────────────────
+  // One bar under the title: what the board shows (the layout), search,
+  // filters and the rest of the view's options, each opening a sheet from
+  // the bottom. New tasks come from a button in thumb's reach. Nothing the
+  // desktop bar offers is left out; it is one tap further in.
+
+  private renderCompactChrome(): void {
+    const labels = this.labels;
+    this.calendarView?.destroy();
+    this.el.empty();
+    this.el.setAttribute('dir', this.language === 'fa' ? 'rtl' : 'ltr');
+    this.el.toggleClass('is-board-layout', this.prefs.layout === 'board');
+    this.el.toggleClass('is-calendar-layout', this.isCalendar);
+    this.el.toggleClass('is-timeline-layout', this.isTimeline);
+
+    this.headerEl = this.el.createDiv({ cls: 'taskpro-board__header is-compact' });
+    const heading = this.headerEl.createDiv({ cls: 'taskpro-board__heading' });
+    setIcon(heading.createSpan({ cls: 'taskpro-board__heading-icon' }), 'list-checks');
+    const titles = heading.createDiv({ cls: 'taskpro-board__titles' });
+    titles.createEl('h2', { cls: 'taskpro-board__title-text', text: labels.title });
+    this.summaryEl = titles.createSpan({ cls: 'taskpro-board__summary' });
+    const actions = heading.createDiv({ cls: 'taskpro-board__heading-actions' });
+    this.iconButton(actions, 'tags', labels.manageTags, () => this.host.manageTags());
+    this.iconButton(actions, 'refresh-cw', labels.refresh, () => void this.host.store.reload());
+    const toggleFloating =
+      this.options.onToggleFloating ?? (this.host.openFloating ? () => this.host.openFloating?.() : null);
+    if (toggleFloating) {
+      this.iconButton(
+        actions,
+        this.options.floating ? 'minimize-2' : 'picture-in-picture-2',
+        this.options.floating ? labels.dock : labels.float,
+        () => toggleFloating()
+      ).addClass('taskpro-board__float-toggle');
+    }
+    if (this.options.floating && this.options.onClose) {
+      this.iconButton(actions, 'x', labels.close, () => this.options.onClose?.()).addClass('taskpro-board__close');
+    }
+
+    this.toolbarEl = this.headerEl.createDiv({ cls: 'taskpro-board__bar' });
+    const item = this.layoutItems().find((entry) => entry.value === this.prefs.layout) ?? this.layoutItems()[0];
+    const layout = this.toolbarEl.createEl('button', { cls: 'taskpro-board__bar-btn is-layout' });
+    layout.type = 'button';
+    layout.setAttribute('aria-label', `${labels.layoutLabel}: ${item.label}`);
+    setIcon(layout.createSpan({ cls: 'taskpro-board__bar-icon' }), item.icon);
+    layout.createSpan({ cls: 'taskpro-board__bar-label', text: item.label });
+    setIcon(layout.createSpan({ cls: 'taskpro-board__bar-chevron' }), 'chevron-down');
+    layout.addEventListener('click', () =>
+      this.openSheetMenu(layout, labels.layoutLabel, () => [
+        {
+          entries: this.layoutItems().map((entry) => ({
+            label: entry.label,
+            icon: entry.icon,
+            checked: entry.value === this.prefs.layout,
+            onSelect: () => void this.updatePrefs({ layout: entry.value }),
+          })),
+        },
+      ])
+    );
+
+    this.toolbarEl.createDiv({ cls: 'taskpro-board__bar-space' });
+    const searching = this.searchOpen || !!this.search.trim();
+    const searchButton = this.iconButton(this.toolbarEl, 'search', searching ? labels.closeSearch : labels.openSearch, () => {
+      this.searchOpen = !searching;
+      if (!this.searchOpen && this.search) {
+        this.search = '';
+        this.renderBody();
+      }
+      this.renderChrome();
+      if (this.searchOpen) this.headerEl.querySelector<HTMLInputElement>('.taskpro-board__search input')?.focus();
+    });
+    searchButton.addClass('taskpro-board__bar-icon-btn');
+    searchButton.toggleClass('is-active', searching);
+
+    const count = this.activeFilterCount();
+    const filter = this.toolbarEl.createEl('button', { cls: 'taskpro-board__bar-btn is-filter' });
+    filter.type = 'button';
+    filter.setAttribute('aria-label', count ? `${labels.filter} (${count})` : labels.filter);
+    setIcon(filter.createSpan({ cls: 'taskpro-board__bar-icon' }), 'filter');
+    if (count) filter.createSpan({ cls: 'taskpro-board__bar-count', text: String(count) });
+    filter.toggleClass('is-active', count > 0);
+    filter.addEventListener('click', () => this.openFilterSheet(filter));
+
+    const options = this.iconButton(this.toolbarEl, 'sliders-horizontal', labels.viewOptions, () => this.openViewOptions(options));
+    options.addClass('taskpro-board__bar-icon-btn', 'taskpro-board__properties');
+
+    if (searching) {
+      const search = this.headerEl.createDiv({ cls: 'taskpro-board__search is-compact' });
+      setIcon(search.createSpan({ cls: 'taskpro-board__search-icon' }), 'search');
+      const input = search.createEl('input', {
+        type: 'search',
+        attr: { placeholder: labels.search, 'aria-label': labels.search, dir: 'auto', enterkeyhint: 'search' },
+      });
+      input.value = this.search;
+      input.addEventListener('input', () => {
+        this.search = input.value;
+        if (this.searchTimer) clearTimeout(this.searchTimer);
+        this.searchTimer = setTimeout(() => this.renderBody(), 160);
+      });
+    }
+
+    this.filtersEl = this.headerEl.createDiv({ cls: 'taskpro-board__filters' });
+    this.renderActiveFilters();
+
+    if (this.isCalendar) {
+      this.calendarNavEl = this.el.createDiv({ cls: 'taskpro-cal-nav' });
+      this.calendar().renderNav(this.calendarNavEl);
+    } else if (this.isTimeline) {
+      this.calendarNavEl = null;
+      this.timeline().renderNav(this.el.createDiv({ cls: 'taskpro-cal-nav taskpro-tl-nav' }));
+    } else {
+      this.calendarNavEl = null;
+    }
+
+    this.bodyEl = this.el.createDiv({ cls: 'taskpro-board__body' });
+    this.renderFab();
+  }
+
+  /**
+   * A menu as a sheet: the view's options, the filters, the layouts. A
+   * preference changed from one redraws the body at once and the bar when
+   * the sheet closes, so the sheet stays in place meanwhile.
+   */
+  private openSheetMenu(anchor: HTMLElement, header: string, sections: () => MenuSection[]): void {
+    this.hold(true);
+    openContextMenu({
+      container: this.el,
+      at: anchor.getBoundingClientRect(),
+      rtl: this.language === 'fa',
+      header,
+      sections,
+      onClose: () => {
+        this.hold(false);
+        if (!this.chromeDirty) return;
+        this.chromeDirty = false;
+        this.renderChrome();
+        this.renderBody();
+      },
+    });
+  }
+
+  /** A preference changed from a sheet: the body now, the bar when the sheet closes. */
+  private quietPrefs(patch: Partial<BoardPreferences>): void {
+    this.chromeDirty = true;
+    void this.updatePrefs(patch, false);
+  }
+
+  /** Scope, grouping, sort, properties and the table's style, in one sheet with a page for each. */
+  private openViewOptions(anchor: HTMLElement): void {
+    const labels = this.labels;
+    const folder = this.settings.targetFolder.trim().replace(/^\/+|\/+$/g, '');
+    this.openSheetMenu(anchor, labels.viewOptions, () => {
+      const sections: MenuSection[] = [
+        {
+          title: labels.scopeLabel,
+          entries: [
+            {
+              label: folder ? labels.scopeTarget(folder.split('/').pop() || folder) : labels.scopeTarget('—'),
+              icon: 'folder',
+              hint: folder || labels.scopeTargetUnset,
+              disabled: !folder,
+              checked: this.effectiveScope === 'target',
+              keepOpen: true,
+              onSelect: () => this.quietPrefs({ scope: 'target' }),
+            },
+            {
+              label: labels.scopeVault,
+              icon: 'vault',
+              checked: this.effectiveScope === 'vault',
+              keepOpen: true,
+              onSelect: () => this.quietPrefs({ scope: 'vault' }),
+            },
+          ],
+        },
+      ];
+      if (this.isCalendar || this.isTimeline) return sections;
+
+      const board = this.prefs.layout === 'board';
+      const grouping = board ? this.kanbanGrouping() : this.prefs.groupBy;
+      const groupings: BoardGroupBy[] = ['none', 'status', 'tag', 'priority', 'deadline', 'note'];
+      const keys: BoardSortKey[] = ['document', 'title', 'status', 'priority', 'deadline', 'plan', 'progress', 'note'];
+      const rows: MenuEntry[] = [
+        {
+          label: labels.group,
+          icon: 'layers',
+          hint: labels.groupBy[grouping],
+          submenu: () => [
+            {
+              entries: groupings
+                .filter((option) => !(board && option === 'none'))
+                .map((option) => ({
+                  label: labels.groupBy[option],
+                  checked: (board ? this.kanbanGrouping() : this.prefs.groupBy) === option,
+                  keepOpen: true,
+                  onSelect: () => this.quietPrefs({ groupBy: option }),
+                })),
+            },
+          ],
+        },
+        {
+          label: labels.sort,
+          icon: 'arrow-up-down',
+          hint: labels.sortBy[this.prefs.sortKey],
+          submenu: () => [
+            {
+              entries: keys.map((key) => ({
+                label: labels.sortBy[key],
+                checked: this.prefs.sortKey === key,
+                keepOpen: true,
+                onSelect: () => this.quietPrefs({ sortKey: key }),
+              })),
+            },
+            {
+              entries: [
+                { label: labels.ascending, icon: 'arrow-down', checked: this.prefs.sortDir === 'asc', keepOpen: true, onSelect: () => this.quietPrefs({ sortDir: 'asc' }) },
+                { label: labels.descending, icon: 'arrow-up', checked: this.prefs.sortDir === 'desc', keepOpen: true, onSelect: () => this.quietPrefs({ sortDir: 'desc' }) },
+              ],
+            },
+          ],
+        },
+        {
+          label: board ? labels.properties : labels.columnsLabel,
+          icon: 'sliders-horizontal',
+          submenu: () => this.propertySections(board ? 'cardProperties' : 'tableColumns'),
+        },
+      ];
+      if (!board) {
+        const style = this.prefs.compactTable ?? 'list';
+        rows.push({
+          label: labels.tableStyle,
+          icon: 'table-2',
+          hint: style === 'list' ? labels.tableStyleList : labels.tableStyleFull,
+          submenu: () => [
+            {
+              entries: (['list', 'table'] as const).map((value) => ({
+                label: value === 'list' ? labels.tableStyleList : labels.tableStyleFull,
+                icon: value === 'list' ? 'list' : 'table-2',
+                checked: (this.prefs.compactTable ?? 'list') === value,
+                keepOpen: true,
+                onSelect: () => this.quietPrefs({ compactTable: value }),
+              })),
+            },
+          ],
+        });
+      }
+      sections.push({ entries: rows });
+      return sections;
+    });
+  }
+
+  /** The filters as switches: several can be flipped before the sheet goes away. */
+  private openFilterSheet(anchor: HTMLElement): void {
+    const labels = this.labels;
+    const toggle = <T,>(list: T[], value: T): T[] => (list.includes(value) ? list.filter((v) => v !== value) : [...list, value]);
+    const flip = (patch: Partial<BoardPreferences>) => {
+      this.quietPrefs(patch);
+      this.renderActiveFilters();
+    };
+    this.openSheetMenu(anchor, labels.filter, () => {
+      const prefs = this.prefs;
+      const priorities: BoardPriorityFilter[] = [...TASK_PRIORITIES, 'none'];
+      const sections: MenuSection[] = [
+        {
+          title: labels.filterStatus,
+          entries: BOARD_STATUS_ORDER.map((status) => ({
+            label: STATUS_LABELS[this.language][status],
+            icon: STATUS_ICON_NAMES[status],
+            checked: prefs.statuses.includes(status),
+            keepOpen: true,
+            onSelect: () => flip({ statuses: toggle(prefs.statuses, status) }),
+          })),
+        },
+        {
+          title: labels.filterPriority,
+          entries: priorities.map((priority) => ({
+            label: priority === 'none' ? labels.noPriority : PRIORITY_LABELS[this.language][priority],
+            icon: priority === 'none' ? 'minus' : PRIORITY_ICON_NAMES[priority],
+            checked: prefs.priorities.includes(priority),
+            keepOpen: true,
+            onSelect: () => flip({ priorities: toggle(prefs.priorities, priority) }),
+          })),
+        },
+        {
+          title: labels.filterTags,
+          entries: [...this.settings.tags, { key: '', name: labels.noTag, color: 'gray' }].map((tag) => ({
+            label: tag.name,
+            swatch: tag.key ? resolveTagColor(tag.color) : undefined,
+            icon: tag.key ? undefined : 'minus',
+            checked: prefs.tags.includes(tag.key),
+            keepOpen: true,
+            onSelect: () => flip({ tags: toggle(prefs.tags, tag.key) }),
+          })),
+        },
+      ];
+      if (this.activeFilterCount()) {
+        sections.push({ entries: [{ label: labels.clearFilters, icon: 'x', keepOpen: true, onSelect: () => flip({ statuses: [], priorities: [], tags: [] }) }] });
+      }
+      return sections;
+    });
+  }
+
+  /** New tasks on a phone: a round button where the thumb rests, at the bottom on the trailing side. */
+  private renderFab(): void {
+    const labels = this.labels;
+    const fab = this.el.createEl('button', { cls: 'taskpro-board__fab' });
+    fab.type = 'button';
+    fab.setAttribute('aria-label', labels.addTaskButton);
+    setIcon(fab, 'plus');
+    fab.addEventListener('click', () => {
+      if (this.isCalendar) this.calendar().addTask();
+      else this.openAddSheet(fab);
+    });
+  }
+
+  /** The quick-add row as a sheet: a title, the note it goes into, and Add; Enter adds and stays for the next. */
+  private openAddSheet(anchor: HTMLElement): void {
+    const labels = this.labels;
+    const actionLabels = getActionLabels(this.language);
+    this.hold(true);
+    openCalendarPopover({
+      container: this.el,
+      anchor,
+      cls: 'taskpro-add-sheet',
+      rtl: this.language === 'fa',
+      onClose: () => this.hold(false),
+      build: (el) => {
+        el.createDiv({ cls: 'taskpro-add-sheet__title', text: labels.addTaskButton });
+        const input = el.createEl('input', {
+          type: 'text',
+          cls: 'taskpro-add-sheet__input',
+          attr: { placeholder: labels.addPlaceholder, 'aria-label': labels.addPlaceholder, dir: 'auto', enterkeyhint: 'done' },
+        });
+        const row = el.createDiv({ cls: 'taskpro-add-sheet__row' });
+        const target = row.createEl('button', { cls: 'taskpro-add-sheet__target' });
+        target.type = 'button';
+        setIcon(target.createSpan({ cls: 'taskpro-add-sheet__target-icon' }), 'file-plus');
+        const name = target.createSpan({ cls: 'taskpro-add-sheet__target-name', attr: { dir: 'auto' } });
+        const showTarget = () => {
+          const inbox = this.inboxPath();
+          name.setText(`${labels.addInto}: ${inbox ? inbox.split('/').pop()!.replace(/\.md$/i, '') : labels.chooseInboxShort}`);
+        };
+        showTarget();
+        target.addEventListener('click', () =>
+          this.host.chooseNote((path) => {
+            void this.updatePrefs({ inboxPath: path }, false).then(showTarget);
+          })
+        );
+        const add = row.createEl('button', { cls: 'mod-cta taskpro-add-sheet__add', text: actionLabels.add });
+        add.type = 'button';
+        const submit = () => {
+          const text = input.value.trim();
+          if (!text) return;
+          void this.addTask(text, {}).then((added) => {
+            if (!added) return;
+            input.value = '';
+            input.focus();
+          });
+        };
+        add.addEventListener('click', submit);
+        input.addEventListener('keydown', (event) => {
+          if (event.key !== 'Enter' || event.isComposing) return;
+          event.preventDefault();
+          submit();
+        });
+        window.setTimeout(() => input.focus(), 60);
+      },
+    });
   }
 
   private controlButton(parent: HTMLElement, icon: string, label: string, value?: string): HTMLButtonElement {
@@ -985,7 +1417,10 @@ export class TaskBoard {
       return;
     }
 
+    this.bodyEl.toggleClass('is-kanban', this.prefs.layout === 'board');
+    this.bodyEl.toggleClass('is-list', false);
     if (this.prefs.layout === 'board') this.renderKanban(sorted, today);
+    else if (this.compact && (this.prefs.compactTable ?? 'list') === 'list') this.renderList(sorted, today);
     else this.renderTable(sorted, today);
 
     this.bodyEl.scrollTop = scrollTop;
@@ -1064,11 +1499,7 @@ export class TaskBoard {
     head.createEl('th', { cls: 'taskpro-table__check' });
     const titleHead = this.headerCell(head, 'task', 'text', labels.columns.task, 'title');
     this.onHeaderActivate(titleHead, () => this.sortBy('title'));
-    titleHead.addEventListener('contextmenu', (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      this.openHeaderMenu(null, { x: event.clientX, y: event.clientY });
-    });
+    onContextPress(titleHead, (at) => this.openHeaderMenu(null, at));
     for (const column of columns) this.renderColumnHeader(head, table, column);
     const end = head.createEl('th', { cls: 'taskpro-table__more taskpro-table__add-column' });
     const add = this.iconButton(end, 'plus', labels.properties, () => this.openPropertiesMenu(add, 'tableColumns'));
@@ -1148,11 +1579,7 @@ export class TaskBoard {
     this.onHeaderActivate(th, () =>
       info.sortKey ? this.sortBy(info.sortKey) : this.openHeaderMenu(column.id, th.getBoundingClientRect())
     );
-    th.addEventListener('contextmenu', (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      this.openHeaderMenu(column.id, { x: event.clientX, y: event.clientY });
-    });
+    onContextPress(th, (at) => this.openHeaderMenu(column.id, at));
     th.addEventListener('keydown', (event) => {
       if (!event.altKey || event.target !== th || (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight')) return;
       event.preventDefault();
@@ -1184,6 +1611,8 @@ export class TaskBoard {
   private columnDrag(th: HTMLElement, table: HTMLElement, id: BoardPropertyId): void {
     th.addEventListener('pointerdown', (event) => {
       if (event.button !== 0 || (event.target as HTMLElement).closest('.taskpro-table__resize')) return;
+      // A finger moves a column from the header's long-press menu; a swipe here scrolls the table.
+      if (event.pointerType === 'touch') return;
       const doc = this.el.ownerDocument;
       const rtl = this.language === 'fa';
       const startX = event.clientX;
@@ -1580,6 +2009,219 @@ export class TaskBoard {
     }
   }
 
+  // ── The table on a phone: a list ─────────────────────────────────────────
+  // Each task is a row: its checkbox, its title over two lines, and under it
+  // the properties the table shows, in the table's order, where they have a
+  // value. A tap opens the task's sheet; a swipe toward the trailing side
+  // ticks it off, the other way opens its sheet, and the ⋯ and the checkbox
+  // do the same for anyone who does not swipe.
+
+  private renderList(tasks: BoardTask[], today: Date): void {
+    const labels = this.labels;
+    const groupBy = this.prefs.groupBy;
+    const groups = groupTasks(tasks, groupBy, { tags: this.settings.tags, today });
+    const columns = visibleColumns(this.tableColumns());
+    this.bodyEl.addClass('is-list');
+    const list = this.bodyEl.createDiv({ cls: 'taskpro-list' });
+    list.toggleClass('is-document-order', this.prefs.sortKey === 'document' && (groupBy === 'none' || groupBy === 'note'));
+
+    for (const group of groups) {
+      if (groupBy !== 'none') {
+        if (!group.tasks.length && groupBy === 'status') continue;
+        const collapsed = this.prefs.collapsedGroups.includes(group.id);
+        const head = list.createEl('button', { cls: 'taskpro-list__group' });
+        head.type = 'button';
+        head.toggleClass('is-collapsed', collapsed);
+        head.setAttribute('aria-expanded', String(!collapsed));
+        setIcon(head.createSpan({ cls: 'taskpro-table__caret' }), 'chevron-down');
+        this.groupLabel(head, groupBy, group.value);
+        head.createSpan({ cls: 'taskpro-table__group-count', text: String(group.tasks.length) });
+        head.addEventListener('click', () => {
+          const next = collapsed
+            ? this.prefs.collapsedGroups.filter((id) => id !== group.id)
+            : [...this.prefs.collapsedGroups, group.id];
+          void this.updatePrefs({ collapsedGroups: next }, false);
+        });
+        if (collapsed) continue;
+      }
+      const limit = this.rowLimits.get(group.id) ?? ROWS_PER_PAGE;
+      for (const task of group.tasks.slice(0, limit)) this.renderListRow(list, task, columns);
+      if (group.tasks.length > limit) {
+        const more = list.createEl('button', {
+          cls: 'taskpro-kanban__more taskpro-list__more',
+          text: labels.showMore(Math.min(ROWS_PER_PAGE, group.tasks.length - limit)),
+        });
+        more.addEventListener('click', () => {
+          this.rowLimits.set(group.id, limit + ROWS_PER_PAGE);
+          this.renderBody();
+        });
+      }
+    }
+  }
+
+  private renderListRow(list: HTMLElement, task: BoardTask, columns: readonly BoardColumnPref[]): void {
+    const labels = this.labels;
+    const row = list.createDiv({ cls: 'taskpro-list__row' });
+    row.dataset.status = task.status;
+    row.dataset.taskId = task.id;
+    row.toggleClass('is-waiting', this.relations().isWaiting(task));
+
+    // What a swipe uncovers: done on the leading side, the sheet on the trailing one.
+    const under = row.createDiv({ cls: 'taskpro-list__under' });
+    const done = under.createDiv({ cls: 'taskpro-list__swipe is-done' });
+    setIcon(done.createSpan(), task.status === '[x]' ? 'rotate-ccw' : 'check');
+    done.createSpan({ text: task.status === '[x]' ? labels.markOpen : labels.markDoneSwipe });
+    const more = under.createDiv({ cls: 'taskpro-list__swipe is-more' });
+    setIcon(more.createSpan(), 'more-horizontal');
+    more.createSpan({ text: labels.moreSwipe });
+
+    const content = row.createDiv({ cls: 'taskpro-list__content' });
+    this.checkButton(content, task);
+    const main = content.createDiv({ cls: 'taskpro-list__main' });
+    main.setAttribute('role', 'button');
+    main.tabIndex = 0;
+    if (task.depth > 0) {
+      main.style.setProperty('--taskpro-depth', String(Math.min(6, Math.round(task.depth / 2))));
+      main.addClass('is-subtask');
+    }
+    const titleLine = main.createDiv({ cls: 'taskpro-list__title-line' });
+    titleLine.createSpan({ cls: 'taskpro-list__title', text: displayTitle(task.text) || '—', attr: { dir: 'auto' } });
+    if (task.repeat && !columns.some((column) => column.id === 'repeat')) {
+      setIcon(titleLine.createSpan({ cls: 'taskpro-board__repeat' }), 'repeat');
+    }
+    if (!columns.some((column) => column.id === 'waiting') && this.relations().isWaiting(task)) {
+      setIcon(titleLine.createSpan({ cls: 'taskpro-board__waiting' }), 'hourglass');
+    }
+
+    const props = main.createDiv({ cls: 'taskpro-list__props' });
+    for (const { id } of columns) this.listProperty(props, task, id);
+    if (!props.childElementCount) props.remove();
+
+    const open = (at: { x: number; y: number } | DOMRect) => this.openTaskActions(task, at, row);
+    main.addEventListener('click', () => open(main.getBoundingClientRect()));
+    main.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      event.preventDefault();
+      open(main.getBoundingClientRect());
+    });
+    const button = this.iconButton(content, 'more-horizontal', labels.more, (event) => {
+      event.stopPropagation();
+      open(button.getBoundingClientRect());
+    });
+    button.addClass('taskpro-list__more-btn');
+    this.withTaskActions(row, task);
+    this.swipeRow(row, content, task);
+  }
+
+  /** One property under a row's title, when it has a value; each opens its own choices. */
+  private listProperty(parent: HTMLElement, task: BoardTask, id: BoardPropertyId): void {
+    const cell = () => parent.createDiv({ cls: `taskpro-list__prop is-${id}` });
+    switch (id) {
+      case 'status':
+        // The checkbox already says open or done; the chip says the rest.
+        if (task.status === '[/]' || task.status === '[!]') this.statusChip(cell(), task);
+        return;
+      case 'tags':
+        if (task.tags.length) {
+          const el = cell();
+          this.tagChips(el, task);
+          el.addEventListener('click', (event) => {
+            event.stopPropagation();
+            this.host.editTags(task);
+          });
+        }
+        return;
+      case 'priority':
+        if (task.priority) this.priorityChip(cell(), task);
+        return;
+      case 'deadline':
+        if (task.deadline) this.deadlineChip(cell(), task);
+        return;
+      case 'plan':
+        if (task.schedule) this.planChip(cell(), task);
+        return;
+      case 'waiting':
+        if (task.waiting?.length) this.waitingChips(cell(), task);
+        return;
+      case 'repeat':
+        if (task.repeat) this.repeatChip(cell(), task);
+        return;
+      case 'progress':
+        if (this.shownProgress(task)) this.progressBar(cell(), task);
+        return;
+      case 'note':
+        this.noteLink(cell(), task);
+        return;
+    }
+  }
+
+  /**
+   * A row follows a finger sideways. Let go past the mark on the leading
+   * side and the task is ticked off (or opened again); on the trailing side
+   * its sheet opens. A finger moving up or down scrolls, as it should.
+   */
+  private swipeRow(row: HTMLElement, content: HTMLElement, task: BoardTask): void {
+    const sign = this.language === 'fa' ? -1 : 1;
+    let startX = 0;
+    let startY = 0;
+    let dx = 0;
+    let tracking = false;
+    let swiping = false;
+    content.addEventListener('pointerdown', (event) => {
+      if (event.pointerType !== 'touch') return;
+      tracking = true;
+      swiping = false;
+      dx = 0;
+      startX = event.clientX;
+      startY = event.clientY;
+    });
+    content.addEventListener('pointermove', (event) => {
+      if (!tracking) return;
+      const mx = event.clientX - startX;
+      const my = event.clientY - startY;
+      if (!swiping) {
+        if (Math.abs(my) > 10 && Math.abs(my) > Math.abs(mx)) {
+          tracking = false;
+          return;
+        }
+        if (Math.abs(mx) < 12 || Math.abs(mx) < Math.abs(my) * 1.4) return;
+        swiping = true;
+        content.setPointerCapture?.(event.pointerId);
+        row.addClass('is-swiping');
+      }
+      dx = mx;
+      const lead = dx * sign;
+      content.style.transform = `translateX(${Math.round(dx)}px)`;
+      row.toggleClass('is-leading', lead > 0);
+      row.toggleClass('is-trailing', lead < 0);
+      row.toggleClass('is-armed', Math.abs(dx) >= SWIPE_ACT);
+    });
+    const finish = () => {
+      if (!tracking) return;
+      tracking = false;
+      if (!swiping) return;
+      const lead = dx * sign;
+      content.style.transform = '';
+      row.removeClass('is-swiping', 'is-armed', 'is-leading', 'is-trailing');
+      // The click this touch ends with is not a tap on the row.
+      const swallow = (e: Event) => {
+        e.stopPropagation();
+        e.preventDefault();
+      };
+      content.addEventListener('click', swallow, { capture: true, once: true });
+      window.setTimeout(() => content.removeEventListener('click', swallow, true), 400);
+      if (lead >= SWIPE_ACT) void this.host.setStatus(task, task.status === '[x]' ? '[ ]' : '[x]');
+      else if (lead <= -SWIPE_ACT) this.openTaskActions(task, content.getBoundingClientRect(), row);
+    };
+    content.addEventListener('pointerup', finish);
+    content.addEventListener('pointercancel', () => {
+      tracking = false;
+      swiping = false;
+      content.style.transform = '';
+      row.removeClass('is-swiping', 'is-armed', 'is-leading', 'is-trailing');
+    });
+  }
+
   // ── Cells, shared by rows and cards ──────────────────────────────────────
 
   private checkButton(parent: HTMLElement, task: BoardTask): void {
@@ -1612,14 +2254,20 @@ export class TaskBoard {
     title.setAttribute('role', 'button');
     title.tabIndex = 0;
     title.title = labels.editTitle;
+    // On a phone a tap on a title opens the task's sheet, where Rename is; an
+    // editor under a finger that only meant to look would be a trap.
+    const activate = () => {
+      if (this.compact) this.openTaskActions(task, title.getBoundingClientRect(), title);
+      else this.startTitleEdit(wrap, title, task);
+    };
     title.addEventListener('click', (event) => {
       event.stopPropagation();
-      this.startTitleEdit(wrap, title, task);
+      activate();
     });
     title.addEventListener('keydown', (event) => {
       if (event.key === 'Enter') {
         event.preventDefault();
-        this.startTitleEdit(wrap, title, task);
+        activate();
       }
     });
 
@@ -1905,7 +2553,9 @@ export class TaskBoard {
     const hidden = new Set(this.prefs.hiddenGroups ?? []);
     const groups = all.filter((group) => !hidden.has(group.id));
 
+    const tabs = this.compact ? this.bodyEl.createDiv({ cls: 'taskpro-kanban-tabs' }) : null;
     const board = this.bodyEl.createDiv({ cls: 'taskpro-kanban' });
+    if (tabs) this.renderKanbanTabs(tabs, board, groups, groupBy);
     if (this.prefs.kanbanColumnWidth) board.style.setProperty('--taskpro-kanban-width', `${clampKanbanWidth(this.prefs.kanbanColumnWidth)}px`);
     const droppable = this.canDropInto(groupBy);
 
@@ -1921,11 +2571,7 @@ export class TaskBoard {
         this.openKanbanColumnMenu(group, groupBy, all, menu.getBoundingClientRect())
       );
       menu.addClass('taskpro-kanban__menu');
-      header.addEventListener('contextmenu', (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        this.openKanbanColumnMenu(group, groupBy, all, { x: event.clientX, y: event.clientY });
-      });
+      onContextPress(header, (at) => this.openKanbanColumnMenu(group, groupBy, all, at));
       this.kanbanColumnDrag(header, column, board, (before) =>
         this.moveKanbanColumn(all, groupBy, group.value, before)
       );
@@ -1983,6 +2629,64 @@ export class TaskBoard {
       }
       if (aside.length) this.renderHiddenColumns(end, aside, groupBy);
     }
+  }
+
+  private kanbanScroll: (() => void) | null = null;
+
+  /**
+   * On a phone one column fills the screen, so a strip of tabs above says
+   * which columns there are, how full each is, and which is in view; a tap
+   * scrolls to one.
+   */
+  private renderKanbanTabs(tabs: HTMLElement, board: HTMLElement, groups: BoardGroup[], groupBy: BoardGroupBy): void {
+    const rtl = this.language === 'fa';
+    for (const group of groups) {
+      const tab = tabs.createEl('button', { cls: 'taskpro-kanban-tabs__tab' });
+      tab.type = 'button';
+      tab.dataset.group = group.value;
+      this.groupLabel(tab, groupBy, group.value);
+      tab.createSpan({ cls: 'taskpro-kanban__count', text: String(group.tasks.length) });
+      tab.addEventListener('click', () => {
+        const column = Array.from(board.querySelectorAll<HTMLElement>(':scope > .taskpro-kanban__column')).find(
+          (el) => el.dataset.group === group.value
+        );
+        if (column) this.scrollToColumn(column);
+      });
+    }
+    const mark = () => {
+      const view = this.bodyEl.getBoundingClientRect();
+      const columns = Array.from(board.querySelectorAll<HTMLElement>(':scope > .taskpro-kanban__column'));
+      const current =
+        columns.find((el) => {
+          const r = el.getBoundingClientRect();
+          return rtl ? r.right <= view.right + 24 : r.left >= view.left - 24;
+        }) ?? columns[columns.length - 1];
+      tabs.querySelectorAll<HTMLElement>('.taskpro-kanban-tabs__tab').forEach((tab) => {
+        const active = tab.dataset.group === current?.dataset.group;
+        if (active && !tab.hasClass('is-active')) tab.scrollIntoView({ inline: 'nearest', block: 'nearest' });
+        tab.toggleClass('is-active', active);
+      });
+    };
+    if (this.kanbanScroll) this.bodyEl.removeEventListener('scroll', this.kanbanScroll);
+    this.kanbanScroll = mark;
+    this.bodyEl.addEventListener('scroll', mark, { passive: true });
+    window.requestAnimationFrame(mark);
+  }
+
+  /** Brings a column to the leading edge of the board, gliding there where the system allows motion. */
+  private scrollToColumn(column: HTMLElement): void {
+    const body = this.bodyEl;
+    const view = body.getBoundingClientRect();
+    const box = column.getBoundingClientRect();
+    const pad = parseFloat(getComputedStyle(body).paddingInlineStart) || 0;
+    const delta = this.language === 'fa' ? box.right - (view.right - pad) : box.left - (view.left + pad);
+    const target = body.scrollLeft + delta;
+    const still = this.el.ownerDocument.defaultView?.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    body.scrollTo({ left: target, behavior: still ? 'auto' : 'smooth' });
+    // Where a smooth scroll is not honoured, or stops short, it finishes there.
+    window.setTimeout(() => {
+      if (Math.abs(body.scrollLeft - target) > 2) body.scrollLeft = target;
+    }, 400);
   }
 
   /** The columns taken off the board, listed at its end; a click puts one back. */
@@ -2073,8 +2777,22 @@ export class TaskBoard {
 
   /** Dragging a column by its header moves it; a line between columns shows where it will go. */
   private kanbanColumnDrag(header: HTMLElement, column: HTMLElement, board: HTMLElement, drop: (before: string | null) => void): void {
-    header.addEventListener('pointerdown', (event) => {
-      if (event.button !== 0 || (event.target as HTMLElement).closest('button, input')) return;
+    header.addEventListener('pointerdown', (down) => {
+      if (down.button !== 0 || (down.target as HTMLElement).closest('button, input')) return;
+      // A finger holds the header before it drags: a quick swipe scrolls the board.
+      if (down.pointerType === 'touch') return;
+      this.startColumnDrag(down, header, column, board, drop);
+    });
+  }
+
+  private startColumnDrag(
+    event: PointerEvent,
+    header: HTMLElement,
+    column: HTMLElement,
+    board: HTMLElement,
+    drop: (before: string | null) => void
+  ): void {
+    {
       const doc = this.el.ownerDocument;
       const rtl = this.language === 'fa';
       const startX = event.clientX;
@@ -2145,7 +2863,7 @@ export class TaskBoard {
       doc.addEventListener('pointerup', onUp, true);
       doc.addEventListener('pointercancel', onCancel, true);
       doc.addEventListener('keydown', onKey, true);
-    });
+    }
   }
 
   /** Every column is as wide as the others; dragging one's edge resizes them all, a double click resets them. */
@@ -2273,6 +2991,80 @@ export class TaskBoard {
     });
   }
 
+  /**
+   * Carries a card held on a touch screen: a copy follows the finger, the
+   * column under it lights up, the board scrolls sideways near its edges,
+   * and letting go over another column moves the task there.
+   */
+  private carryCard(start: PointerEvent, card: HTMLElement, task: BoardTask, from: string): void {
+    const doc = this.el.ownerDocument;
+    const groupBy = this.kanbanGrouping();
+    const box = this.el.getBoundingClientRect();
+    const rect = card.getBoundingClientRect();
+    const ghost = card.cloneNode(true) as HTMLElement;
+    ghost.addClass('taskpro-card-ghost');
+    ghost.style.width = `${rect.width}px`;
+    this.el.appendChild(ghost);
+    const offsetX = start.clientX - rect.left;
+    const offsetY = start.clientY - rect.top;
+    card.addClass('is-dragging');
+    this.bodyEl.addClass('is-carrying');
+    this.hold(true);
+    let target: HTMLElement | null = null;
+    let lastX = start.clientX;
+    let lastY = start.clientY;
+    let frame = 0;
+
+    const place = (x: number, y: number) => {
+      ghost.style.left = `${Math.round(x - box.left - offsetX)}px`;
+      ghost.style.top = `${Math.round(y - box.top - offsetY)}px`;
+    };
+    const findColumn = (x: number, y: number) => {
+      const under = doc.elementFromPoint(x, y) as HTMLElement | null;
+      const column = under?.closest<HTMLElement>('.taskpro-kanban__column') ?? null;
+      if (column === target) return;
+      target?.removeClass('is-drop-target');
+      target = column && column.dataset.group !== from ? column : null;
+      target?.addClass('is-drop-target');
+    };
+    // Near an edge the board scrolls on, a little every frame, while the finger rests there.
+    const edgeScroll = () => {
+      const view = this.bodyEl.getBoundingClientRect();
+      const step = lastX < view.left + 40 ? -14 : lastX > view.right - 40 ? 14 : 0;
+      if (step) {
+        this.bodyEl.scrollLeft += step;
+        findColumn(lastX, lastY);
+      }
+      frame = window.requestAnimationFrame(edgeScroll);
+    };
+    const onMove = (event: PointerEvent) => {
+      lastX = event.clientX;
+      lastY = event.clientY;
+      place(lastX, lastY);
+      findColumn(lastX, lastY);
+    };
+    const finish = (drop: boolean) => {
+      doc.removeEventListener('pointermove', onMove, true);
+      doc.removeEventListener('pointerup', onUp, true);
+      doc.removeEventListener('pointercancel', onCancel, true);
+      window.cancelAnimationFrame(frame);
+      ghost.remove();
+      card.removeClass('is-dragging');
+      this.bodyEl.removeClass('is-carrying');
+      target?.removeClass('is-drop-target');
+      const to = target?.dataset.group;
+      if (drop && to !== undefined && to !== from) void this.moveTask(task, groupBy, from, to).finally(() => this.hold(false));
+      else this.hold(false);
+    };
+    const onUp = () => finish(true);
+    const onCancel = () => finish(false);
+    place(start.clientX, start.clientY);
+    doc.addEventListener('pointermove', onMove, true);
+    doc.addEventListener('pointerup', onUp, true);
+    doc.addEventListener('pointercancel', onCancel, true);
+    frame = window.requestAnimationFrame(edgeScroll);
+  }
+
   private renderCard(parent: HTMLElement, task: BoardTask, groupValue: string, draggable: boolean): void {
     const labels = this.labels;
     const card = parent.createDiv({ cls: 'taskpro-card' });
@@ -2294,6 +3086,11 @@ export class TaskBoard {
         this.draggedFrom = null;
         this.bodyEl.querySelectorAll('.is-drop-target').forEach((el) => el.removeClass('is-drop-target'));
       });
+      // A finger cannot drag and drop the way a mouse does: it holds the card, then carries it.
+      card.addEventListener('pointerdown', (event) => {
+        if (event.pointerType !== 'touch' || (event.target as HTMLElement).closest('button, input')) return;
+        holdToDrag(event, () => this.carryCard(event, card, task, groupValue));
+      });
     }
 
     const shown = visibleColumns(this.cardProperties());
@@ -2305,7 +3102,14 @@ export class TaskBoard {
       this.openTaskActions(task, more.getBoundingClientRect(), more)
     );
     more.addClass('taskpro-card__more');
-    this.withTaskActions(card, task);
+    // Holding a card picks it up, so on a touch screen a tap is what opens its sheet.
+    this.withTaskActions(card, task, !draggable);
+    if (this.touch) {
+      card.addEventListener('click', (event) => {
+        if ((event.target as HTMLElement).closest('button, input, .is-editable, .taskpro-board__title')) return;
+        this.openTaskActions(task, card.getBoundingClientRect(), card);
+      });
+    }
 
     const props = card.createDiv({ cls: 'taskpro-card__props' });
     let withNote = false;

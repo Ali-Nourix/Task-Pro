@@ -47,6 +47,7 @@ const STATUS_SWATCH: Record<TaskStatus, string> = {
 
 interface ActionLabels {
   openInNote: string;
+  rename: string;
   properties: string;
   status: string;
   priority: string;
@@ -100,6 +101,7 @@ interface ActionLabels {
 
 const EN: ActionLabels = {
   openInNote: 'Open in note',
+  rename: 'Rename…',
   properties: 'Properties',
   status: 'Status',
   priority: 'Priority',
@@ -153,6 +155,7 @@ const EN: ActionLabels = {
 
 const FA: ActionLabels = {
   openInNote: 'باز کردن در یادداشت',
+  rename: 'تغییر نام…',
   properties: 'ویژگی‌ها',
   status: 'وضعیت',
   priority: 'اولویت',
@@ -603,6 +606,29 @@ function progressEntry(o: TaskActionOptions): MenuEntry | null {
   );
 }
 
+/** Asks for a new title, the markers kept. */
+function renameTask(o: TaskActionOptions): void {
+  const labels = getActionLabels(o.language);
+  const { body, footer, close } = openTaskProPanel(labels.rename.replace(/…$/, ''));
+  const input = addPanelField(body, displayTitle(o.task.text) || '');
+  input.value = o.task.text;
+  input.setAttribute('dir', 'auto');
+  const save = () => {
+    const text = input.value.replace(/\s+/g, ' ').trim();
+    close();
+    if (text && text !== o.task.text) void o.host.setText(o.task, text);
+  };
+  addPanelButtonRow(footer, { cancelLabel: labels.cancel, saveLabel: labels.rename.replace(/…$/, ''), onCancel: close, onSave: save });
+  input.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' && !event.isComposing) {
+      event.preventDefault();
+      save();
+    }
+  });
+  input.focus();
+  input.select();
+}
+
 /** Asks for a subtask's title and writes it under the task. */
 function addSubtask(o: TaskActionOptions): void {
   const labels = getActionLabels(o.language);
@@ -726,6 +752,7 @@ export function taskActionSections(o: TaskActionOptions): MenuSection[] {
       entries: [
         ...(o.lead ?? []),
         withKeywords({ label: labels.openInNote, icon: 'arrow-up-right', onSelect: () => host.reveal(task) }, EN.openInNote),
+        withKeywords({ label: labels.rename, icon: 'pencil', onSelect: () => renameTask(o) }, 'rename title edit'),
       ],
     },
     { title: labels.properties, entries: properties },
