@@ -152,8 +152,8 @@ eq(displayTitle('See [the spec](https://example.com) **now**'), 'See the spec no
 {
   const { resolveColumns, moveColumn, setColumn, visibleColumns, columnWidth, orderGroups, moveValue, clampKanbanWidth, DEFAULT_CARD_PROPERTIES } = columns;
   const ids = (list) => list.map((column) => column.id);
-  eq(ids(resolveColumns(undefined)), ['status', 'tags', 'priority', 'deadline', 'plan', 'progress', 'note', 'repeat'], 'default columns');
-  eq(ids(visibleColumns(resolveColumns(undefined))), ['status', 'tags', 'priority', 'deadline', 'plan', 'progress', 'note'], 'repeat starts hidden');
+  eq(ids(resolveColumns(undefined)), ['status', 'tags', 'priority', 'deadline', 'plan', 'waiting', 'progress', 'note', 'repeat'], 'default columns');
+  eq(ids(visibleColumns(resolveColumns(undefined))), ['status', 'tags', 'priority', 'deadline', 'plan', 'waiting', 'progress', 'note'], 'repeat starts hidden');
   const saved = resolveColumns([
     { id: 'note', width: 90000 },
     { id: 'status', hidden: true },
@@ -162,7 +162,7 @@ eq(displayTitle('See [the spec](https://example.com) **now**'), 'See the spec no
     { id: 'tags', width: 10 },
   ]);
   eq(ids(saved).slice(0, 3), ['note', 'status', 'tags'], 'the saved order first; unknown and repeated ids dropped');
-  eq(ids(saved).slice(3), ['priority', 'deadline', 'plan', 'progress', 'repeat'], 'properties added since are appended as they are by default');
+  eq(ids(saved).slice(3), ['priority', 'deadline', 'plan', 'waiting', 'progress', 'repeat'], 'properties added since are appended as they are by default');
   eq([saved[0].width, saved[2].width, saved[1].hidden], [640, 90, true], 'widths kept in range, hidden kept');
   eq(resolveColumns([{ id: 'tags', width: 180 }])[0].width, undefined, 'a width equal to the default is not stored');
   eq(ids(moveColumn(resolveColumns(undefined), 'note', 'status')).slice(0, 2), ['note', 'status'], 'move before another column');
@@ -171,7 +171,7 @@ eq(displayTitle('See [the spec](https://example.com) **now**'), 'See the spec no
   eq(columnWidth(wide.find((column) => column.id === 'plan')), 260, 'a resized column');
   eq('width' in setColumn(wide, 'plan', { width: undefined }).find((column) => column.id === 'plan'), false, 'resetting drops the width');
   eq('hidden' in setColumn(resolveColumns(undefined), 'repeat', { hidden: false }).find((column) => column.id === 'repeat'), false, 'showing drops the flag');
-  eq(ids(visibleColumns(resolveColumns(undefined, DEFAULT_CARD_PROPERTIES))), ['tags', 'priority', 'deadline', 'plan', 'progress', 'note'], 'default card properties');
+  eq(ids(visibleColumns(resolveColumns(undefined, DEFAULT_CARD_PROPERTIES))), ['tags', 'priority', 'deadline', 'plan', 'waiting', 'progress', 'note'], 'default card properties');
 
   const groups = [{ value: '[ ]' }, { value: '[/]' }, { value: '[!]' }, { value: '[x]' }];
   eq(orderGroups(groups, ['[x]', '[ ]']).map((g) => g.value), ['[x]', '[ ]', '[/]', '[!]'], 'saved board columns first, new ones where grouping put them');

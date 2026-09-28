@@ -11,7 +11,16 @@
 
 import { App, CachedMetadata, TFile } from 'obsidian';
 import { TaskPriority, TaskRepeat, TaskSchedule, TaskStatus } from '../types';
-import { extractDeadline, extractPriority, extractRepeat, extractSchedule, extractTags } from '../task-metadata';
+import {
+  TaskLink,
+  extractDeadline,
+  extractPriority,
+  extractRemind,
+  extractRepeat,
+  extractSchedule,
+  extractTags,
+  extractWaiting,
+} from '../task-metadata';
 import { parseTaskLine } from '../task-identity';
 
 export interface BoardTask {
@@ -36,6 +45,13 @@ export interface BoardTask {
   tags: string[];
   /** When the task is planned to be done, from `@schedule(...)`. */
   schedule?: TaskSchedule;
+  /** The tasks this one waits on, from `@waiting(...)`, as written. */
+  waiting?: TaskLink[];
+  /**
+   * Its own reminder before the plan starts, in minutes, from `@remind(...)`:
+   * null when turned off, undefined when the setting decides.
+   */
+  remind?: number | null;
   /**
    * The task this one is nested under, as an `id` in the same note: the
    * nearest task among its list ancestors. A plain bullet in between (a note
@@ -127,11 +143,26 @@ export function parseBoardTasks(
       repeat: extractRepeat(parsed.rawContent),
       tags: extractTags(parsed.rawContent),
       schedule: extractSchedule(parsed.rawContent),
+      ...waitingAndRemind(parsed.rawContent),
       parentId,
     });
   }
 
   return tasks;
+}
+
+/** The two markers most tasks do not have, left off the task when absent. */
+function waitingAndRemind(content: string): Pick<BoardTask, 'waiting' | 'remind'> {
+  const out: Pick<BoardTask, 'waiting' | 'remind'> = {};
+  if (content.includes('@waiting(')) {
+    const waiting = extractWaiting(content);
+    if (waiting.length) out.waiting = waiting;
+  }
+  if (content.includes('@remind(')) {
+    const remind = extractRemind(content);
+    if (remind !== undefined) out.remind = remind;
+  }
+  return out;
 }
 
 export class TaskStore {

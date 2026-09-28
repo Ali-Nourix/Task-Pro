@@ -30,7 +30,8 @@ import {
   renderDailyTemplate,
 } from '../../src/calendar/daily-notes';
 import { createScheduleChip } from '../../src/ui/chips';
-import { extractSchedule, setSchedule } from '../../src/task-metadata';
+import { TaskLink, extractSchedule, setRemind, setSchedule, setWaiting } from '../../src/task-metadata';
+import { newBlockId } from '../../src/board/task-relations';
 import { TaskTag } from '../../src/tags';
 import { removeBlock } from '../../src/task-lines';
 import { openTagPicker } from '../../src/ui/tag-picker';
@@ -187,13 +188,19 @@ else {
   const plan = (path: string, title: string, schedule: string) => {
     NOTES[path] = NOTES[path]
       .split('\n')
-      .map((line) => (line.includes(title) ? `${line} @schedule(${schedule})` : line))
+      .map((line) => (line.includes(title) ? setSchedule(line, extractSchedule(`@schedule(${schedule})`)!) : line))
       .join('\n');
   };
   const week = language === 'fa' ? 'Planner/1405-W27.md' : 'Planner/2026-W39.md';
   plan(week, language === 'fa' ? 'آماده کردن پیش‌فاکتور' : 'Send the quote to Acme', `${inDays(0)} 14:00-15:30`);
   plan(week, language === 'fa' ? 'نوشتن پست معرفی محصول' : 'Draft the launch post', `${inDays(1)} 09:00-11:30`);
   plan(week, language === 'fa' ? 'مرور هفتگی' : 'Weekly review and planning', inDays(4));
+  // The quote waits on the launch post, in the same note.
+  const quote = language === 'fa' ? 'آماده کردن پیش‌فاکتور' : 'Send the quote to Acme';
+  NOTES[week] = NOTES[week]
+    .split('\n')
+    .map((line) => (line.includes(quote) ? line.replace(/ @schedule/, ` @waiting([[${week.replace(/\.md$/, '')}#^launch]]) @schedule`) : line))
+    .join('\n');
 }
 
 const PROGRESS: Record<string, TaskProgress> = {
@@ -252,6 +259,8 @@ const settings = {
   },
   referenceNotePath: 'Inbox.md',
   calendar: CALENDAR,
+  subtaskProgress: params.get('subtasks') !== 'off',
+  planReminder: { enabled: true, leadMinutes: 10 },
 };
 
 const changed = () => {
@@ -328,6 +337,24 @@ const host = {
     changed();
   },
   editSchedule: (task: BoardTask) => edit(task, (line) => setSchedule(line, { date: inDays(1), start: '15:00', end: '16:00' })),
+  setWaiting: async (task: BoardTask, blockers: BoardTask[]) => {
+    const links: TaskLink[] = [];
+    for (const blocker of blockers) {
+      let id = blocker.blockId;
+      if (!id) {
+        const taken = new Set(tasks.filter((t) => t.filePath === blocker.filePath).map((t) => t.blockId));
+        id = newBlockId((candidate) => taken.has(candidate));
+        const lines = NOTES[blocker.filePath].split('\n');
+        lines[blocker.lineNumber] = `${lines[blocker.lineNumber]} ^${id}`;
+        NOTES[blocker.filePath] = lines.join('\n');
+        reparse();
+      }
+      links.push({ path: blocker.filePath.replace(/\.md$/, ''), blockId: id });
+    }
+    const fresh = tasks.find((t) => t.filePath === task.filePath && t.lineNumber === task.lineNumber)!;
+    await edit(fresh, (line) => setWaiting(line, links));
+  },
+  setRemind: (task: BoardTask, minutes: number | null | undefined) => edit(task, (line) => setRemind(line, minutes)),
   deleteTask: async (task: BoardTask) => {
     const { lines } = removeBlock(NOTES[task.filePath].split('\n'), task.lineNumber);
     NOTES[task.filePath] = lines.join('\n');

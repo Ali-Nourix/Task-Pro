@@ -169,6 +169,14 @@ export interface ReminderSettings {
    */
   unknownAgePolicy: UnknownAgePolicy;
   maxTasksShown: number;
+  /** A notice shortly before a planned task starts. */
+  planReminders: boolean;
+  /** How long before the start, in minutes; a task's own `@remind(...)` wins. */
+  planLeadMinutes: number;
+  /** A chime with the notice. */
+  planSound: boolean;
+  /** An operating-system notification as well, where there is one (desktop). */
+  planSystemNotification: boolean;
 }
 
 /** Runtime bookkeeping so restarts don't replay or skip alerts. */
@@ -178,6 +186,8 @@ export interface ReminderState {
   firedDailyKeys?: string[];
   /** Last successful interval check for each selected note. */
   noteLastFiredAt?: Record<string, number>;
+  /** Plans already announced, so a restart does not announce them twice. */
+  firedPlanKeys?: string[];
 }
 
 export const DEFAULT_REMINDER_SETTINGS: ReminderSettings = {
@@ -211,6 +221,10 @@ export const DEFAULT_REMINDER_SETTINGS: ReminderSettings = {
   ageFilterMode: 'only',
   unknownAgePolicy: 'exclude',
   maxTasksShown: 12,
+  planReminders: true,
+  planLeadMinutes: 10,
+  planSound: true,
+  planSystemNotification: true,
 };
 
 export interface TaskProgress {
@@ -481,6 +495,10 @@ export interface TaskProSettings {
   showRepeatBadges: boolean; // Toggle recurrence chip rendering
   showTagBadges: boolean; // Toggle tag chip rendering
   showScheduleBadges: boolean; // Toggle schedule chip rendering
+  /** A parent task shows how many of its subtasks are done, where it has no progress bar of its own. */
+  showSubtaskProgress: boolean;
+  /** A task that waits on another shows a chip naming it. */
+  showWaitingBadges: boolean;
   /** Typing `@` on a task line lists the properties it can be given. */
   propertySuggest: boolean;
   /** User-defined tags: key written into notes, name and colour kept here. */
@@ -525,6 +543,8 @@ export const DEFAULT_SETTINGS: TaskProSettings = {
   showRepeatBadges: true,
   showTagBadges: true,
   showScheduleBadges: true,
+  showSubtaskProgress: true,
+  showWaitingBadges: true,
   propertySuggest: true,
   tags: [],
   board: DEFAULT_BOARD_PREFERENCES,

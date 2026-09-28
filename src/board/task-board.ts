@@ -58,7 +58,9 @@ import {
   repeatSections,
   statusSections,
   taskActionSections,
+  waitingSections,
 } from './task-actions';
+import { RelationIndex, SubtaskCount, subtaskCounts } from './task-relations';
 import {
   BOARD_PROPERTIES,
   BoardColumnPref,
@@ -95,6 +97,10 @@ export interface BoardSettingsView {
   referenceNotePath: string;
   /** Daily notes and the time grid, for the calendar layout. */
   calendar: CalendarSettings;
+  /** A parent without a progress bar of its own shows how many subtasks are done. */
+  subtaskProgress: boolean;
+  /** The reminder before a plan starts: whether it is on, and how early. */
+  planReminder: { enabled: boolean; leadMinutes: number };
 }
 
 /** Everything the board needs from the plugin. */
@@ -144,6 +150,13 @@ export interface TaskBoardHost {
    * to undo. Resolves whether it was deleted.
    */
   deleteTask?(task: BoardTask): Promise<boolean>;
+  /**
+   * Makes the task wait on exactly these tasks; an empty list stops it
+   * waiting. A task waited on that has no block ID is given one.
+   */
+  setWaiting?(task: BoardTask, blockers: BoardTask[]): Promise<void>;
+  /** The task's own reminder before its plan starts: minutes, `null` for none, `undefined` for the setting. */
+  setRemind?(task: BoardTask, minutes: number | null | undefined): Promise<void>;
 
   // The calendar layout. A host without these still shows the calendar,
   // read-only.
@@ -225,6 +238,9 @@ export class TaskBoard {
   private holds = 0;
   /** Set for the moment between the end of a header drag and the click it makes. */
   private swallowClick = false;
+  /** How many of each task's subtasks are done, and what each task waits on; rebuilt with the body. */
+  private subtasks = new Map<string, SubtaskCount>();
+  private relationIndex: RelationIndex | null = null;
 
   constructor(
     container: HTMLElement,
@@ -316,6 +332,7 @@ export class TaskBoard {
         this.summaryEl.setText(this.labels.summary(counts.total, counts.done, counts.overdue));
       },
       newTaskDefaults: () => this.newTaskDefaults({}),
+      relations: () => this.relations(),
       segmented: (parent, cls, items, current, onPick) => this.segmented(parent, cls, items, current, onPick),
     });
     return this.calendarView;
@@ -354,6 +371,7 @@ export class TaskBoard {
       timeFormat: settings.calendar.timeFormat,
       tags: settings.tags,
       anchor,
+      planReminder: settings.planReminder,
     };
   }
 
@@ -887,6 +905,7 @@ export class TaskBoard {
       return;
     }
 
+    this.refreshRelations();
     this.bodyEl.toggleClass('is-calendar', this.isCalendar);
     if (this.isCalendar) {
       this.calendar().renderBody(this.bodyEl, hadFocus);
@@ -897,7 +916,7 @@ export class TaskBoard {
     const scoped = this.scopedTasks();
     const filtered = filterTasks(scoped, this.prefs, this.search, { tags: this.settings.tags });
     const sorted = sortTasks(filtered, this.prefs.sortKey, this.prefs.sortDir, {
-      getProgress: (task) => this.host.getProgress(task),
+      getProgress: (task) => this.shownProgress(task),
       today,
     });
     this.visible = sorted;
@@ -916,6 +935,32 @@ export class TaskBoard {
 
     this.bodyEl.scrollTop = scrollTop;
     this.bodyEl.scrollLeft = scrollLeft;
+  }
+
+  private refreshRelations(): void {
+    const all = this.host.store.all();
+    this.subtasks = subtaskCounts(all);
+    this.relationIndex = new RelationIndex(all);
+  }
+
+  /** What every task waits on, for the calendar and the timeline as well. */
+  relations(): RelationIndex {
+    if (!this.relationIndex) this.refreshRelations();
+    return this.relationIndex!;
+  }
+
+  /** The subtasks of a task that has no progress bar of its own, when that is switched on. */
+  private subtaskProgress(task: BoardTask): SubtaskCount | undefined {
+    if (!this.settings.subtaskProgress) return undefined;
+    return this.subtasks.get(task.id);
+  }
+
+  /** The progress a task shows: its own bar, else its subtasks. */
+  private shownProgress(task: BoardTask): TaskProgress | undefined {
+    const own = this.host.getProgress(task);
+    if (own?.enabled) return own;
+    const count = this.subtaskProgress(task);
+    return count ? { enabled: true, currentSteps: count.done, totalSteps: count.total } : undefined;
   }
 
   private emptyState(text: string, icon: string): void {
@@ -1435,7 +1480,8 @@ export class TaskBoard {
     this.checkButton(row.createEl('td', { cls: 'taskpro-table__check' }), task);
 
     const titleCell = row.createEl('td', { cls: 'taskpro-table__task' });
-    this.titleBlock(titleCell, task, true, !columns.some((column) => column.id === 'repeat'));
+    this.titleBlock(titleCell, task, true, !columns.some((column) => column.id === 'repeat'), !columns.some((column) => column.id === 'waiting'));
+    row.toggleClass('is-waiting', this.relations().isWaiting(task));
 
     for (const column of columns) this.renderCell(row, task, column.id);
 
@@ -1469,6 +1515,9 @@ export class TaskBoard {
       case 'repeat':
         cell.toggleClass('is-editable', !!this.host.setRepeat);
         return this.repeatChip(cell, task);
+      case 'waiting':
+        cell.toggleClass('is-editable', !!this.host.setWaiting);
+        return this.waitingChips(cell, task);
       case 'progress':
         return this.progressBar(cell, task);
       case 'note':
@@ -1496,7 +1545,7 @@ export class TaskBoard {
   }
 
   /** The title, editable in place; `withRepeat` marks a repeating task when no repeat column says so. */
-  private titleBlock(parent: HTMLElement, task: BoardTask, withOpen = true, withRepeat = true): void {
+  private titleBlock(parent: HTMLElement, task: BoardTask, withOpen = true, withRepeat = true, withWaiting = true): void {
     const labels = this.labels;
     const wrap = parent.createDiv({ cls: 'taskpro-board__title-wrap' });
     if (task.depth > 0) {
@@ -1518,6 +1567,15 @@ export class TaskBoard {
         this.startTitleEdit(wrap, title, task);
       }
     });
+
+    const blocking = withWaiting ? this.relations().openBlockers(task) : [];
+    if (blocking.length) {
+      const mark = wrap.createSpan({ cls: 'taskpro-board__waiting' });
+      setIcon(mark, 'hourglass');
+      const text = `${this.labels.columns.waiting}: ${blocking.map((blocker) => displayTitle(blocker.text)).join(this.language === 'fa' ? '، ' : ', ')}`;
+      mark.setAttribute('aria-label', text);
+      mark.title = text;
+    }
 
     if (task.repeat && withRepeat) {
       const repeat = wrap.createSpan({ cls: 'taskpro-board__repeat' });
@@ -1704,7 +1762,11 @@ export class TaskBoard {
 
   private progressBar(parent: HTMLElement, task: BoardTask): void {
     const progress = this.host.getProgress(task);
-    if (!progress?.enabled) return;
+    if (!progress?.enabled) {
+      const count = this.subtaskProgress(task);
+      if (count) this.subtaskBar(parent, count);
+      return;
+    }
     const percent = Math.round((progress.currentSteps / progress.totalSteps) * 100);
     const button = parent.createEl('button', { cls: 'taskpro-board__progress' });
     button.type = 'button';
@@ -1715,6 +1777,47 @@ export class TaskBoard {
     button.addEventListener('click', (event) => {
       event.stopPropagation();
       this.host.editProgress(task, button);
+    });
+  }
+
+  /** A parent's subtasks as a bar that fills as they are ticked off, and "2/4" beside it. */
+  private subtaskBar(parent: HTMLElement, count: SubtaskCount): void {
+    const text = getActionLabels(this.language).fromSubtasks(count.done, count.total);
+    const wrap = parent.createDiv({ cls: 'taskpro-board__progress is-subtasks' });
+    wrap.setAttribute('role', 'img');
+    wrap.setAttribute('aria-label', text);
+    wrap.title = text;
+    setIcon(wrap.createSpan({ cls: 'taskpro-board__progress-icon' }), 'list-checks');
+    const bar = wrap.createSpan({ cls: 'taskpro-board__progress-bar' });
+    bar.createSpan({ cls: 'taskpro-board__progress-fill' }).style.setProperty('--taskpro-progress', `${Math.round((count.done / count.total) * 100)}%`);
+    wrap.createSpan({ cls: 'taskpro-board__progress-text', text: `${count.done}/${count.total}` });
+    wrap.toggleClass('is-complete', count.done === count.total);
+  }
+
+  /** What a task waits on: a chip for each (two at most, then a count), or a + to add one. */
+  private waitingChips(parent: HTMLElement, task: BoardTask): void {
+    const labels = this.labels;
+    const actionLabels = getActionLabels(this.language);
+    const blockers = this.relations().blockersOf(task);
+    if (!blockers.length) {
+      setIcon(parent.createSpan({ cls: 'taskpro-board__placeholder' }), 'plus');
+    } else {
+      const wrap = parent.createDiv({ cls: 'taskpro-board__waiting-list' });
+      for (const blocker of blockers.slice(0, 2)) {
+        const done = !blocker.task || blocker.task.status === '[x]';
+        const name = blocker.task ? displayTitle(blocker.task.text) || '—' : actionLabels.missingTask;
+        const chip = buildChip('taskpro-waiting-badge', done ? 'check-check' : 'hourglass', name);
+        chip.dataset.state = done ? 'done' : 'waiting';
+        chip.querySelector('.taskpro-chip__label')?.setAttribute('dir', 'auto');
+        chip.title = `${labels.columns.waiting}: ${name}${blocker.task ? ` · ${blocker.task.fileName}` : ''}`;
+        wrap.appendChild(chip);
+      }
+      if (blockers.length > 2) wrap.createSpan({ cls: 'taskpro-board__more-count', text: `+${blockers.length - 2}` });
+    }
+    if (!this.host.setWaiting) return;
+    parent.addEventListener('click', (event) => {
+      event.stopPropagation();
+      this.dropdown(parent, waitingSections(this.actionOptions(task, parent)));
     });
   }
 
@@ -2141,7 +2244,8 @@ export class TaskBoard {
     const shown = visibleColumns(this.cardProperties());
     const top = card.createDiv({ cls: 'taskpro-card__top' });
     this.checkButton(top, task);
-    this.titleBlock(top, task, false, !shown.some((column) => column.id === 'repeat'));
+    this.titleBlock(top, task, false, !shown.some((column) => column.id === 'repeat'), !shown.some((column) => column.id === 'waiting'));
+    card.toggleClass('is-waiting', this.relations().isWaiting(task));
     const more = this.iconButton(top, 'more-horizontal', labels.more, () =>
       this.openTaskActions(task, more.getBoundingClientRect(), more)
     );
@@ -2173,6 +2277,9 @@ export class TaskBoard {
           break;
         case 'repeat':
           if (task.repeat) this.repeatChip(props.createDiv({ cls: 'is-editable' }), task);
+          break;
+        case 'waiting':
+          if (task.waiting?.length) this.waitingChips(props.createDiv({ cls: 'is-editable taskpro-card__waiting' }), task);
           break;
         case 'progress':
           this.progressBar(props, task);

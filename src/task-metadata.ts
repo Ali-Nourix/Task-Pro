@@ -76,6 +76,22 @@ const SCHEDULE_PATTERN =
   /@schedule\(\s*(\d{4}-\d{2}-\d{2})(?:[ T]+(\d{1,2}:\d{2})(?:\s*[-\u2013]\s*(\d{1,2}:\d{2}))?)?\s*\)/;
 const SCHEDULE_PATTERN_GLOBAL = new RegExp(SCHEDULE_PATTERN.source, 'g');
 
+// Canonical inline form is `@waiting([[Planner/Launch#^tp-4k2a]])`: the tasks
+// this one waits on, as Obsidian block links, comma separated. Links rather
+// than bare IDs, so Obsidian keeps them pointing at the right note when a
+// note is renamed or moved, and a dependency shows up among a note's links.
+// A link to the same note may leave the path out: `[[#^tp-4k2a]]`.
+const WAITING_PATTERN = /@waiting\(((?:\s*\[\[[^\]\n]+\]\]\s*,?)+)\s*\)/;
+const WAITING_PATTERN_GLOBAL = new RegExp(WAITING_PATTERN.source, 'g');
+const WAITING_LINK_PATTERN = /\[\[([^\]#|\n]*)#\^([a-zA-Z0-9-]+)(?:\|[^\]\n]*)?\]\]/g;
+
+// Canonical inline form is `@remind(10m)`: how long before its planned start a
+// task asks for attention, in minutes (`m`) or hours (`h`); `@remind(0m)` is
+// at the start, and `@remind(off)` turns the reminder off for this task. A
+// task without one uses the reminder setting.
+const REMIND_PATTERN = /@remind\(\s*(off|\d{1,4}\s*[mh]?)\s*\)/i;
+const REMIND_PATTERN_GLOBAL = new RegExp(REMIND_PATTERN.source, 'gi');
+
 function normalizeAfterMarkerRemovalPreserveIndent(line: string): string {
   const indent = line.match(LEADING_WHITESPACE_PATTERN)?.[0] ?? '';
   const withoutIndent = line.slice(indent.length);
@@ -418,6 +434,89 @@ export function setSchedule(line: string, schedule: TaskSchedule | null): string
   return `${without} ${marker}`;
 }
 
+/** A task this one waits on: the note it is in (empty for the same note), and its block ID. */
+export interface TaskLink {
+  path: string;
+  blockId: string;
+}
+
+/** The tasks a line waits on, in the order they were written, each once. */
+export function extractWaiting(line: string): TaskLink[] {
+  const links: TaskLink[] = [];
+  WAITING_PATTERN_GLOBAL.lastIndex = 0;
+  let marker: RegExpExecArray | null;
+  while ((marker = WAITING_PATTERN_GLOBAL.exec(line)) !== null) {
+    WAITING_LINK_PATTERN.lastIndex = 0;
+    let link: RegExpExecArray | null;
+    while ((link = WAITING_LINK_PATTERN.exec(marker[1])) !== null) {
+      const path = link[1].trim().replace(/\.md$/i, '');
+      const blockId = link[2];
+      if (!links.some((l) => l.path === path && l.blockId === blockId)) links.push({ path, blockId });
+    }
+  }
+  return links;
+}
+
+/** The link a dependency is written as: `[[Planner/Launch#^tp-4k2a]]`. */
+export function formatTaskLink(link: TaskLink): string {
+  return `[[${link.path}#^${link.blockId}]]`;
+}
+
+export function stripWaiting(line: string): string {
+  return line.replace(WAITING_PATTERN_GLOBAL, '').replace(/\s{2,}/g, ' ').trim();
+}
+
+export function stripWaitingPreserveIndent(line: string): string {
+  return normalizeAfterMarkerRemovalPreserveIndent(line.replace(WAITING_PATTERN_GLOBAL, ''));
+}
+
+/** Replaces what the line waits on, as one marker before a trailing block ID. An empty list removes it. */
+export function setWaiting(line: string, links: readonly TaskLink[] | null): string {
+  const without = stripWaitingPreserveIndent(line);
+  if (!links?.length) return without;
+  return insertBeforeBlockId(without, `@waiting(${links.map(formatTaskLink).join(', ')})`);
+}
+
+/**
+ * A task's own reminder: minutes before its planned start, or null when it is
+ * turned off. Undefined when the task has none and the setting decides.
+ */
+export function extractRemind(line: string): number | null | undefined {
+  const match = REMIND_PATTERN.exec(line);
+  if (!match) return undefined;
+  const value = match[1].toLowerCase().replace(/\s+/g, '');
+  if (value === 'off') return null;
+  const amount = parseInt(value, 10);
+  return value.endsWith('h') ? amount * 60 : amount;
+}
+
+export function formatRemindMarker(minutes: number | null): string {
+  if (minutes === null) return '@remind(off)';
+  return minutes >= 60 && minutes % 60 === 0 ? `@remind(${minutes / 60}h)` : `@remind(${minutes}m)`;
+}
+
+export function stripRemind(line: string): string {
+  return line.replace(REMIND_PATTERN_GLOBAL, '').replace(/\s{2,}/g, ' ').trim();
+}
+
+export function stripRemindPreserveIndent(line: string): string {
+  return normalizeAfterMarkerRemovalPreserveIndent(line.replace(REMIND_PATTERN_GLOBAL, ''));
+}
+
+/** Sets the task's own reminder (`null` turns it off), or with `undefined` leaves it to the setting. */
+export function setRemind(line: string, minutes: number | null | undefined): string {
+  const without = stripRemindPreserveIndent(line);
+  if (minutes === undefined) return without;
+  return insertBeforeBlockId(without, formatRemindMarker(minutes));
+}
+
+/** Adds a marker at the end of a line, before its block ID so the ID stays last. */
+function insertBeforeBlockId(line: string, marker: string): string {
+  const blockIdMatch = line.match(/\s*\^([a-zA-Z0-9-]+)\s*$/);
+  if (blockIdMatch) return line.replace(/\s*\^([a-zA-Z0-9-]+)\s*$/, ` ${marker} ^${blockIdMatch[1]}`);
+  return `${line} ${marker}`;
+}
+
 /**
  * Replaces the readable part of a task line and keeps everything TaskPro put
  * there: the checkbox, the indentation, every marker and the block ID. The
@@ -440,6 +539,8 @@ export function replaceTaskText(line: string, text: string): string {
     REPEAT_PATTERN_GLOBAL,
     TAG_PATTERN_GLOBAL,
     SCHEDULE_PATTERN_GLOBAL,
+    WAITING_PATTERN_GLOBAL,
+    REMIND_PATTERN_GLOBAL,
   ]) {
     pattern.lastIndex = 0;
     let found: RegExpExecArray | null;
@@ -462,7 +563,7 @@ export function replaceTaskText(line: string, text: string): string {
  * is added in exactly one place instead of in every copy of the strip chain.
  */
 export function stripTaskMetadata(line: string): string {
-  return stripSchedule(stripTags(stripRepeat(stripPriority(stripProgress(stripDeadline(line))))));
+  return stripRemind(stripWaiting(stripSchedule(stripTags(stripRepeat(stripPriority(stripProgress(stripDeadline(line))))))));
 }
 
 /**
@@ -538,6 +639,12 @@ export const REPEAT_MARKER_PATTERN = new RegExp(REPEAT_PATTERN.source, 'i');
 
 /** Single-match schedule pattern for decoration ranges. */
 export const SCHEDULE_MARKER_PATTERN = new RegExp(SCHEDULE_PATTERN.source, '');
+
+/** Single-match patterns for the dependency and reminder markers, for decoration ranges. */
+export const WAITING_MARKER_PATTERN = new RegExp(WAITING_PATTERN.source, '');
+export const REMIND_MARKER_PATTERN = new RegExp(REMIND_PATTERN.source, 'i');
+export const WAITING_MARKER_PATTERN_GLOBAL = new RegExp(WAITING_PATTERN.source, 'g');
+export const REMIND_MARKER_PATTERN_GLOBAL = new RegExp(REMIND_PATTERN.source, 'gi');
 
 /** Global schedule pattern, for reading-mode stripping. */
 export const SCHEDULE_MARKER_PATTERN_GLOBAL = new RegExp(SCHEDULE_PATTERN.source, 'g');

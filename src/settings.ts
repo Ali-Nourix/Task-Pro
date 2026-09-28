@@ -175,6 +175,7 @@ export class TaskProSettingTab extends PluginSettingTab {
         this.renderCalendarTab(containerEl);
         return;
       case 'reminders':
+        this.renderPlanReminderSettings(containerEl);
         this.renderReminderSettings(containerEl);
         return;
       case 'tasks':
@@ -360,6 +361,31 @@ export class TaskProSettingTab extends PluginSettingTab {
         .setValue(this.plugin.settings.showScheduleBadges)
         .onChange(async (value) => {
           this.plugin.settings.showScheduleBadges = value;
+          await this.plugin.saveSettings();
+          this.plugin.refreshDecorations();
+          this.plugin.refreshReadingViews();
+        }));
+
+    new Setting(containerEl)
+      .setName('Show Subtask Progress')
+      .setDesc('A parent task with no progress bar of its own shows how many of its subtasks are done ("2/4"), in notes and on the board')
+      .addToggle(toggle => toggle
+        .setValue(this.plugin.settings.showSubtaskProgress)
+        .onChange(async (value) => {
+          this.plugin.settings.showSubtaskProgress = value;
+          await this.plugin.saveSettings();
+          this.plugin.refreshDecorations();
+          this.plugin.refreshReadingViews();
+          this.plugin.refreshBoards();
+        }));
+
+    new Setting(containerEl)
+      .setName('Show Waiting Badges')
+      .setDesc('A task that waits on another names it in a chip, and hides the raw @waiting marker')
+      .addToggle(toggle => toggle
+        .setValue(this.plugin.settings.showWaitingBadges)
+        .onChange(async (value) => {
+          this.plugin.settings.showWaitingBadges = value;
           await this.plugin.saveSettings();
           this.plugin.refreshDecorations();
           this.plugin.refreshReadingViews();
@@ -807,6 +833,67 @@ export class TaskProSettingTab extends PluginSettingTab {
    * Daily reminder settings. Rendered into a dedicated container so the
    * strictness-dependent fields can be re-rendered without rebuilding the whole tab.
    */
+  /** A notice shortly before a planned task starts, independent of the daily reminders. */
+  private renderPlanReminderSettings(containerEl: HTMLElement): void {
+    const reminders = this.plugin.settings.reminders;
+    const save = async () => {
+      await this.plugin.saveSettings();
+      this.plugin.planReminders.refresh();
+    };
+
+    this.renderSectionHeader(
+      containerEl,
+      'alarm-clock',
+      'Plan Reminders',
+      'A notice shortly before a planned task starts. A task can set its own time from its plan’s menu.'
+    );
+
+    const enable = new Setting(containerEl)
+      .setName('Remind Before a Plan Starts')
+      .setDesc('For tasks planned at a time of day, not whole-day plans or tasks already done');
+    this.withIcon(enable, 'bell');
+    const details = containerEl.createDiv('taskpro-reminder-settings');
+    const renderDetails = () => {
+      details.empty();
+      if (!reminders.planReminders) return;
+      const lead = new Setting(details).setName('How Early').setDesc('Tasks with a time of their own keep it');
+      this.withIcon(lead, 'timer');
+      lead.addDropdown((dropdown) => {
+        for (const minutes of [0, 5, 10, 15, 30, 60]) {
+          dropdown.addOption(String(minutes), minutes === 0 ? 'At the start' : minutes === 60 ? '1 hour before' : `${minutes} minutes before`);
+        }
+        dropdown.setValue(String(reminders.planLeadMinutes)).onChange(async (value) => {
+          reminders.planLeadMinutes = Number(value);
+          await save();
+        });
+      });
+      const sound = new Setting(details).setName('Play a Sound').setDesc('Uses the reminder sound chosen under Daily Reminders');
+      this.withIcon(sound, 'volume-2');
+      sound.addToggle((toggle) =>
+        toggle.setValue(reminders.planSound).onChange(async (value) => {
+          reminders.planSound = value;
+          await save();
+        })
+      );
+      const system = new Setting(details).setName('System Notification').setDesc('Also notify through the operating system (desktop only)');
+      this.withIcon(system, 'monitor');
+      system.addToggle((toggle) =>
+        toggle.setValue(reminders.planSystemNotification).onChange(async (value) => {
+          reminders.planSystemNotification = value;
+          await save();
+        })
+      );
+    };
+    enable.addToggle((toggle) =>
+      toggle.setValue(reminders.planReminders).onChange(async (value) => {
+        reminders.planReminders = value;
+        await save();
+        renderDetails();
+      })
+    );
+    renderDetails();
+  }
+
   private renderReminderSettings(containerEl: HTMLElement): void {
     const reminders = this.plugin.settings.reminders;
 

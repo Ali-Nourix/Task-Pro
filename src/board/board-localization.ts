@@ -36,6 +36,7 @@ export interface BoardLabels {
     priority: string;
     deadline: string;
     plan: string;
+    waiting: string;
     repeat: string;
     progress: string;
     note: string;
@@ -141,6 +142,7 @@ const EN: BoardLabels = {
     priority: 'Priority',
     deadline: 'Deadline',
     plan: 'Plan',
+    waiting: 'Waiting on',
     repeat: 'Repeat',
     progress: 'Progress',
     note: 'Note',
@@ -248,6 +250,7 @@ const FA: BoardLabels = {
     priority: 'اولویت',
     deadline: 'سررسید',
     plan: 'برنامه',
+    waiting: 'منتظرِ',
     repeat: 'تکرار',
     progress: 'پیشرفت',
     note: 'یادداشت',
