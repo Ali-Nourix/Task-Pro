@@ -2,7 +2,8 @@
 
 An Obsidian plugin for task management: interactive chips on every task line,
 your own coloured tags, a task board that shows every task in the vault in one
-place, a calendar to plan your days on in the Gregorian or the Jalali calendar,
+place (on a phone too), a calendar and a timeline to plan your days on in the
+Gregorian or the Jalali calendar, subtasks and tasks that wait on each other,
 bi-directional sync with a central task note, deadlines, priorities, and
 per-task capabilities you add only where you want them.
 
@@ -19,6 +20,9 @@ screenshots of a live vault.</sub>
 - [Features](#features)
 - [Tags](#tags)
 - [Task board](#task-board)
+  - [Floating over everything](#floating-over-everything) · [On a phone](#on-a-phone)
+- [Subtasks and waiting](#subtasks-and-waiting)
+- [Timeline](#timeline)
 - [Calendar](#calendar)
   - [Subtasks](#subtasks) · [The task menu](#the-task-menu) · [Plans](#plans) · [Daily notes](#daily-notes)
 - [Per-task capabilities](#per-task-capabilities)
@@ -52,6 +56,8 @@ notes to make them appear, and clicking one opens the menu for that property.
 | `Today, 09:30 – 11:00` | When you [plan](#plans) to work on it |
 | `18:42` | A running focus timer |
 | `38%` | Progress through a set number of steps |
+| `2/4` | How many of a parent task's [subtasks](#subtasks-and-waiting) are done |
+| `Write the copy` `2 tasks` | Behind an hourglass: the tasks this one is [waiting on](#waiting-on-another-task); click to open one |
 | `Work` `Client` | Your own tags, each in its own colour; click to change them |
 
 ### Chips that belong to your theme
@@ -196,9 +202,9 @@ the ribbon or with **Open Task Board**, and it opens as a tab of its own.
 
 - **Scope:** the whole vault, or only the target folder set under **Settings →
   TaskPro → General**. The switch is at the top of the board.
-- **Two layouts:** a **table** with a column per property, or a **board** with a
-  column per group. Drag a card to another column to change its status,
-  priority or tag.
+- **Four layouts:** a **table** with a column per property, a **board** with a
+  column per group (drag a card to another column to change its status,
+  priority or tag), the [timeline](#timeline) and the [calendar](#calendar).
 - **Group** by status, tag, priority, deadline (*Overdue*, *Today*, *Next 7
   days*, *Later*, *Past*) or note, and fold away groups you do not need; a
   task with two tags appears under both, as in a Notion multi-select.
@@ -216,6 +222,10 @@ the ribbon or with **Open Task Board**, and it opens as a tab of its own.
   narrower, and use a column's **⋯** (or right-click its header) to hide it.
   Hidden columns are listed at the end of the board, one click from coming
   back. Grouped by tag, **New tag** there adds a column.
+- **Waiting on** is a column of its own: what each task waits on, and a
+  task that is still waiting shows an hourglass beside its title. The
+  **Progress** column shows a parent's done subtasks (*2/4*) when it has no
+  progress bar of its own. See [Subtasks and waiting](#subtasks-and-waiting).
 - **Filter** by status, priority and tag, and **search** titles, tag names and
   note names. Active filters show as pills you can click away.
 - **Edit in place:** tick a task off, change its status or priority from a menu,
@@ -273,6 +283,95 @@ time.
 <td><img src="docs/images/task-board-table-bookcloth-light.png" alt="The task board table on a community theme in light mode" width="820"></td>
 </tr>
 </table>
+
+### On a phone
+
+On a phone, or in a pane narrower than 640px, the board rearranges itself
+for a thumb, and nothing is left out: every setting and action on the desktop
+is still there, one or two taps in.
+
+- **Menus, cards and pickers rise from the bottom** as sheets, full width,
+  with a handle to drag them down by and the board dimmed behind. A submenu
+  slides in as a page of its own with a back button, instead of opening
+  beside the menu.
+- **A round + button** at the bottom corner adds a task, in a sheet with its
+  title and the note it goes into; the keyboard's Done key adds it.
+- **The table becomes a list**: each task on two lines, its title and then
+  its properties as chips. Swipe a row towards the trailing side (right, in
+  English) to tick it off, the other way for its sheet, or tap it; the circle
+  and the **⋯** do the same without a swipe, each a 44px target. **Table style** in the board's options brings back the
+  full table, which then scrolls sideways.
+- **The board shows one column at a time**, snapping from one to the next,
+  with a row of tabs above it to jump between them.
+- **The calendar's week shows three days** from today and scrolls sideways
+  through the rest. The month is a grid of dots with the chosen day's tasks
+  listed under it, and the unscheduled tasks open as a sheet.
+- **A long press is the right click** (the task menu, a column's menu), and
+  anything that can be dragged, a card, a block or a bar, is picked up by
+  holding it still for a moment, so a finger that moves right away scrolls.
+- Every control is at least 44px, the header's actions are icons with
+  labels for screen readers, and the bottom of the board keeps clear of the
+  home indicator and of Obsidian's own bar.
+
+The board uses the phone layout wherever it is narrow, so a sidebar pane on a
+desktop gets it too, and a touch screen keeps the larger targets at any width.
+
+## Subtasks and waiting
+
+A task nested under another in its note is its **subtask**. A parent task
+with no progress bar of its own shows how many of its subtasks are done, as
+a `2/4` chip in the note and in the board's **Progress** column, and the chip
+fills in as they are ticked off. Only direct subtasks count; a plain bullet in
+between does not break the link. **Show Subtask Progress** under Badges
+switches it off.
+
+### Waiting on another task
+
+A task can wait on others: it cannot start until they are done. Choose
+**Waiting on › Wait on a task…** in its [menu](#the-task-menu) and search for
+the task; add as many as it needs. The line gets a marker made of links to
+those tasks:
+
+```markdown
+- [ ] Write the copy ^copy
+- [ ] Publish @waiting([[Launch#^copy]], [[Launch#^review]])
+```
+
+A task waited on gets a block ID the first time, so the link survives
+renames and moves, and Obsidian's own backlinks show who is waiting on it. In
+the note the marker is shown as a chip with an hourglass that names the task
+(or says *2 tasks*, with the names in its tooltip) and opens it on a click.
+Once every one of them is done, the hourglass turns into a double tick.
+
+- The menu lists what a task waits on, each with **Stop waiting**, and also
+  the tasks waiting on this one.
+- On the board, a waiting task shows an hourglass, and on the
+  [timeline](#timeline) its bar is hatched with an arrow from each task it
+  waits on.
+- A task cannot wait on itself or on a task that waits on it, however far
+  round the chain.
+
+## Timeline
+
+The board's fourth layout lays tasks out as bars across days, as a Gantt chart
+does: a bar runs from a task's plan to its deadline, a task with only a
+deadline is a diamond on that day, and a parent's family is spanned by a thin
+bracket over its subtasks' bars. The list of titles stays pinned on one side
+and the scale of days on top.
+
+- **Drag a bar** to move the task: its plan and its deadline move together,
+  keeping the plan's time of day. Drag its start to change the plan, or its
+  end to change (or set) the deadline. A label follows the pointer with the
+  dates it will get. A click, rather than a drag, opens the task's menu.
+- **Days, Weeks, Months** zoom the scale; **Earlier**, **Later** and **Today**
+  move along it, and Gregorian or Jalali dates come from the same switch as
+  the calendar.
+- **Arrows** join each task to the tasks it is [waiting on](#waiting-on-another-task),
+  red when the one it waits on is planned to end after it starts.
+- A deadline before the task's plan is flagged on the deadline's day.
+- **Tasks with no dates** are folded away under the chart; open the section
+  and click a day in a task's row to plan it for that day.
+- In Persian the chart runs right to left, and dragging to the left is later.
 
 ## Calendar
 
@@ -582,12 +681,15 @@ What a planner actually needs from a task that comes back.
 - [ ] Task with tags @tag(work, deep-work)
 - [ ] Task planned for a time @schedule(2026-12-30 09:00-10:30)
 - [ ] Task planned for a day @schedule(2026-12-30)
+- [ ] Task reminded 15 minutes before its plan @schedule(2026-12-30 09:00-10:30) @remind(15m)
+- [ ] Task waiting on two others @waiting([[Launch#^copy]], [[Launch#^review]])
 - [ ] Everything at once @priority(high) @due(2026-12-31) @repeat(2w) @tag(client) @schedule(2026-12-30 14:00-16:00)
 ```
 
-`@due(...)`, `@priority(...)`, `@repeat(...)`, `@tag(...)` and `@schedule(...)`
-are the canonical markers, and each is hidden behind its chip while that chip is
-on. A tag marker holds tag keys, not names: the name and colour come from your
+`@due(...)`, `@priority(...)`, `@repeat(...)`, `@tag(...)`, `@schedule(...)`,
+`@remind(...)` and `@waiting(...)` are the canonical markers, and each is hidden
+behind its chip while that chip is on. `@waiting` holds ordinary block links,
+so Obsidian keeps them up to date when a note is renamed. A tag marker holds tag keys, not names: the name and colour come from your
 tag list. A deadline is when a task is due; a
 [plan](#plans) is when you mean to work on it. The older `⏳ 2026-12-31`,
 `📅 2026-12-31`, `[due:: ...]`, `[deadline:: ...]`, `[priority:: ...]` and
@@ -634,6 +736,25 @@ are skipped.
   a few seconds before it can be acknowledged. Sound, snooze and system
   notifications apply to all three.
 
+### Before a plan starts
+
+A task planned for a time of day gets a notice shortly before it starts, 10
+minutes by default: *Starts in 8 minutes*, the task, and its plan, with
+**Done**, **Snooze 5 min** and **Open** (which takes you to the line). A
+chime and a system notification come with it, each with its own switch under
+**Remind Before a Plan Starts** in the Reminders tab, where **How Early** is
+set too. Whole-day plans and tasks already done are left out. A plan is still
+announced up to 10 minutes after its start, so one that came due while
+Obsidian was closed is not lost, and it is announced once, across restarts.
+
+One task can ask for a different time with **Remind me** in its menu (at the
+start, 5, 10, 15 or 30 minutes or an hour before, no reminder, or as in
+settings), which writes `@remind(15m)`, `@remind(1h)` or `@remind(off)` into
+its line. A small bell on the plan chip shows a time of its own, and a
+crossed-out bell no reminder.
+
+### Active notes
+
 Active-note reminders are on by default. Tasks that only appear through an
 `![[embed]]` are not counted as belonging to the note doing the embedding — the
 alert resolves the outer note's own file, so a callout like
@@ -644,11 +765,11 @@ alert resolves the outer note's own file, so a callout like
 | Tab | Holds |
 | --- | --- |
 | **General** | Reference note, target folder restriction |
-| **Badges** | Chip language, size, calendar system, embed visibility, a switch per optional chip, and the `@` suggestions on task lines |
+| **Badges** | Chip language, size, calendar system, embed visibility, a switch per optional chip (subtask progress and waiting included), and the `@` suggestions on task lines |
 | **Capabilities** | Focus-timer duration, desktop notification, sound, status-bar readout; a note on how repeat intervals are counted |
 | **Tags** | Tag chips on or off, and the tag list: create, rename, recolour, delete |
 | **Calendar** | [Daily notes](#daily-notes): folder, name formats, template, heading; planning: where new tasks go, week start, 12- or 24-hour clock, the hour the grid opens at, snap, and new block length |
-| **Reminders** | Schedule, note sources, filters, strictness, sound |
+| **Reminders** | The reminder before a plan starts (how early, sound, system notification); schedule, note sources, filters, strictness, sound |
 | **Internal Tasks** | Tasks stored in the plugin rather than a note |
 
 Chip colours, padding, radius and opacity are exposed to the
@@ -705,6 +826,17 @@ Chip colours, padding, radius and opacity are exposed to the
   than by hoping the bidi algorithm guesses right: a note name or a task title
   dropped into a sentence is isolated, and a Latin-digit time range is held
   left to right, so `09:00 – 10:30` never reads `10:30 – 09:00` in Persian.
+- A dependency is a block link, resolved the way Obsidian resolves one (the
+  full path, then a path's end, then a note's name), so a task waited on is
+  found wherever its note moved. Cycles are found by walking the links before
+  one is added.
+- Reading view hands a post-processor a parent task's `<li>` with its
+  subtasks' list inside it, so each task's markers are read from, and hidden
+  in, its own line only, and its chips go before its subtasks.
+- The phone layout is chosen by the board's own width, not by the device, so
+  it follows a pane being resized. On a phone Obsidian counts its floating
+  bar in `--view-bottom-spacing`, and the board keeps its last row and its +
+  button above that.
 - `Esc` goes to the innermost thing open. Obsidian handles keys before the
   page does, so a card or a drag pushes a keymap scope of its own: the first
   `Esc` closes the card, and only the next one closes the floating board.
@@ -719,7 +851,7 @@ Chip colours, padding, radius and opacity are exposed to the
 npm install
 npm run dev     # watch build
 npm run build   # typecheck + production build
-npm test        # markers, recurrence, timers, board data, calendar dates and daily notes, and the plugin's edit paths
+npm test        # markers, recurrence, timers, board data, subtasks and waiting, plan reminders, the timeline's model, calendar dates and daily notes, and the plugin's edit paths
 ```
 
 `npm test` includes an integration test (`test/plugin-edits.mjs`) that loads the
@@ -728,7 +860,9 @@ and drives the same edit path the chip menu and the board use: status,
 priority, deadline, tags and renames, tag sync to a source note, the tag list,
 removing a tag from every note, plans and how they roll forward, and daily
 notes created from a template. `test/calendar.mjs` covers the calendar's date
-arithmetic in both calendars, name formats, templates and block layout.
+arithmetic in both calendars, name formats, templates and block layout, and
+`test/relations.mjs` the subtask counts, `@waiting` links and cycles, when a
+plan's reminder is due, and how the timeline lays tasks out.
 
 The distributable files are `main.js`, `manifest.json`, and `styles.css`.
 
@@ -743,7 +877,7 @@ Obsidian:
 | --- | --- | --- |
 | `test/chips-preview.html` | Task lines with every chip, and each chip's states | `?light`, `?theme=<name>` |
 | `test/reminder-preview.html` | The reminder alert | `?light`, `?theme=<name>`, `?strict` |
-| `test/board-preview.html` | The task board, calendar, tag picker, tag manager and tag chips, built by the plugin's own classes | `?light`, `?theme=<name>`, `?layout=<board\|calendar>`, `?cal=<month\|week\|day\|agenda>`, `?system=jalali`, `?group=<tag\|priority\|…>`, `?lang=fa`, `?view=<picker\|manager\|note\|palette>` |
+| `test/board-preview.html` | The task board, calendar, timeline, tag picker, tag manager and tag chips, built by the plugin's own classes | `?light`, `?theme=<name>`, `?layout=<board\|calendar\|timeline>`, `?mobile=1` (the phone layout), `?cal=<month\|week\|day\|agenda>`, `?system=jalali`, `?group=<tag\|priority\|…>`, `?lang=fa`, `?view=<picker\|manager\|note\|palette>` |
 
 `board-preview.html` loads a bundle of the real board code against a stub host
 whose edits land in in-memory notes, so it can be clicked through like the
@@ -761,7 +895,7 @@ npm i --no-save playwright lucide-static && npx playwright install chromium
 
 npm run previews        # regenerate the images in this README
 npm run check:contrast  # measure every chip, board and tag colour against WCAG AA on every theme
-npm run test:ui         # click and drag through the board and the calendar in a real browser
+npm run test:ui         # click and drag through the board, calendar and timeline, then again with a finger on a phone-sized screen, and the Reading view's chips
 ```
 
 These need Playwright, and the board harness needs Lucide's icon set (the icons

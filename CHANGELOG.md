@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.5.0 - A calendar to plan your days on, in either calendar
+## 1.5.0 - A calendar and a timeline to plan your days on, and a board that fits a phone
 
 ### Calendar
 
@@ -156,6 +156,86 @@
 - Both calendars' names are checked before a note is created, so a day never
   gets two notes. **Open Today's Daily Note** opens or creates today's note.
 
+### Subtask progress
+
+- A parent task with no progress bar of its own shows how many of its direct
+  subtasks are done, as a `2/4` chip in Live Preview and Reading View and in
+  the board's **Progress** column. It fills in as they are ticked off.
+  **Show Subtask Progress** under Badges turns it off.
+
+### Waiting on another task
+
+- **Waiting on › Wait on a task…** in the task menu makes a task wait on
+  others, found by searching. It writes `@waiting([[Note#^id]], …)` into the
+  line: ordinary block links, so they follow renames and show in backlinks.
+  A task waited on gets a block ID the first time.
+- In a note the marker is a chip with an hourglass naming the task, or *2
+  tasks* with the names in its tooltip, and a click opens it. Once all of
+  them are done it shows a double tick. **Show Waiting Badges** under Badges
+  turns it off.
+- The menu lists what a task waits on, each with **Stop waiting**, and the
+  tasks waiting on it. A task cannot wait on itself or on anything that
+  waits on it.
+- The board has a **Waiting on** column, and a waiting task shows an
+  hourglass beside its title.
+
+### A reminder before a plan starts
+
+- A task planned for a time of day gets a notice 10 minutes before it
+  starts: *Starts in 8 minutes*, the task and its plan, with **Done**,
+  **Snooze 5 min** and **Open**. A chime and a system notification go with
+  it. **How Early** and both switches are under **Remind Before a Plan
+  Starts** in the Reminders tab.
+- **Remind me** in the task menu gives one task its own time, from the start
+  to an hour before, or none: `@remind(15m)`, `@remind(off)`. A bell on the
+  plan chip shows it.
+- Whole-day plans and done tasks are skipped. A plan is announced once, even
+  across a restart, and one that came due while Obsidian was closed is still
+  announced up to 10 minutes after its start.
+
+### Timeline
+
+- The board's fourth layout lays tasks out as bars from their plan to their
+  deadline, as a Gantt chart does. A task with only a deadline is a diamond,
+  and a parent's family is spanned by a bracket over its subtasks.
+- Drag a bar to move the task (plan and deadline together, keeping the time
+  of day), its start to change the plan, or its end to change or set the
+  deadline. A label shows the dates the bar will get. A click opens the task
+  menu.
+- **Days**, **Weeks** and **Months** zoom the scale, **Earlier**, **Later**
+  and **Today** move along it, and the dates are Gregorian or Jalali.
+- Arrows join a task to what it waits on, leaving the bar by its top or
+  bottom so they pass behind other bars rather than through their names, and
+  turn red when the task waited on is planned to end after the other starts.
+  A waiting task's bar is hatched. A deadline before the plan is flagged.
+- Tasks with no dates are folded under the chart. Open them and click a day
+  in a row to plan that task for that day.
+- In Persian the chart runs right to left, and so do drags.
+
+### On a phone
+
+- On a phone, and in any pane under 640px wide, the board is laid out for a
+  thumb, and nothing is taken away:
+  - Menus, task cards and pickers are bottom sheets, with a handle to swipe
+    them down and the board dimmed behind. A submenu slides in as a page with
+    a back button.
+  - A round **+** button adds a task.
+  - The table is a list of two-line rows with the properties as chips.
+    Swiping a row ticks it off or opens its sheet. **Table style** brings the
+    full table back.
+  - The board shows a column at a time, with tabs to jump between them.
+  - The calendar's week shows three days from today and scrolls through the
+    rest, and the month is a grid of dots over the chosen day's tasks.
+  - The timeline's rows are 44px high.
+- A long press is the right click. On a touch screen, cards, blocks and bars
+  are dragged after being held for a moment, so a quick swipe still scrolls.
+- Every control is at least 44px. The board keeps clear of the home
+  indicator and of Obsidian's floating bar, which it reads from
+  `--view-bottom-spacing`.
+- A theme that sizes every button without an icon on a phone no longer
+  stretches a task's circle into an oval or a day's number into a pill.
+  Bookcloth sets 40px there.
+
 ### Fixes
 
 - A task added under a heading is laid out the Markdown way: a blank line
@@ -187,6 +267,14 @@
   checkbox for any marker that is not a space. The marker is now read first.
 - Opening a task's note from the floating board now closes the board, so the
   note is not hidden behind it.
+- In Reading View a parent task read its markers from its subtasks' lines as
+  well, and hid theirs before they were read. A subtask's plan chip went
+  missing, and a parent could pick up a subtask's priority or block ID. Its
+  chips also landed under its subtasks. Each task now reads and hides only
+  its own line, and its chips sit on that line.
+- The calendar's header was only as wide as the screen. When a week wider
+  than the screen was scrolled sideways, blocks showed through the part left
+  uncovered.
 
 ### Under the hood
 
@@ -202,6 +290,12 @@
   name formats, templates, heading insertion and the lane layout.
   `test/plugin-edits.mjs` covers daily notes, plans, sync and rolling forward.
   `npm run test:ui` now also drags through the calendar in Chromium.
+- `test/relations.mjs` covers subtask counts, `@waiting` links and how they
+  resolve, cycles, when a plan's reminder is due, and the timeline's rows,
+  spans and lateness. `test/mobile-interactions.mjs` runs the phone layout
+  with touch input: sheets, swipes, long presses, holding to drag, and the
+  three-day week. `test/reading-mode.mjs` runs the Reading View processor
+  over a nested list.
 
 ## 1.4.0 - Your own tags, and a board of every task
 
