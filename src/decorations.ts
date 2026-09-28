@@ -33,16 +33,23 @@ import {
   extractProgress,
   extractPriority,
   extractRepeat,
+  extractRemind,
   extractSchedule,
   extractTags,
+  extractWaiting,
   DEADLINE_MARKER_PATTERN,
   PRIORITY_MARKER_PATTERN,
+  REMIND_MARKER_PATTERN,
   REPEAT_MARKER_PATTERN,
   SCHEDULE_MARKER_PATTERN,
   TAG_MARKER_PATTERN_GLOBAL,
+  TaskLink,
+  WAITING_MARKER_PATTERN,
 } from './task-metadata';
+import { SubtaskCount, subtaskCountAt } from './board/task-relations';
 import { ResolvedTag, TaskTag, resolveTag } from './tags';
 import {
+  addRemindMark,
   appendTagChips,
   applyChipScale,
   createDeadlineChip,
@@ -51,7 +58,9 @@ import {
   createRepeatChip,
   createScheduleChip,
   createStatusChip,
+  createSubtaskChip,
   createTimerChip,
+  createWaitingChip,
 } from './ui/chips';
 
 /** Settings slice the decoration layer depends on. */
@@ -66,10 +75,23 @@ export interface DecorationSettings {
   showRepeatBadges: boolean;
   showTagBadges: boolean;
   showScheduleBadges: boolean;
+  showSubtaskProgress: boolean;
+  showWaitingBadges: boolean;
   timeFormat: TimeFormat;
   /** The user's tag list, read live so a rename or recolour shows at once. */
   tags: TaskTag[];
 }
+
+/** One task a line waits on, resolved against every task there is. */
+export interface WaitingInfo {
+  link: TaskLink;
+  title: string;
+  done: boolean;
+  /** The link points at a task that no longer exists. */
+  missing: boolean;
+}
+
+export type WaitingResolver = (filePath: string, links: TaskLink[]) => WaitingInfo[];
 
 // ── Module-level constants (compiled once, reused on every line) ──────────
 const TASK_REGEX = /^(\s*)- \[([ \/xX!])\] (.+)$/;
@@ -134,6 +156,9 @@ class TaskBadgeWidget extends WidgetType {
     schedule?: TaskSchedule;
     calendarSystem: CalendarSystem;
     timeFormat: TimeFormat;
+    subtasks?: SubtaskCount;
+    waiting?: WaitingInfo[];
+    remind?: number | null;
   };
 
   constructor(
@@ -152,7 +177,8 @@ class TaskBadgeWidget extends WidgetType {
     tagChips?: ResolvedTag[],
     schedule?: TaskSchedule,
     calendarSystem: CalendarSystem = 'gregorian',
-    timeFormat: TimeFormat = '24h'
+    timeFormat: TimeFormat = '24h',
+    relations: { subtasks?: SubtaskCount; waiting?: WaitingInfo[]; remind?: number | null } = {}
   ) {
     super();
     this.widgetState = Object.freeze({
@@ -172,6 +198,9 @@ class TaskBadgeWidget extends WidgetType {
       schedule,
       calendarSystem,
       timeFormat,
+      subtasks: relations.subtasks,
+      waiting: relations.waiting,
+      remind: relations.remind,
     });
   }
 
@@ -221,7 +250,19 @@ class TaskBadgeWidget extends WidgetType {
       this.widgetState.calendarSystem === other.widgetState.calendarSystem &&
       this.widgetState.timeFormat === other.widgetState.timeFormat;
 
+    const sc = this.widgetState.subtasks;
+    const osc = other.widgetState.subtasks;
+    const subtasksEq = (!sc && !osc) || (!!sc && !!osc && sc.done === osc.done && sc.total === osc.total);
+    const w = this.widgetState.waiting ?? [];
+    const ow = other.widgetState.waiting ?? [];
+    const waitingEq =
+      w.length === ow.length &&
+      w.every((item, i) => item.title === ow[i].title && item.done === ow[i].done && item.missing === ow[i].missing);
+
     return (
+      subtasksEq &&
+      waitingEq &&
+      this.widgetState.remind === other.widgetState.remind &&
       this.widgetState.status === other.widgetState.status &&
       this.widgetState.deadline === other.widgetState.deadline &&
       this.widgetState.priority === other.widgetState.priority &&
@@ -303,7 +344,7 @@ class TaskBadgeWidget extends WidgetType {
     }
 
     if (s.schedule) {
-      container.appendChild(
+      const plan = container.appendChild(
         createScheduleChip({
           schedule: s.schedule,
           language: s.language,
@@ -316,6 +357,18 @@ class TaskBadgeWidget extends WidgetType {
           deadline: s.deadline,
           priority: s.priority,
           tags: s.tags,
+        })
+      );
+      if (s.remind !== undefined && s.schedule.start) addRemindMark(plan, s.remind, s.language);
+    }
+
+    if (s.waiting?.length) {
+      const waiting = s.waiting;
+      container.appendChild(
+        createWaitingChip(waiting, s.language, (index) => {
+          container.dispatchEvent(
+            new CustomEvent('taskpro-waiting-click', { bubbles: true, detail: { filePath: s.filePath, link: waiting[index].link } })
+          );
         })
       );
     }
@@ -343,6 +396,8 @@ class TaskBadgeWidget extends WidgetType {
           language: s.language,
         })
       );
+    } else if (s.subtasks) {
+      container.appendChild(createSubtaskChip(s.subtasks.done, s.subtasks.total, s.language));
     }
 
     // Last in the DOM, so with the row reversed the tags sit nearest the text.
@@ -364,7 +419,8 @@ function buildDecorations(
   settings: DecorationSettings,
   getProgress: (filePath: string, blockId?: string) => TaskProgress | undefined,
   getTimer: (filePath: string, blockId?: string) => TaskTimer | undefined,
-  getBlockId?: (filePath: string, lineContent: string) => string | undefined
+  getBlockId?: (filePath: string, lineContent: string) => string | undefined,
+  getWaiting?: WaitingResolver
 ): DecorationSet {
   const builder = new RangeSetBuilder<Decoration>();
 
@@ -436,6 +492,13 @@ function buildDecorations(
         const schedule = settings.showScheduleBadges && content.includes('@schedule(')
           ? extractSchedule(content)
           : undefined;
+        const doc = view.state.doc;
+        const subtasks = settings.showSubtaskProgress
+          ? subtaskCountAt((n) => doc.line(n + 1).text, doc.lines, line.number - 1) ?? undefined
+          : undefined;
+        const waitingLinks = settings.showWaitingBadges && content.includes('@waiting(') ? extractWaiting(content) : [];
+        const waiting = waitingLinks.length && getWaiting ? getWaiting(filePath, waitingLinks) : undefined;
+        const remind = schedule && content.includes('@remind(') ? extractRemind(content) : undefined;
 
         if (deadline) {
           const deadlineMatch = DEADLINE_MATCH_REGEX.exec(content);
@@ -489,6 +552,17 @@ function buildDecorations(
           addRange(scheduleStart, scheduleStart + scheduleMatch[0].length, HIDE_DECO_NONINCLUSIVE);
         }
 
+        // A dependency and a reminder are hidden while their chip says them.
+        for (const [shown, pattern] of [
+          [!!waiting, WAITING_MARKER_PATTERN],
+          [remind !== undefined, REMIND_MARKER_PATTERN],
+        ] as const) {
+          const match = shown ? pattern.exec(content) : null;
+          if (!match) continue;
+          const contentStart = line.from + (lineText.length - taskMatch[3].length);
+          addRange(contentStart + match.index, contentStart + match.index + match[0].length, HIDE_DECO_NONINCLUSIVE);
+        }
+
         const progressMatch = PROGRESS_MATCH_REGEX.exec(content);
         if (progressMatch) {
           const contentStart = line.from + (lineText.length - taskMatch[3].length);
@@ -524,7 +598,8 @@ function buildDecorations(
               tagChips,
               schedule,
               settings.calendarSystem,
-              settings.timeFormat
+              settings.timeFormat,
+              { subtasks, waiting, remind }
             ),
             side: 1,
           }),
@@ -552,7 +627,8 @@ export function createTaskBadgePlugin(
   getSettings: () => DecorationSettings,
   getProgress: (filePath: string, blockId?: string) => TaskProgress | undefined,
   getTimer: (filePath: string, blockId?: string) => TaskTimer | undefined,
-  getBlockId?: (filePath: string, lineContent: string) => string | undefined
+  getBlockId?: (filePath: string, lineContent: string) => string | undefined,
+  getWaiting?: WaitingResolver
 ) {
   return ViewPlugin.fromClass(
     class {
@@ -581,7 +657,8 @@ export function createTaskBadgePlugin(
             getSettings(),
             getProgress,
             getTimer,
-            getBlockId
+            getBlockId,
+            getWaiting
           );
         } catch (error) {
           console.error('TaskPro: failed to build task badges for this view', error);

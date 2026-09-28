@@ -61,6 +61,11 @@ export interface ContextMenuOptions {
   header?: string;
   /** A placeholder turns the search field on. */
   searchPlaceholder?: string;
+  /**
+   * What shows while the search field is empty, when that is not everything
+   * the search can find: a picker of every task shows the nearest few.
+   */
+  idleSections?: () => MenuSection[];
   rtl?: boolean;
   onClose?: () => void;
 }
@@ -335,7 +340,7 @@ export function openContextMenu(options: ContextMenuOptions): ContextMenuHandle 
     closeFrom(1);
     const query = search?.value.trim().toLowerCase() ?? '';
     if (!query) {
-      renderRows(root, rootList, sections(), 0);
+      renderRows(root, rootList, options.idleSections?.() ?? sections(), 0);
     } else {
       const terms = query.split(/\s+/);
       const found = flatten(sections()).filter(({ entry, path }) => {

@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "node esbuild.config.mjs",
     "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
-    "test": "node test/recurrence.mjs && node test/focus-timer.mjs && node test/tags.mjs && node test/board.mjs && node test/calendar.mjs && node test/plugin-edits.mjs",
+    "test": "node test/recurrence.mjs && node test/focus-timer.mjs && node test/tags.mjs && node test/board.mjs && node test/relations.mjs && node test/calendar.mjs && node test/plugin-edits.mjs",
     "test:ui": "node test/board-interactions.mjs && node test/calendar-interactions.mjs",
     "check:contrast": "node test/contrast-check.mjs",
     "previews": "node test/render-previews.mjs"

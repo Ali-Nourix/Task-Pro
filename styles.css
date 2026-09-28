@@ -216,6 +216,8 @@ settings:
   --taskpro-accent-timer-done: var(--color-red, #c0392b);
   --taskpro-accent-repeat: var(--color-purple, #7048b6);
   --taskpro-accent-schedule: var(--color-pink, #c2477f);
+  --taskpro-accent-waiting: var(--color-orange, #c1741f);
+  --taskpro-accent-subtasks: var(--taskpro-accent-progressbar, var(--color-cyan, #1f8a9e));
 
   /* How far a chip tints its own background and border out of its accent.
      Percentages, so they read the same against any backdrop. */
@@ -1145,6 +1147,49 @@ li.task-list-item {
   gap: 4px;
   cursor: pointer;
   white-space: nowrap;
+}
+
+/* ==========================================================================
+   Subtasks and dependencies: "2/4" on a parent, and what a task waits on
+   ========================================================================== */
+.taskpro-subtask-badge {
+  --taskpro-chip-accent: var(--taskpro-accent-subtasks);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.taskpro-subtask-badge[data-state="done"] {
+  --taskpro-chip-accent: var(--taskpro-accent-done);
+}
+.taskpro-waiting-badge {
+  --taskpro-chip-accent: var(--taskpro-accent-waiting);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 22em;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.taskpro-waiting-badge .taskpro-chip__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  unicode-bidi: plaintext;
+}
+/* Everything it waited on is done: it can start, so the chip steps back. */
+.taskpro-waiting-badge[data-state="done"] {
+  --taskpro-chip-accent: var(--taskpro-accent-notstarted);
+}
+.taskpro-chip__remind {
+  display: inline-flex;
+  margin-inline-start: 2px;
+  opacity: 0.85;
+}
+.taskpro-chip__remind .svg-icon {
+  width: 0.95em;
+  height: 0.95em;
 }
 
 /* ==========================================================================
@@ -2335,6 +2380,15 @@ button.taskpro-chip:focus-visible {
   width: 12px;
   height: 12px;
 }
+.taskpro-board .taskpro-board__waiting {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--taskpro-accent-waiting);
+}
+.taskpro-board .taskpro-board__waiting .svg-icon {
+  width: 12px;
+  height: 12px;
+}
 .taskpro-board .taskpro-board__open {
   flex: 0 0 auto;
   margin-inline-start: auto;
@@ -2404,6 +2458,43 @@ button.taskpro-chip:focus-visible {
 }
 .taskpro-board button.taskpro-board__progress:hover {
   background: none;
+}
+/* A parent's subtasks: the same bar, read only, with a count instead of a percentage. */
+.taskpro-board .taskpro-board__progress.is-subtasks {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 2px 0;
+  cursor: default;
+  --taskpro-accent-progressbar: var(--taskpro-accent-subtasks);
+}
+.taskpro-board .taskpro-board__progress.is-subtasks.is-complete {
+  --taskpro-accent-progressbar: var(--taskpro-accent-done);
+}
+.taskpro-board .taskpro-board__progress-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--text-faint);
+}
+.taskpro-board .taskpro-board__progress-icon .svg-icon {
+  width: 13px;
+  height: 13px;
+}
+.taskpro-board .taskpro-board__waiting-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.taskpro-board .taskpro-board__waiting-list .taskpro-chip {
+  max-width: 100%;
+}
+.taskpro-board .taskpro-board__more-count {
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+  font-variant-numeric: tabular-nums;
 }
 .taskpro-board .taskpro-board__progress-bar {
   flex: 1 1 auto;
@@ -4332,6 +4423,24 @@ button.taskpro-chip:focus-visible {
   color: var(--text-faint);
   font-size: var(--font-ui-small);
 }
+.taskpro-board .taskpro-cal-prop__text {
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+}
+/* A task still waiting on another: an hourglass by its title. */
+.taskpro-board .taskpro-cal__waiting {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--taskpro-accent-waiting);
+}
+.taskpro-board .taskpro-cal__waiting svg {
+  width: 11px;
+  height: 11px;
+}
+.taskpro-board .taskpro-cal__agenda-title .taskpro-cal__waiting {
+  margin-inline-start: 6px;
+  vertical-align: -1px;
+}
 .taskpro-board .taskpro-cal-prop__aside {
   color: var(--text-faint);
   font-size: var(--font-ui-smaller);
@@ -4999,4 +5108,47 @@ button.taskpro-chip:focus-visible {
   font-size: var(--font-ui-smaller);
   white-space: nowrap;
   cursor: pointer;
+}
+
+/* ── The notice before a plan starts ─────────────────────────────────────── */
+.notice .notice-message.taskpro-plan-notice,
+.notice.taskpro-plan-notice {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 240px;
+  max-width: 340px;
+}
+.taskpro-plan-notice__when {
+  color: var(--taskpro-accent-schedule);
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-semibold);
+}
+.taskpro-plan-notice__title {
+  overflow-wrap: anywhere;
+  color: var(--text-normal);
+  font-weight: var(--font-medium);
+  unicode-bidi: plaintext;
+}
+.taskpro-plan-notice__plan {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-variant-numeric: tabular-nums;
+}
+.taskpro-plan-notice__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.notice button.taskpro-plan-notice__action {
+  height: auto;
+  min-height: 28px;
+  padding: 3px 10px;
+  font-size: var(--font-ui-smaller);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.notice button.taskpro-plan-notice__action.mod-cta {
+  margin-inline-start: auto;
 }

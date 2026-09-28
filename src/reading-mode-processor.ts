@@ -20,12 +20,17 @@ import {
   extractProgress,
   extractPriority,
   extractRepeat,
+  extractRemind,
   extractSchedule,
   extractTags,
+  extractWaiting,
+  REMIND_MARKER_PATTERN_GLOBAL,
   SCHEDULE_MARKER_PATTERN_GLOBAL,
 } from './task-metadata';
+import type { WaitingResolver } from './decorations';
 import { ResolvedTag, TaskTag, resolveTag } from './tags';
 import {
+  addRemindMark,
   appendTagChips,
   applyChipScale,
   createDeadlineChip,
@@ -34,7 +39,9 @@ import {
   createRepeatChip,
   createScheduleChip,
   createStatusChip,
+  createSubtaskChip,
   createTimerChip,
+  createWaitingChip,
 } from './ui/chips';
 
 /** A pattern that matches nothing, used to switch off an optional strip. */
@@ -56,8 +63,66 @@ export interface ReadingModeSettings {
   showRepeatBadges: boolean;
   showTagBadges: boolean;
   showScheduleBadges: boolean;
+  showSubtaskProgress: boolean;
+  showWaitingBadges: boolean;
   timeFormat: TimeFormat;
   tags: TaskTag[];
+}
+
+/**
+ * The line a rendered task item came from. Its text is not enough for a
+ * dependency, since Obsidian has already turned the link into an anchor.
+ */
+function sourceLine(item: Element, root: HTMLElement, ctx: MarkdownPostProcessorContext): string | null {
+  const offset = Number((item as HTMLElement).dataset.line);
+  const info = ctx.getSectionInfo(root);
+  if (!info || !Number.isFinite(offset)) return null;
+  return info.text.split('\n')[info.lineStart + offset] ?? null;
+}
+
+/** Direct subtasks of a rendered item: task items nested under it with no other task in between. */
+function renderedSubtasks(item: Element): { done: number; total: number } | null {
+  let done = 0;
+  let total = 0;
+  item.querySelectorAll('li.task-list-item').forEach((child) => {
+    if (child.parentElement?.closest('li.task-list-item') !== item) return;
+    total++;
+    const box = child.querySelector('input[type="checkbox"]');
+    const marker = box?.getAttribute('data-task') ?? child.getAttribute('data-task');
+    if (marker ? marker.toLowerCase() === 'x' : (box as HTMLInputElement | null)?.checked) done++;
+  });
+  return total ? { done, total } : null;
+}
+
+/** Removes `@waiting(…)` from a rendered line: the text around it and the links Obsidian made inside. */
+function hideWaitingMarker(root: Element): void {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let node = walker.nextNode() as Text | null;
+  while (node) {
+    const at = node.textContent?.indexOf('@waiting(') ?? -1;
+    if (at === -1) {
+      node = walker.nextNode() as Text | null;
+      continue;
+    }
+    const text = node.textContent!;
+    const close = text.indexOf(')', at);
+    if (close !== -1) {
+      node.textContent = text.slice(0, at) + text.slice(close + 1);
+      continue;
+    }
+    node.textContent = text.slice(0, at);
+    let next = node.nextSibling;
+    while (next) {
+      const after = next.nextSibling;
+      if (next.nodeType === Node.TEXT_NODE && next.textContent?.includes(')')) {
+        next.textContent = next.textContent.slice(next.textContent.indexOf(')') + 1);
+        break;
+      }
+      next.parentNode?.removeChild(next);
+      next = after;
+    }
+    return;
+  }
 }
 
 /**
@@ -68,7 +133,8 @@ export function createReadingModeProcessor(
   getSettings: () => ReadingModeSettings,
   getProgress: (filePath: string, blockId?: string) => TaskProgress | undefined,
   getTimer: (filePath: string, blockId?: string) => TaskTimer | undefined,
-  getBlockId?: (filePath: string, lineContent: string) => string | undefined
+  getBlockId?: (filePath: string, lineContent: string) => string | undefined,
+  getWaiting?: WaitingResolver
 ) {
   return (el: HTMLElement, ctx: MarkdownPostProcessorContext) => {
     const settings = getSettings();
@@ -142,6 +208,14 @@ export function createReadingModeProcessor(
         ? extractTags(text).map((key) => resolveTag(key, settings.tags))
         : [];
       const schedule = settings.showScheduleBadges ? extractSchedule(text) : undefined;
+      const remind = schedule?.start && text.includes('@remind(') ? extractRemind(text) : undefined;
+      const subtasks = settings.showSubtaskProgress ? renderedSubtasks(item) : null;
+      let waiting: ReturnType<WaitingResolver> | undefined;
+      if (settings.showWaitingBadges && getWaiting && text.includes('@waiting(')) {
+        const line = sourceLine(item, el, ctx);
+        const links = line ? extractWaiting(line) : [];
+        if (links.length) waiting = getWaiting(ctx.sourcePath, links);
+      }
 
       // Extract tags
       const tagMatches = text.matchAll(/#([a-zA-Z0-9_-]+)/g);
@@ -161,10 +235,12 @@ export function createReadingModeProcessor(
         blockId,
         tags,
         tagChips,
-        schedule
+        schedule,
+        { subtasks, waiting, remind }
       );
 
       hideInlineTaskMetadata(item, settings.showRepeatBadges, settings.showTagBadges, settings.showScheduleBadges);
+      if (waiting) hideWaitingMarker(item);
       
       // Append to the list item
       item.appendChild(badgeContainer);
@@ -204,6 +280,7 @@ function hideInlineTaskMetadata(root: Element, hideRepeat: boolean, hideTags: bo
       )
       .replace(hideTags ? TAG_MARKER_TEXT : NEVER_MATCHES, '')
       .replace(hideSchedule ? SCHEDULE_MARKER_TEXT : NEVER_MATCHES, '')
+      .replace(hideSchedule ? REMIND_MARKER_PATTERN_GLOBAL : NEVER_MATCHES, '')
       .replace(/\uD83D\uDD3A|\u23EB|\uD83D\uDD3C|\uD83D\uDD3D|\u23EC/g, '')
       .replace(/\s*\^[a-zA-Z0-9-]+\s*$/g, '')
       .replace(/\s{2,}/g, ' ');
@@ -219,6 +296,7 @@ function hideInlineTaskMetadata(root: Element, hideRepeat: boolean, hideTags: bo
         || (hideRepeat && /@repeat\(/i.test(textNode.textContent))
         || (hideTags && textNode.textContent.includes('@tag('))
         || (hideSchedule && textNode.textContent.includes('@schedule('))
+        || (hideSchedule && textNode.textContent.includes('@remind('))
         || /\uD83D\uDD3A|\u23EB|\uD83D\uDD3C|\uD83D\uDD3D|\u23EC/.test(textNode.textContent)
         || /\^[a-zA-Z0-9-]+/.test(textNode.textContent);
       if (!cleanedText.trim() && hadMetadata) {
@@ -251,7 +329,12 @@ function createInteractiveBadgeContainer(
   blockId?: string,
   tags?: string[],
   tagChips: ResolvedTag[] = [],
-  schedule?: TaskSchedule
+  schedule?: TaskSchedule,
+  relations: {
+    subtasks?: { done: number; total: number } | null;
+    waiting?: ReturnType<WaitingResolver>;
+    remind?: number | null;
+  } = {}
 ): HTMLElement {
   const container = document.createElement('span');
   container.className = 'taskpro-badge-container';
@@ -314,7 +397,7 @@ function createInteractiveBadgeContainer(
   }
 
   if (schedule) {
-    container.appendChild(
+    const plan = container.appendChild(
       createScheduleChip({
         schedule,
         language: settings.badgeLanguage,
@@ -327,6 +410,18 @@ function createInteractiveBadgeContainer(
         deadline: deadline ?? undefined,
         priority,
         tags,
+      })
+    );
+    if (relations.remind !== undefined && schedule.start) addRemindMark(plan, relations.remind, settings.badgeLanguage);
+  }
+
+  const waiting = relations.waiting;
+  if (waiting?.length) {
+    container.appendChild(
+      createWaitingChip(waiting, settings.badgeLanguage, (index) => {
+        container.dispatchEvent(
+          new CustomEvent('taskpro-waiting-click', { bubbles: true, detail: { filePath, link: waiting[index].link } })
+        );
       })
     );
   }
@@ -354,6 +449,8 @@ function createInteractiveBadgeContainer(
         language: settings.badgeLanguage,
       })
     );
+  } else if (relations.subtasks) {
+    container.appendChild(createSubtaskChip(relations.subtasks.done, relations.subtasks.total, settings.badgeLanguage));
   }
 
   if (tagChips.length) {

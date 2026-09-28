@@ -12,6 +12,7 @@ import {
   PRIORITY_ICON_NAMES,
   PRIORITY_LABELS,
   REPEAT_PRESETS,
+  STATUS_ICON_NAMES,
   STATUS_LABELS,
   TASK_PRIORITIES,
   TaskRepeat,
@@ -22,7 +23,9 @@ import {
 import type { TaskTag } from '../tags';
 import { isolate } from '../bidi';
 import { resolveTag, resolveTagColor } from '../tags';
+import { openContextMenu } from '../ui/context-menu';
 import type { MenuEntry, MenuSection } from '../ui/context-menu';
+import { RelationIndex } from './task-relations';
 import { addPanelButtonRow, addPanelField, openTaskProPanel } from '../ui/panel';
 import { openCustomRepeatPanel, openProgressPanel } from '../task-popover';
 import { getRepeatLabels } from '../timer-localization';
@@ -79,6 +82,20 @@ interface ActionLabels {
   search: string;
   add: string;
   cancel: string;
+  waitingOn: string;
+  waitOnTask: string;
+  findTask: string;
+  blockingThis: string;
+  missingTask: string;
+  stopWaiting: string;
+  waitingCount: (count: number) => string;
+  remind: string;
+  remindDefault: (minutes: number) => string;
+  remindAtStart: string;
+  remindBefore: (minutes: number) => string;
+  remindOff: string;
+  remindSettingOff: string;
+  fromSubtasks: (done: number, total: number) => string;
 }
 
 const EN: ActionLabels = {
@@ -118,6 +135,20 @@ const EN: ActionLabels = {
   search: 'Search actions…',
   add: 'Add',
   cancel: 'Cancel',
+  waitingOn: 'Waiting on',
+  waitOnTask: 'Wait on a task…',
+  findTask: 'Find a task…',
+  blockingThis: 'Waiting on this task',
+  missingTask: 'A task that is gone',
+  stopWaiting: 'Stop waiting',
+  waitingCount: (count) => (count === 1 ? '1 task' : `${count} tasks`),
+  remind: 'Remind me',
+  remindDefault: (minutes) => `As in settings (${minutes === 0 ? 'at the start' : durationText('en', minutes) + ' before'})`,
+  remindAtStart: 'At the start',
+  remindBefore: (minutes) => `${durationText('en', minutes)} before`,
+  remindOff: 'No reminder',
+  remindSettingOff: 'As in settings (off)',
+  fromSubtasks: (done, total) => `${done} of ${total} subtasks done`,
 };
 
 const FA: ActionLabels = {
@@ -157,7 +188,33 @@ const FA: ActionLabels = {
   search: 'جستجوی کارها…',
   add: 'افزودن',
   cancel: 'انصراف',
+  waitingOn: 'منتظرِ',
+  waitOnTask: 'منتظر یک تسک بمان…',
+  findTask: 'پیدا کردن تسک…',
+  blockingThis: 'منتظرِ این تسک',
+  missingTask: 'تسکی که دیگر نیست',
+  stopWaiting: 'دیگر منتظر نمان',
+  waitingCount: (count) => `${count} تسک`,
+  remind: 'یادآوری',
+  remindDefault: (minutes) => `مثل تنظیمات (${minutes === 0 ? 'سر شروع' : durationText('fa', minutes) + ' قبل'})`,
+  remindAtStart: 'سر شروع',
+  remindBefore: (minutes) => `${durationText('fa', minutes)} قبل`,
+  remindOff: 'بدون یادآوری',
+  remindSettingOff: 'مثل تنظیمات (خاموش)',
+  fromSubtasks: (done, total) => `${done} از ${total} زیرتسک انجام شده`,
 };
+
+/** "10 min", "1 h", "1 h 30 min"; in Persian "۱۰ دقیقه". */
+export function durationText(language: Language, minutes: number): string {
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  if (language === 'fa') {
+    const parts = [hours ? `${hours} ساعت` : '', rest ? `${rest} دقیقه` : ''].filter(Boolean);
+    return parts.join(' و ') || '0 دقیقه';
+  }
+  const parts = [hours ? `${hours} h` : '', rest ? `${rest} min` : ''].filter(Boolean);
+  return parts.join(' ') || '0 min';
+}
 
 export function getActionLabels(language: Language): ActionLabels {
   return language === 'fa' ? FA : EN;
@@ -174,6 +231,8 @@ export interface TaskActionOptions {
   anchor: HTMLElement;
   /** Rows the caller puts first, such as the calendar's "Open card". */
   lead?: MenuEntry[];
+  /** The reminder setting, for what "as in settings" means beside a plan. */
+  planReminder?: { enabled: boolean; leadMinutes: number };
 }
 
 /** The keywords an entry is also found by: its English label, so English typing works in Persian. */
@@ -301,10 +360,178 @@ export function planSections(o: TaskActionOptions): MenuSection[] {
   if (host.editSchedule) {
     sections.push({ entries: [{ label: labels.pickTime, icon: 'calendar-clock', onSelect: () => host.editSchedule!(task) }] });
   }
+  const remind = remindEntry(o);
+  if (remind) sections.push({ entries: [remind] });
   if (task.schedule) {
     sections.push({ entries: [{ label: labels.removePlan, icon: 'calendar-x', onSelect: () => setSchedule(task, null) }] });
   }
   return sections;
+}
+
+const REMIND_CHOICES = [0, 5, 10, 15, 30, 60];
+
+/** What the task's reminder is, in words: its own time, or the setting's. */
+export function remindHint(o: TaskActionOptions): string {
+  const labels = getActionLabels(o.language);
+  const setting = o.planReminder ?? { enabled: true, leadMinutes: 10 };
+  const describe = (minutes: number) => (minutes === 0 ? labels.remindAtStart : labels.remindBefore(minutes));
+  const own = o.task.remind;
+  if (own === null) return labels.remindOff;
+  if (own !== undefined) return describe(own);
+  return setting.enabled ? describe(setting.leadMinutes) : labels.remindOff;
+}
+
+/** The reminder's choices: the setting, a time of its own, or none. Empty without a timed plan. */
+export function remindSections(o: TaskActionOptions): MenuSection[] {
+  const { host, task } = o;
+  const setRemind = host.setRemind?.bind(host);
+  if (!setRemind || !task.schedule?.start) return [];
+  const labels = getActionLabels(o.language);
+  const setting = o.planReminder ?? { enabled: true, leadMinutes: 10 };
+  const describe = (minutes: number) => (minutes === 0 ? labels.remindAtStart : labels.remindBefore(minutes));
+  const own = task.remind;
+  return [
+    {
+      entries: [
+        {
+          label: setting.enabled ? labels.remindDefault(setting.leadMinutes) : labels.remindSettingOff,
+          icon: 'settings',
+          checked: own === undefined,
+          onSelect: () => (own === undefined ? undefined : setRemind(task, undefined)),
+        },
+      ],
+    },
+    {
+      entries: REMIND_CHOICES.map((minutes) => ({
+        label: describe(minutes),
+        icon: minutes === 0 ? 'bell-ring' : 'bell',
+        checked: own === minutes,
+        onSelect: () => (own === minutes ? undefined : setRemind(task, minutes)),
+      })),
+    },
+    {
+      entries: [
+        { label: labels.remindOff, icon: 'bell-off', checked: own === null, onSelect: () => (own === null ? undefined : setRemind(task, null)) },
+      ],
+    },
+  ];
+}
+
+/** "Remind me" for a plan with a start time, as a row of the plan's menu. */
+function remindEntry(o: TaskActionOptions): MenuEntry | null {
+  if (!o.host.setRemind || !o.task.schedule?.start) return null;
+  const labels = getActionLabels(o.language);
+  return withKeywords(
+    { label: labels.remind, icon: 'bell', hint: remindHint(o), submenu: () => remindSections(o) },
+    'remind reminder alert notify bell'
+  );
+}
+
+// ── Waiting on other tasks ─────────────────────────────────────────────────
+
+/** The relations of every task there is, built when a menu asks. */
+function relations(o: TaskActionOptions): RelationIndex {
+  return new RelationIndex(o.host.store.all());
+}
+
+/**
+ * What the task waits on, each a click away from being dropped, a way to
+ * add one, and the tasks that wait on it in turn.
+ */
+export function waitingSections(o: TaskActionOptions): MenuSection[] {
+  const { host, task } = o;
+  const setWaiting = host.setWaiting?.bind(host);
+  if (!setWaiting) return [];
+  const labels = getActionLabels(o.language);
+  const index = relations(o);
+  const blockers = index.blockersOf(task);
+  const keep = (without: number) =>
+    blockers.filter((_, i) => i !== without).map((blocker) => blocker.task).filter((t): t is BoardTask => !!t);
+
+  const sections: MenuSection[] = [];
+  if (blockers.length) {
+    sections.push({
+      entries: blockers.map((blocker, i) => ({
+        label: blocker.task ? displayTitle(blocker.task.text) || '—' : labels.missingTask,
+        icon: blocker.task ? STATUS_ICON_NAMES[blocker.task.status] : 'link-2-off',
+        hint: blocker.task?.fileName ?? blocker.link.path,
+        checked: true,
+        keywords: 'remove stop waiting',
+        onSelect: () => setWaiting(task, keep(i)),
+      })),
+    });
+  }
+  sections.push({
+    entries: [
+      {
+        label: labels.waitOnTask,
+        icon: 'plus',
+        onSelect: () =>
+          openTaskPicker(o, index, (picked) => void setWaiting(task, [...keep(-1), picked])),
+      },
+    ],
+  });
+  const dependents = index.dependentsOf(task);
+  if (dependents.length) {
+    sections.push({
+      title: labels.blockingThis,
+      entries: dependents.map((dependent) => ({
+        label: displayTitle(dependent.text) || '—',
+        icon: STATUS_ICON_NAMES[dependent.status],
+        hint: dependent.fileName,
+        onSelect: () => host.reveal(dependent),
+      })),
+    });
+  }
+  if (blockers.length > 1) {
+    sections.push({ entries: [{ label: labels.stopWaiting, icon: 'x', onSelect: () => setWaiting(task, []) }] });
+  }
+  return sections;
+}
+
+/**
+ * A searchable list of the tasks this one could wait on: every task that is
+ * not done and would not close a loop. The ones in the same note come first
+ * until something is typed.
+ */
+export function openTaskPicker(o: TaskActionOptions, index: RelationIndex, onPick: (task: BoardTask) => void): void {
+  const { task } = o;
+  const labels = getActionLabels(o.language);
+  const already = new Set(index.blockersOf(task).map((blocker) => blocker.task?.id));
+  const candidates = o.host.store
+    .all()
+    .filter((candidate) => candidate.status !== '[x]' && !already.has(candidate.id) && !index.wouldCycle(task, candidate));
+  const entry = (candidate: BoardTask): MenuEntry => ({
+    label: displayTitle(candidate.text) || '—',
+    icon: STATUS_ICON_NAMES[candidate.status],
+    hint: candidate.fileName,
+    keywords: `${candidate.fileName} ${candidate.tags.join(' ')}`,
+    onSelect: () => onPick(candidate),
+  });
+  const near = [
+    ...candidates.filter((candidate) => candidate.filePath === task.filePath),
+    ...candidates.filter((candidate) => candidate.filePath !== task.filePath),
+  ];
+  const container = (o.anchor.closest('.taskpro-board') as HTMLElement | null) ?? o.anchor.ownerDocument.body;
+  openContextMenu({
+    container,
+    at: o.anchor.getBoundingClientRect(),
+    rtl: o.language === 'fa',
+    header: labels.waitOnTask.replace(/…$/, ''),
+    searchPlaceholder: labels.findTask,
+    sections: [{ entries: candidates.map(entry) }],
+    idleSections: () => [{ entries: near.slice(0, 12).map(entry) }],
+  });
+}
+
+/** The row's hint: the one task it waits on, or how many. */
+function waitingHint(o: TaskActionOptions): string {
+  const labels = getActionLabels(o.language);
+  const blockers = relations(o).blockersOf(o.task);
+  if (!blockers.length) return labels.none;
+  if (blockers.length > 1) return labels.waitingCount(blockers.length);
+  const only = blockers[0].task;
+  return only ? displayTitle(only.text) || '—' : labels.missingTask;
 }
 
 export function repeatSections(o: TaskActionOptions): MenuSection[] {
@@ -464,6 +691,14 @@ export function taskActionSections(o: TaskActionOptions): MenuSection[] {
           submenu: () => repeatSections(o),
         },
         EN.repeat
+      )
+    );
+  }
+  if (host.setWaiting) {
+    properties.push(
+      withKeywords(
+        { label: labels.waitingOn, icon: 'hourglass', hint: waitingHint(o), submenu: () => waitingSections(o) },
+        'waiting on blocked by depends dependency after'
       )
     );
   }

@@ -197,9 +197,9 @@ try {
   await page.close();
 
   // ── Table columns: the plan's hours, and moving, resizing, hiding columns ─
-  page = await open('?scope=vault&group=none', 1500);
+  page = await open('?scope=vault&group=none', 1700);
   const headers = () => page.$$eval('thead th[data-column]', (els) => els.map((el) => el.dataset.column));
-  eq(await headers(page), ['status', 'tags', 'priority', 'deadline', 'plan', 'progress', 'note'], 'default columns, repeat hidden');
+  eq(await headers(page), ['status', 'tags', 'priority', 'deadline', 'plan', 'waiting', 'progress', 'note'], 'default columns, repeat hidden');
   const planCell = row(page, 'Send the quote to Acme').locator('.taskpro-table__plan');
   eq(await planCell.locator('.taskpro-chip__label').textContent(), 'Today', 'the plan cell names the day');
   eq(await planCell.locator('.taskpro-board__time').textContent(), '14:00 – 15:30', 'and the hours, from when to when');
@@ -225,7 +225,7 @@ try {
   const noteHead = await center('th[data-column="note"]');
   const status = await center('th[data-column="status"]');
   await drag(noteHead, { x: status.box.x + 6, y: status.y });
-  eq(await headers(page), ['note', 'status', 'tags', 'priority', 'deadline', 'plan', 'progress'], 'a dragged header moves its column');
+  eq(await headers(page), ['note', 'status', 'tags', 'priority', 'deadline', 'plan', 'waiting', 'progress'], 'a dragged header moves its column');
   eq((await page.$$eval('tbody .taskpro-table__row:first-child td[data-column]', (els) => els.map((el) => el.dataset.column)))[0], 'note', 'and its cells move with it');
   eq(await page.locator('th.is-sorted').count(), 0, 'the drop is not a click that sorts');
 
@@ -260,7 +260,7 @@ try {
   eq((await items()).slice(0, 4), ['Note', 'Status', 'Progress', 'Tags'], 'a property dragged in the list');
   eq((await headers(page)).slice(0, 4), ['note', 'status', 'progress', 'tags'], 'and in the table');
   await page.locator('.taskpro-menu__item', { hasText: 'Reset to default' }).click();
-  eq(await headers(page), ['status', 'tags', 'priority', 'deadline', 'plan', 'progress', 'note'], 'reset to the default columns');
+  eq(await headers(page), ['status', 'tags', 'priority', 'deadline', 'plan', 'waiting', 'progress', 'note'], 'reset to the default columns');
   await page.keyboard.press('Escape');
 
   // A header moves with Alt and the arrow keys too.
@@ -271,7 +271,7 @@ try {
   await page.close();
 
   // Persian: the far edge is on the left, so dragging it left widens the column.
-  page = await open('?scope=vault&group=none&lang=fa', 1500);
+  page = await open('?scope=vault&group=none&lang=fa', 1700);
   const faEdge = await page.locator('th[data-column="tags"] .taskpro-table__resize').boundingBox();
   await drag({ x: faEdge.x + faEdge.width / 2, y: faEdge.y + 10 }, { x: faEdge.x + faEdge.width / 2 - 40, y: faEdge.y + 10 });
   eq(await page.$eval('col[data-column="tags"]', (el) => el.style.width), '220px', 'RTL resize follows the edge');
@@ -280,6 +280,58 @@ try {
   await drag(faNote, { x: faStatus.box.x + faStatus.box.width - 6, y: faStatus.y });
   eq((await headers(page))[0], 'note', 'RTL drag lands where the line showed');
   eq(page.errors, [], 'no page errors with RTL columns');
+  await page.close();
+
+  // ── Waiting on another task, and a parent's subtasks ─────────────────────
+  page = await open('?scope=vault&group=none', 1700);
+  const waitingCell = () => row(page, 'Send the quote to Acme').locator('.taskpro-table__waiting');
+  eq(await waitingCell().locator('.taskpro-chip__label').allTextContents(), ['Draft the launch post'], 'the task it waits on, by name');
+  eq(await waitingCell().locator('.taskpro-waiting-badge').getAttribute('data-state'), 'waiting', 'still open, so still waiting');
+  await waitingCell().click();
+  await page.locator('.taskpro-menu__item', { hasText: 'Wait on a task' }).click();
+  eq(await page.locator('.taskpro-menu__search').getAttribute('placeholder'), 'Find a task…', 'a task picker, with search');
+  eq((await page.locator('.taskpro-menu__item').allTextContents()).some((text) => text.startsWith('Send the quote')), false, 'a task cannot wait on itself');
+  await page.locator('.taskpro-menu__search').fill('invoice');
+  await page.locator('.taskpro-menu__item', { hasText: 'Chase the missing invoice' }).click();
+  await page.waitForTimeout(80);
+  const week = (await note(page, 'Planner/2026-W39.md')).split('\n');
+  const invoiceId = /\^(tp-[a-z0-9]+)$/.exec(week[2])?.[1];
+  eq(!!invoiceId, true, 'the task waited on is given a block ID');
+  eq(week[1].includes(`@waiting([[Planner/2026-W39#^launch]], [[Planner/2026-W39#^${invoiceId}]])`), true, 'both written as block links');
+  eq(await waitingCell().locator('.taskpro-chip__label').allTextContents(), ['Draft the launch post', 'Chase the missing invoice'], 'both shown');
+  // The launch post can no longer wait on the quote: that would be a loop.
+  await page
+    .locator('.taskpro-table__row')
+    .filter({ has: page.locator('.taskpro-board__title', { hasText: 'Draft the launch post' }) })
+    .locator('.taskpro-table__waiting')
+    .click();
+  await page.locator('.taskpro-menu__item', { hasText: 'Wait on a task' }).click();
+  eq((await page.locator('.taskpro-menu__item').allTextContents()).some((text) => text.startsWith('Send the quote')), false, 'no loops offered');
+  await page.keyboard.press('Escape');
+  await waitingCell().click();
+  await page.locator('.taskpro-menu__item', { hasText: 'Draft the launch post' }).click();
+  await page.waitForTimeout(80);
+  eq((await note(page, 'Planner/2026-W39.md')).split('\n')[1].includes('#^launch'), false, 'a click on a ticked one stops waiting on it');
+  await page
+    .locator('.taskpro-table__row')
+    .filter({ has: page.locator('.taskpro-board__title', { hasText: 'Chase the missing invoice' }) })
+    .locator('.taskpro-board__check')
+    .click();
+  await page.waitForTimeout(80);
+  eq(await waitingCell().locator('.taskpro-waiting-badge').getAttribute('data-state'), 'done', 'once it is done, the chip steps back');
+  eq(page.errors, [], 'no page errors with dependencies');
+  await page.close();
+
+  page = await open('?layout=calendar&scope=vault', 1700);
+  await page.locator('.taskpro-board__layout .taskpro-segmented__item', { hasText: 'Table' }).click();
+  await page.locator('.taskpro-board__control', { hasText: 'Group' }).click();
+  await page.locator('.menu .menu-item', { hasText: 'No grouping' }).click();
+  const figma = row(page, 'Learn Figma').locator('.taskpro-table__progress .is-subtasks');
+  eq(await figma.locator('.taskpro-board__progress-text').textContent(), '0/3', "a parent's progress, from its subtasks");
+  await row(page, 'Auto layout').locator('.taskpro-board__check').click();
+  await page.waitForTimeout(80);
+  eq(await figma.locator('.taskpro-board__progress-text').textContent(), '1/3', 'and it follows them');
+  eq(page.errors, [], 'no page errors with subtask progress');
   await page.close();
 
   // ── Board: what cards show, and the columns' order, width and hiding ─────

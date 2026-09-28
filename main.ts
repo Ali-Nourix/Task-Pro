@@ -27,7 +27,7 @@ import { jalaliToGregorian, gregorianToJalali } from './src/date-utils';
 import { TaskProSettingTab } from './src/settings';
 import { TaskImportModal } from './src/import-modal';
 import { SyncManager } from './src/sync-manager';
-import { createTaskBadgePlugin, forceDecorationsRefresh } from './src/decorations';
+import { DecorationSettings, WaitingInfo, createTaskBadgePlugin, forceDecorationsRefresh } from './src/decorations';
 import { createReadingModeProcessor } from './src/reading-mode-processor';
 import {
   extractDeadline,
@@ -42,12 +42,16 @@ import {
   setPriority,
   setRepeat,
   setSchedule,
+  setRemind,
   setTags,
+  setWaiting,
   stripTaskMetadata,
+  TaskLink,
 } from './src/task-metadata';
-import { TaskTimerService } from './src/timer-service';
+import { TaskTimerService, showSystemNotification } from './src/timer-service';
 import { getRepeatLabels, getTimerLabels } from './src/timer-localization';
 import { ReminderService } from './src/reminders/reminder-service';
+import { PlanReminderService } from './src/reminders/plan-reminders';
 import { TaskCreationRegistry } from './src/task-registry';
 import { TaskIndexService } from './src/task-index-service';
 import { getReminderLabels } from './src/reminders/reminder-localization';
@@ -75,6 +79,7 @@ import { RemovedBlock, blockEnd, childIndent, indentOf, removeBlock } from './sr
 import { getActionLabels } from './src/board/task-actions';
 import { displayTitle } from './src/board/board-text';
 import { descendantsOf, indexFamilies } from './src/calendar/calendar-items';
+import { RelationIndex, linkPathOf, newBlockId } from './src/board/task-relations';
 
 /**
  * A task as the editing API addresses it. `lineNumber` is a hint: it is used
@@ -116,6 +121,7 @@ export default class TaskProPlugin extends Plugin {
   settings!: TaskProSettings;
   syncManager!: SyncManager;
   reminderService!: ReminderService;
+  planReminders!: PlanReminderService;
   /** Hidden index of when each task was first seen. Never rendered anywhere. */
   taskRegistry!: TaskCreationRegistry;
   taskIndexService!: TaskIndexService;
@@ -173,6 +179,13 @@ export default class TaskProPlugin extends Plugin {
       this.app,
       () => new Promise((resolve) => this.app.workspace.onLayoutReady(() => resolve()))
     );
+    // Dependencies point into any note, and plan reminders watch every plan,
+    // so the store is loaded once the layout is ready rather than when the
+    // board is first opened.
+    this.taskStore.subscribe(() => this.onTasksChanged());
+    this.app.workspace.onLayoutReady(() => {
+      void this.taskStore.ensureLoaded().then(() => this.onTasksChanged());
+    });
     this.dailyNotes = new DailyNoteService(this.app, () => this.settings.calendar);
     this.registerView(VIEW_TYPE_TASK_BOARD, (leaf) => new TaskBoardView(leaf, this.createBoardHost()));
     this.addRibbonIcon('list-checks', getBoardLabels(this.settings.badgeLanguage).open, () => {
@@ -253,10 +266,11 @@ export default class TaskProPlugin extends Plugin {
     this.registerEditorExtension(
      createTaskBadgePlugin(
        this.app,
-        () => ({ enableBadges: this.settings.enableBadges, badgeLanguage: this.settings.badgeLanguage, badgeSize: this.settings.badgeSize, targetFolder: this.settings.targetFolder, calendarSystem: this.settings.calendarSystem, showPriorityBadges: this.settings.showPriorityBadges, showTimerBadges: this.settings.showTimerBadges, showRepeatBadges: this.settings.showRepeatBadges, showTagBadges: this.settings.showTagBadges, showScheduleBadges: this.settings.showScheduleBadges, timeFormat: this.settings.calendar.timeFormat, tags: this.settings.tags }),
+        () => this.badgeSettings(),
         (filePath: string, blockId?: string) => this.getTaskProgress(filePath, blockId),
         (filePath: string, blockId?: string) => this.timerService.get(filePath, blockId),
-        (filePath: string, lineContent: string) => this.getStoredBlockId(filePath, lineContent)
+        (filePath: string, lineContent: string) => this.getStoredBlockId(filePath, lineContent),
+        (filePath: string, links: TaskLink[]) => this.waitingInfo(filePath, links)
      )
    );
 
@@ -264,12 +278,20 @@ export default class TaskProPlugin extends Plugin {
     this.registerMarkdownPostProcessor(
      createReadingModeProcessor(
        this.app,
-        () => ({ enableBadges: this.settings.enableBadges, badgeLanguage: this.settings.badgeLanguage, badgeSize: this.settings.badgeSize, showBadgesInEmbeds: this.settings.showBadgesInEmbeds, targetFolder: this.settings.targetFolder, calendarSystem: this.settings.calendarSystem, showPriorityBadges: this.settings.showPriorityBadges, showTimerBadges: this.settings.showTimerBadges, showRepeatBadges: this.settings.showRepeatBadges, showTagBadges: this.settings.showTagBadges, showScheduleBadges: this.settings.showScheduleBadges, timeFormat: this.settings.calendar.timeFormat, tags: this.settings.tags }),
+        () => ({ ...this.badgeSettings(), showBadgesInEmbeds: this.settings.showBadgesInEmbeds }),
         (filePath: string, blockId?: string) => this.getTaskProgress(filePath, blockId),
         (filePath: string, blockId?: string) => this.timerService.get(filePath, blockId),
-        (filePath: string, lineContent: string) => this.getStoredBlockId(filePath, lineContent)
+        (filePath: string, lineContent: string) => this.getStoredBlockId(filePath, lineContent),
+        (filePath: string, links: TaskLink[]) => this.waitingInfo(filePath, links)
      )
    );
+
+    // A waiting chip opens the task it waits on.
+    this.registerDomEvent(document.body, 'taskpro-waiting-click' as keyof HTMLElementEventMap, (evt: Event) => {
+      const { filePath, link } = (evt as CustomEvent).detail as { filePath: string; link: TaskLink };
+      const target = link.path ? `${link.path}#^${link.blockId}` : `${filePath.replace(/\.md$/i, '')}#^${link.blockId}`;
+      void this.app.workspace.openLinkText(target, filePath, false);
+    });
 
     // Listen for badge clicks to open popover
     this.registerDomEvent(document.body, 'taskpro-badge-click' as keyof HTMLElementEventMap, (evt: Event) => {
@@ -661,6 +683,34 @@ export default class TaskProPlugin extends Plugin {
       getSettings: () => this.settings,
       saveSettings: () => this.saveSettings(),
       getTaskRegistry: () => this.taskRegistry,
+    });
+
+    // A notice shortly before a planned task starts. Plans in the target
+    // folder and in daily notes count, as they do on the calendar.
+    this.planReminders = new PlanReminderService({
+      tasks: () => {
+        if (!this.taskStore.isLoaded) return null;
+        const daily = this.settings.calendar.dailyNotesFolder.trim().replace(/^\/+|\/+$/g, '');
+        return this.taskStore
+          .all()
+          .filter((task) => this.isFileInTargetFolder(task.filePath) || (!!daily && task.filePath.startsWith(`${daily}/`)));
+      },
+      settings: () => this.settings.reminders,
+      language: () => this.settings.badgeLanguage,
+      planText: (schedule) => this.scheduleLabel(schedule),
+      announced: () => this.settings.reminderState?.firedPlanKeys ?? [],
+      setAnnounced: async (keys) => {
+        this.settings.reminderState = { ...this.settings.reminderState, firedPlanKeys: keys };
+        await this.saveSettings();
+      },
+      reveal: (task) => void this.revealTask(this.boardTaskRef(task)),
+      markDone: (task) => this.setTaskStatusFor(this.boardTaskRef(task), '[x]'),
+      playSound: () => this.reminderService?.playTimerSound(),
+      systemNotification: (title, body) => showSystemNotification(title, body),
+      registerInterval: (id) => this.registerInterval(id),
+    });
+    this.app.workspace.onLayoutReady(() => {
+      void this.taskStore.ensureLoaded().then(() => this.planReminders.start());
     });
 
     // Keep the hidden creation index in step with the vault so task ages
@@ -1288,6 +1338,11 @@ export default class TaskProPlugin extends Plugin {
         board: this.settings.board,
         referenceNotePath: this.settings.referenceNotePath,
         calendar: this.settings.calendar,
+        subtaskProgress: this.settings.showSubtaskProgress,
+        planReminder: {
+          enabled: this.settings.reminders.planReminders,
+          leadMinutes: this.settings.reminders.planLeadMinutes,
+        },
       }),
       savePreferences: () => this.saveSettings(),
       getProgress: (task) => {
@@ -1360,7 +1415,120 @@ export default class TaskProPlugin extends Plugin {
         const nested = descendantsOf(task, indexFamilies(this.taskStore.inFile(task.filePath))).length;
         return this.deleteTaskFor(this.boardTaskRef(task), displayTitle(task.text) || task.text, nested);
       },
+      setWaiting: (task, blockers) => this.setTaskWaiting(task, blockers),
+      setRemind: (task, minutes) => this.setTaskRemindFor(this.boardTaskRef(task), minutes),
     };
+  }
+
+  /** What the note chips need to know about a line's dependencies, from every task the store holds. */
+  private badgeSettings(): DecorationSettings {
+    return {
+      enableBadges: this.settings.enableBadges,
+      badgeLanguage: this.settings.badgeLanguage,
+      badgeSize: this.settings.badgeSize,
+      targetFolder: this.settings.targetFolder,
+      calendarSystem: this.settings.calendarSystem,
+      showPriorityBadges: this.settings.showPriorityBadges,
+      showTimerBadges: this.settings.showTimerBadges,
+      showRepeatBadges: this.settings.showRepeatBadges,
+      showTagBadges: this.settings.showTagBadges,
+      showScheduleBadges: this.settings.showScheduleBadges,
+      showSubtaskProgress: this.settings.showSubtaskProgress,
+      showWaitingBadges: this.settings.showWaitingBadges,
+      timeFormat: this.settings.calendar.timeFormat,
+      tags: this.settings.tags,
+    };
+  }
+
+  /** The tasks every task waits on, resolved once per change to the notes. */
+  private relationsCache: RelationIndex | null = null;
+  /** What the waiting chips last showed, so the editors are redrawn only when that changes. */
+  private waitingSignature = '';
+
+  private relations(): RelationIndex | null {
+    if (!this.taskStore.isLoaded) return null;
+    if (!this.relationsCache) this.relationsCache = new RelationIndex(this.taskStore.all());
+    return this.relationsCache;
+  }
+
+  /** The tasks a line waits on, as its chip names them: their titles, and whether each is done or gone. */
+  private waitingInfo(filePath: string, links: TaskLink[]): WaitingInfo[] {
+    const index = this.relations();
+    return links.map((link) => {
+      const task = index?.resolve(link, filePath);
+      return task
+        ? { link, title: displayTitle(task.text) || task.text, done: task.status === '[x]', missing: false }
+        : { link, title: link.path.split('/').pop() || link.blockId, done: false, missing: !!index };
+    });
+  }
+
+  /**
+   * The store changed: forget the resolved links, and redraw the note chips
+   * if a task something waits on was renamed, ticked off, or went away.
+   */
+  private onTasksChanged(): void {
+    this.relationsCache = null;
+    const index = this.relations();
+    if (!index) return;
+    const parts: string[] = [];
+    for (const task of this.taskStore.all()) {
+      for (const blocker of index.blockersOf(task)) {
+        parts.push(`${blocker.link.path}#${blocker.link.blockId}=${blocker.task ? `${blocker.task.status}${blocker.task.text}` : '-'}`);
+      }
+    }
+    const signature = parts.join('|');
+    if (signature === this.waitingSignature) return;
+    this.waitingSignature = signature;
+    this.refreshDecorations();
+  }
+
+  /**
+   * Makes a task wait on exactly these tasks. A task waited on needs a block
+   * ID in its line for the link to point at: one it has already is used, the
+   * one TaskPro keeps for it out of the note is written in, or a new one is.
+   */
+  private async setTaskWaiting(task: BoardTask, blockers: BoardTask[]): Promise<void> {
+    const links: TaskLink[] = [];
+    for (const blocker of blockers) {
+      const id = await this.ensureInlineBlockId(blocker);
+      if (id) links.push({ path: linkPathOf(blocker.filePath), blockId: id });
+    }
+    const { blockId, file } = this.resolveTaskRef(this.boardTaskRef(task));
+    if (!file) return;
+    const updated = await this.updateTaskLineInFile(file, task.line, blockId, (content) => setWaiting(content, links), task.lineNumber);
+    if (updated) this.refreshDecorations();
+  }
+
+  private async ensureInlineBlockId(task: BoardTask): Promise<string | null> {
+    if (task.blockId) return task.blockId;
+    const file = this.app.vault.getFileByPath(task.filePath);
+    if (!file) return null;
+    const stored = this.getStoredBlockId(task.filePath, task.line);
+    const blocks = this.app.metadataCache.getFileCache(file)?.blocks ?? {};
+    const inNote = new Set(this.taskStore.inFile(task.filePath).map((t) => t.blockId).filter(Boolean));
+    const id = stored ?? newBlockId((candidate) => candidate in blocks || inNote.has(candidate));
+    let nextLine = '';
+    const updated = await this.updateTaskLineInFile(
+      file,
+      task.line,
+      stored,
+      (content) => (nextLine = `${content.replace(/\s+$/, '')} ^${id}`),
+      task.lineNumber
+    );
+    if (!updated) return null;
+    if (stored) {
+      this.removeStoredBlockId(task.filePath, task.line);
+      this.storeBlockId(task.filePath, nextLine, stored);
+    }
+    return id;
+  }
+
+  /** A task's own reminder before its plan starts, or back to the setting with `undefined`. */
+  async setTaskRemindFor(ref: TaskRef, minutes: number | null | undefined): Promise<void> {
+    const { blockId, file } = this.resolveTaskRef(ref);
+    if (!file) return;
+    const updated = await this.updateTaskLineInFile(file, ref.lineContent, blockId, (content) => setRemind(content, minutes), ref.lineNumber);
+    if (updated) this.refreshDecorations();
   }
 
   /**
@@ -2640,6 +2808,7 @@ export default class TaskProPlugin extends Plugin {
     document.body.removeClass('taskpro-hide-badges-in-embeds');
     // Release the reminder ticker, overlay and audio nodes
     this.reminderService?.stop();
+    this.planReminders?.stop();
     this.taskIndexService?.stop();
     // Closing the float also takes its class back off <body>, so a theme's
     // blur never outlives the plugin.

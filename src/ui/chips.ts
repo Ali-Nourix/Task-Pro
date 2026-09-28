@@ -403,3 +403,89 @@ export function createRepeatChip(options: {
 
   return badge;
 }
+
+const RELATION_LABELS: Record<Language, {
+  subtasks: (done: number, total: number) => string;
+  waitingOn: string;
+  waitedOn: string;
+  gone: string;
+  tasks: (count: number) => string;
+  remindAt: (minutes: number) => string;
+  remindOff: string;
+}> = {
+  en: {
+    subtasks: (done, total) => `${done} of ${total} subtasks done`,
+    waitingOn: 'Waiting on',
+    waitedOn: 'Was waiting on (done)',
+    gone: 'a task that is gone',
+    tasks: (count) => `${count} tasks`,
+    remindAt: (minutes) => (minutes === 0 ? 'Reminder at the start' : `Reminder ${minutes} min before`),
+    remindOff: 'No reminder',
+  },
+  fa: {
+    subtasks: (done, total) => `${done} از ${total} زیرتسک انجام شده`,
+    waitingOn: 'منتظرِ',
+    waitedOn: 'منتظرِ این‌ها بود (انجام شد)',
+    gone: 'تسکی که دیگر نیست',
+    tasks: (count) => `${count} تسک`,
+    remindAt: (minutes) => (minutes === 0 ? 'یادآوری سر شروع' : `یادآوری ${minutes} دقیقه قبل`),
+    remindOff: 'بدون یادآوری',
+  },
+};
+
+/** A parent's subtasks as a count, "2/4", where it has no progress bar of its own. */
+export function createSubtaskChip(done: number, total: number, language: Language): HTMLElement {
+  const badge = buildChip('taskpro-subtask-badge', 'list-checks', `${done}/${total}`);
+  badge.dataset.state = done === total ? 'done' : 'open';
+  badge.style.setProperty('--taskpro-subtask-done', String(total ? done / total : 0));
+  const text = RELATION_LABELS[language].subtasks(done, total);
+  badge.setAttribute('aria-label', text);
+  badge.title = text;
+  return badge;
+}
+
+/** One task a line waits on, as its chip reads it. */
+export interface WaitingChipItem {
+  title: string;
+  done: boolean;
+  missing: boolean;
+}
+
+/**
+ * What a task waits on: the task's name when it is one, a count when there
+ * are more. Amber while any of them is open; quiet once they are all done.
+ * A click opens the first one still open. `onOpen` gets its index.
+ */
+export function createWaitingChip(items: readonly WaitingChipItem[], language: Language, onOpen: (index: number) => void): HTMLElement {
+  const labels = RELATION_LABELS[language];
+  const open = items.findIndex((item) => !item.done && !item.missing);
+  const settled = open === -1;
+  const name = (item: WaitingChipItem) => (item.missing ? labels.gone : item.title);
+  const text = items.length === 1 ? name(items[0]) : labels.tasks(items.length);
+  const badge = buildChip('taskpro-waiting-badge', settled ? 'check-check' : 'hourglass', text);
+  badge.dataset.state = settled ? 'done' : 'waiting';
+  const tip = `${settled ? labels.waitedOn : labels.waitingOn}: ${items.map(name).join(language === 'fa' ? '، ' : ', ')}`;
+  badge.setAttribute('aria-label', tip);
+  badge.title = tip;
+  badge.setAttribute('role', 'button');
+  badge.tabIndex = 0;
+  const label = badge.querySelector('.taskpro-chip__label');
+  label?.setAttribute('dir', 'auto');
+  badge.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    onOpen(settled ? 0 : open);
+  });
+  return badge;
+}
+
+/** A small bell on a plan chip, for a task with a reminder time of its own. */
+export function addRemindMark(badge: HTMLElement, minutes: number | null, language: Language): void {
+  const mark = document.createElement('span');
+  mark.className = 'taskpro-chip__remind';
+  setIcon(mark, minutes === null ? 'bell-off' : 'bell');
+  const text = minutes === null ? RELATION_LABELS[language].remindOff : RELATION_LABELS[language].remindAt(minutes);
+  mark.setAttribute('aria-label', text);
+  mark.title = text;
+  badge.appendChild(mark);
+}

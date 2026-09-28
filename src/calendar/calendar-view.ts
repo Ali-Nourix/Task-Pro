@@ -101,10 +101,14 @@ import {
   deleteEntries,
   planSections,
   prioritySections,
+  remindHint,
+  remindSections,
   repeatSections,
   statusSections,
   tagSections,
+  waitingSections,
 } from '../board/task-actions';
+import type { RelationIndex } from '../board/task-relations';
 import { getRepeatLabels } from '../timer-localization';
 
 /** Pixels per hour on the week and day grids. */
@@ -160,6 +164,8 @@ export interface CalendarContext {
   /** Repaints the calendar only. */
   rerender(): void;
   showSummary(tasks: readonly BoardTask[]): void;
+  /** What every task waits on, for the hourglass on a task that cannot start yet. */
+  relations(): RelationIndex;
   /** What the board's filters ask a new task to have, so it shows where it was made. */
   newTaskDefaults(): { status: TaskStatus; priority?: TaskPriority; tags: string[] };
   segmented(
@@ -1019,8 +1025,17 @@ export class TaskCalendar {
     if (parent) lines.push(`${this.labels.partOf}: ${displayTitle(parent.text) || '—'}`);
     if (task.schedule) lines.push(this.scheduleText(task.schedule));
     if (task.deadline) lines.push(`${this.labels.due} ${mediumDay(task.deadline, this.system, this.language)}`);
+    const waiting = this.ctx.relations().openBlockers(task);
+    if (waiting.length) {
+      lines.push(`${getActionLabels(this.language).waitingOn}: ${waiting.map((blocker) => displayTitle(blocker.text) || '—').join(this.language === 'fa' ? '، ' : ', ')}`);
+    }
     lines.push(task.fileName);
     return lines.join('\n');
+  }
+
+  /** An hourglass by the title of a task still waiting on another. */
+  private waitingMark(parent: HTMLElement, task: BoardTask): void {
+    if (this.ctx.relations().isWaiting(task)) this.icon(parent, 'hourglass', 'taskpro-cal__waiting');
   }
 
   /** What every item shares: its colour and state, the press that drags it, the click that opens it. */
@@ -1031,6 +1046,7 @@ export class TaskCalendar {
     el.dataset.status = item.task.status;
     el.style.setProperty('--taskpro-cal-accent', this.accent(item));
     el.toggleClass('is-done', item.task.status === '[x]');
+    el.toggleClass('is-waiting', this.ctx.relations().isWaiting(item.task));
     this.markFamily(el, item.task);
     el.setAttribute('role', 'button');
     el.tabIndex = 0;
@@ -1128,6 +1144,7 @@ export class TaskCalendar {
       timeFormat: this.cal.timeFormat,
       tags: this.settings.tags,
       anchor,
+      planReminder: this.settings.planReminder,
     };
   }
 
@@ -1216,6 +1233,7 @@ export class TaskCalendar {
       chip.createSpan({ cls: 'taskpro-cal__chip-time', text: formatClock(item.start, this.cal.timeFormat, this.language) });
     }
     chip.createSpan({ cls: 'taskpro-cal__chip-title', text: displayTitle(item.task.text) || '—', attr: { dir: 'auto' } });
+    this.waitingMark(chip, item.task);
     if (item.dueHere) this.icon(chip, 'flag', 'taskpro-cal__chip-flag is-due-here');
     return chip;
   }
@@ -1251,6 +1269,7 @@ export class TaskCalendar {
     const top = el.createDiv({ cls: 'taskpro-cal__block-top' });
     this.check(top, item.task);
     top.createSpan({ cls: 'taskpro-cal__block-title', text: displayTitle(item.task.text) || '—', attr: { dir: 'auto' } });
+    this.waitingMark(top, item.task);
     if (item.dueHere) this.icon(top, 'flag', 'taskpro-cal__chip-flag is-due-here');
     el.createDiv({ cls: 'taskpro-cal__block-time', text: formatClockRange(start, end, this.cal.timeFormat, this.language) });
     if (props) this.blockProps(el, item);
@@ -1297,7 +1316,8 @@ export class TaskCalendar {
     else this.check(row, task);
     const titles = row.createDiv({ cls: 'taskpro-cal__agenda-titles' });
     this.parentCrumb(titles, task, 'taskpro-cal__agenda-crumb');
-    titles.createDiv({ cls: 'taskpro-cal__agenda-title', text: displayTitle(task.text) || '—', attr: { dir: 'auto' } });
+    const title = titles.createDiv({ cls: 'taskpro-cal__agenda-title', text: displayTitle(task.text) || '—', attr: { dir: 'auto' } });
+    this.waitingMark(title, task);
 
     const meta = row.createDiv({ cls: 'taskpro-cal__agenda-meta' });
     for (const key of task.tags.slice(0, 3)) {
@@ -2271,6 +2291,32 @@ export class TaskCalendar {
           chip(button, 'taskpro-repeat-badge', CHIP_ICON_NAMES.repeat, getRepeatLabels(language).chip(task.repeat));
         },
         () => repeatSections(options())
+      );
+    }
+
+    if (host.setWaiting) {
+      pick(
+        property('hourglass', actionLabels.waitingOn),
+        (button) => {
+          const blockers = this.ctx.relations().blockersOf(task);
+          if (!blockers.length) return empty(button);
+          button.addClass('has-tags');
+          for (const blocker of blockers) {
+            const done = !blocker.task || blocker.task.status === '[x]';
+            const made = chip(button, 'taskpro-waiting-badge', done ? 'check-check' : 'hourglass', blocker.task ? displayTitle(blocker.task.text) || '—' : actionLabels.missingTask);
+            made.dataset.state = done ? 'done' : 'waiting';
+            made.querySelector('.taskpro-chip__label')?.setAttribute('dir', 'auto');
+          }
+        },
+        () => waitingSections(options())
+      );
+    }
+
+    if (host.setRemind && schedule?.start) {
+      pick(
+        property('bell', actionLabels.remind),
+        (button) => button.createSpan({ cls: 'taskpro-cal-prop__text', text: remindHint(options()) }),
+        () => remindSections(options())
       );
     }
 
