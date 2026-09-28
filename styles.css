@@ -4649,11 +4649,19 @@ button.taskpro-chip:focus-visible {
   text-align: right;
 }
 
-/* The Undo button in the notice a deleted task leaves. */
+/* The notice a deleted task leaves: the sentence, and Undo on the same line
+   at its far end (the left in Persian). */
+.notice .notice-message.taskpro-notice-with-action {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
 .notice button.taskpro-notice-undo {
-  margin-inline-start: 10px;
-  padding: 2px 10px;
+  flex: none;
+  margin-inline-start: auto;
+  padding: 3px 10px;
   height: auto;
   font-size: var(--font-ui-smaller);
+  white-space: nowrap;
   cursor: pointer;
 }

@@ -1429,6 +1429,7 @@ export default class TaskProPlugin extends Plugin {
     if (messageEl?.createEl) {
       // Obsidian's notices are left to right; a Persian sentence needs its own direction.
       messageEl.setAttribute('dir', this.settings.badgeLanguage === 'fa' ? 'rtl' : 'ltr');
+      messageEl.addClass('taskpro-notice-with-action');
       const undo = messageEl.createEl('button', { cls: 'taskpro-notice-undo', text: labels.undo });
       undo.addEventListener('click', (event) => {
         event.stopPropagation();
