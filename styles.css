@@ -110,19 +110,19 @@ settings:
     id: taskpro-chip-fill
     title: Background tint
     type: variable-number
-    default: 13
+    default: 15
     format: '%'
   -
     id: taskpro-chip-stroke
     title: Border tint
     type: variable-number
-    default: 32
+    default: 16
     format: '%'
   -
     id: taskpro-chip-ink-mix
     title: Label colour mix
     type: variable-number
-    default: 78
+    default: 40
     format: '%'
   -
     id: taskpro-widgets
@@ -145,7 +145,7 @@ settings:
     id: taskpro-badge-radius
     title: Chip corner radius
     type: variable-number
-    default: 12
+    default: 6
     format: px
   -
     id: taskpro-badge-font-size
@@ -174,7 +174,7 @@ settings:
     id: taskpro-panel-radius
     title: Panel corner radius
     type: variable-number
-    default: 10
+    default: 12
     format: px
   -
     id: taskpro-panel-border-width
@@ -192,7 +192,11 @@ settings:
 
 */
 
-:root {
+/* Declared on body, not :root. Obsidian and its themes define the palette
+   (--color-green, --text-muted and the rest) on body, so a var() resolved on
+   :root never sees them and every accent below silently fell back to its
+   hex. On body, an accent is the theme's own. */
+body {
   /* ── Chip colours ────────────────────────────────────────────────────────
      Every chip is a tint of ONE accent colour, and every accent comes from
      the vault's own theme. Nothing here is a fixed colour, which is what lets
@@ -221,26 +225,34 @@ settings:
 
   /* How far a chip tints its own background and border out of its accent.
      Percentages, so they read the same against any backdrop. */
-  --taskpro-chip-fill: 13%;
-  --taskpro-chip-stroke: 32%;
-  /* How far a chip's label is pulled toward the body text colour. Mixing toward
-     --text-normal is what makes one declaration work in both modes: the label
-     lightens on a dark theme and darkens on a light one, because that is where
-     the theme's own text colour is.
+  --taskpro-chip-fill: 15%;
+  /* The border is a hairline of the same hue, there to hold the shape on a
+     theme whose background is close to the tint, not to be seen. */
+  --taskpro-chip-stroke: 16%;
+  /* How far a chip's label is pulled toward the accent, the rest being the
+     body text colour. Mixing toward --text-normal is what makes one
+     declaration work in both modes: the label lightens on a dark theme and
+     darkens on a light one, because that is where the theme's own text colour
+     is.
 
-     The amount differs by mode, and measurably has to. A theme's accents are
-     picked to sit on its own background: on a dark theme they arrive light and
-     already contrast well, so little pull is needed and the hue stays vivid. On
-     a light theme the bright hues — yellow above all — start near the
-     background, and 74% left "Tomorrow" at 2.7:1. Note this is a question of
-     how far to pull, never of which colour to use, so the chips still take
-     every hue from the active theme. test/contrast-check.mjs is what these two
-     numbers were tuned against; re-run it if you change them. */
-  --taskpro-chip-ink-mix: 74%;
+     Kept low on purpose. A row of chips whose labels are all in their own
+     saturated hue reads as noise; with a near-neutral label the colour lives
+     in the tint and in the icon, and the row reads as text with markers on it.
+     That is how Notion's tags and statuses are drawn, and it also happens to
+     be the safer way to meet contrast, since the label is mostly the theme's
+     own text colour.
+
+     The amount still differs by mode: a theme's accents are picked to sit on
+     its own background, so on a light theme the bright hues, yellow above all,
+     start near the background and need a little more pull toward the text.
+     It is a question of how far to pull, never of which colour to use, so the
+     chips still take every hue from the active theme.
+     test/contrast-check.mjs is what these two numbers are held to. */
+  --taskpro-chip-ink-mix: 40%;
   
   /* Badge styling */
   --taskpro-badge-padding: 2px 8px;
-  --taskpro-badge-radius: 12px;
+  --taskpro-badge-radius: 6px;
   
   /* Legacy badge variables for compatibility */
   --taskpro-badge-bg: transparent;
@@ -257,8 +269,14 @@ settings:
   --taskpro-badge-margin-inline-start: 8px;
   --taskpro-badge-gap: 4px;
   --taskpro-badge-font-size: 12px;
-  --taskpro-badge-radius: 12px;
-  --taskpro-tag-radius: 999px;
+  --taskpro-badge-radius: 6px;
+  --taskpro-tag-radius: var(--taskpro-badge-radius);
+  /* Status is the property people read first, so it is the one chip with a
+     shape of its own: a capsule, where tags, priorities and dates stay
+     rounded rectangles (Notion draws them apart the same way). It follows the
+     chip radius setting, eight times over: a person who squares the chips
+     squares the capsule with them, and at the default it is fully round. */
+  --taskpro-status-radius: calc(var(--taskpro-badge-radius) * 8);
   --taskpro-chip-min-height: 22px;
   /* Chip padding is defined once here; see the chip geometry rules below. */
   --taskpro-chip-padding-block: 3px;
@@ -267,7 +285,7 @@ settings:
   --taskpro-progress-color: var(--taskpro-accent-progressbar);
   --taskpro-panel-border-color: var(--background-modifier-border);
   --taskpro-panel-padding: 20px;
-  --taskpro-panel-radius: 10px;
+  --taskpro-panel-radius: 12px;
   --taskpro-panel-border-width: 2px;
   --taskpro-panel-min-width: 320px;
   --taskpro-panel-gap: 12px;
@@ -291,7 +309,72 @@ settings:
    .theme-dark on <body>, and Style Settings writes to a more specific selector
    than this, so a user override still wins. */
 .theme-light {
-  --taskpro-chip-ink-mix: 46%;
+  --taskpro-chip-ink-mix: 28%;
+}
+
+/* ── Design tokens ─────────────────────────────────────────────────────────
+   One set of shapes, lifts and motion for everything TaskPro draws, so a chip,
+   a card, a menu and a sheet read as parts of the same thing. Colour is not
+   here: it comes from the theme, see the chip recipe above.
+
+   Shape. Corners step up with the size of the thing. What sits inside a
+   container takes the container's radius less the gap around it (a 14px
+   column with 6px around its cards gives the cards an 8px corner), so the two
+   curves run parallel instead of pinching at the corners. */
+body {
+  --taskpro-radius-chip: var(--taskpro-badge-radius);
+  --taskpro-radius-control: 7px;   /* buttons, fields, table rows */
+  --taskpro-radius-inner: 6px;     /* a row inside a menu (12px panel, 6px around) */
+  --taskpro-radius-card: 8px;      /* cards, event blocks, bars */
+  --taskpro-radius-panel: var(--taskpro-panel-radius);   /* menus, popovers, dialogs */
+  --taskpro-radius-column: 14px;   /* kanban columns, the calendar's frame */
+  --taskpro-radius-sheet: 18px;    /* phone sheets */
+  --taskpro-radius-touch: 12px;    /* phone buttons and fields: the desktop's corners, made for a finger */
+
+  /* Lift. A shadow is the surface's own darkness, not neutral black: the
+     ink is the theme's background pulled toward black, so on a warm theme the
+     shadow is warm and on a cool one it is cool. Every lifted thing gets the
+     same hairline ring, which is what holds its edge on a background that
+     is nearly its own colour, and up to two soft layers under it. */
+  --taskpro-shadow-ink: color-mix(in oklab, var(--background-primary) 6%, #000);
+  --taskpro-panel-edge: color-mix(in srgb, var(--text-normal) 10%, transparent);
+  --taskpro-ring: 0 0 0 1px var(--taskpro-panel-edge);
+  /* Three depths of shadow on their own (a dragged thing that has an edge of
+     its own uses these), and the same three with the ring added. */
+  --taskpro-shadow-1: 0 1px 2px color-mix(in srgb, var(--taskpro-shadow-ink) 9%, transparent);
+  --taskpro-shadow-2: 0 1px 2px color-mix(in srgb, var(--taskpro-shadow-ink) 8%, transparent),
+    0 4px 10px -2px color-mix(in srgb, var(--taskpro-shadow-ink) 13%, transparent);
+  --taskpro-shadow-3: 0 3px 6px color-mix(in srgb, var(--taskpro-shadow-ink) 9%, transparent),
+    0 12px 28px -4px color-mix(in srgb, var(--taskpro-shadow-ink) 22%, transparent);
+  --taskpro-lift-1: var(--taskpro-ring), var(--taskpro-shadow-1);   /* cards */
+  --taskpro-lift-2: var(--taskpro-ring), var(--taskpro-shadow-2);   /* a card under the pointer */
+  --taskpro-float-shadow: var(--taskpro-ring), var(--taskpro-highlight), var(--taskpro-shadow-3);   /* menus, popovers */
+  /* The top edge of a raised surface catches a little light. Only visible on
+     a dark theme, where a shadow alone cannot show it is off the page. */
+  --taskpro-highlight: inset 0 1px 0 transparent;
+
+  /* Motion. Quick, and settling rather than stopping: the curve leaves fast and
+     arrives softly. Nothing here animates layout, only opacity and transform,
+     and a reduced-motion setting turns all of it off (see the end of the
+     file). */
+  --taskpro-ease: cubic-bezier(0.32, 0.72, 0, 1);
+  --taskpro-fast: 110ms;
+  --taskpro-base: 170ms;
+  --taskpro-slow: 260ms;
+
+  /* Focus. The same ring wherever keyboard focus lands, drawn outside the
+     element with a gap of the page colour so it never merges into a tint. */
+  --taskpro-focus-ring: 0 0 0 2px var(--background-primary), 0 0 0 4px color-mix(in srgb, var(--interactive-accent) 75%, transparent);
+}
+.theme-dark {
+  --taskpro-panel-edge: color-mix(in srgb, var(--text-normal) 13%, transparent);
+  /* A dark surface needs a deeper shadow to lift off it at all. */
+  --taskpro-shadow-1: 0 1px 2px color-mix(in srgb, var(--taskpro-shadow-ink) 40%, transparent);
+  --taskpro-shadow-2: 0 1px 2px color-mix(in srgb, var(--taskpro-shadow-ink) 34%, transparent),
+    0 5px 12px -2px color-mix(in srgb, var(--taskpro-shadow-ink) 46%, transparent);
+  --taskpro-shadow-3: 0 3px 8px color-mix(in srgb, var(--taskpro-shadow-ink) 34%, transparent),
+    0 14px 32px -4px color-mix(in srgb, var(--taskpro-shadow-ink) 62%, transparent);
+  --taskpro-highlight: inset 0 1px 0 color-mix(in srgb, #fff 5%, transparent);
 }
 
 .taskpro-badge-container {
@@ -328,7 +411,7 @@ settings:
   min-height: var(--taskpro-chip-min-height);
   padding: var(--taskpro-badge-padding-y) var(--taskpro-badge-padding-x);
   font-size: var(--taskpro-badge-font-size);
-  font-weight: var(--font-semibold);
+  font-weight: var(--font-medium);
   line-height: 1.2;
   border-radius: var(--taskpro-badge-radius);
   border: 1px solid var(--background-modifier-border);
@@ -352,7 +435,7 @@ settings:
 .taskpro-interactive-badge {
   cursor: pointer;
   opacity: var(--taskpro-badge-opacity-normal);
-  transition: background-color 140ms ease, border-color 140ms ease;
+  transition: background-color var(--taskpro-base) var(--taskpro-ease), border-color var(--taskpro-base) var(--taskpro-ease), transform var(--taskpro-fast) var(--taskpro-ease);
 }
 
 /* Status */
@@ -422,10 +505,9 @@ settings:
   min-width: var(--taskpro-panel-min-width);
   max-width: 92vw;
   padding: var(--taskpro-panel-padding);
-  border: 1px solid var(--taskpro-panel-border-color);
   border-radius: var(--taskpro-panel-radius);
   background: var(--background-primary);
-  box-shadow: var(--shadow-l);
+  box-shadow: var(--taskpro-float-shadow);
 }
 
 .taskpro-panel__title {
@@ -488,7 +570,7 @@ settings:
 
 .taskpro-panel__btn {
   padding: 8px 16px;
-  border-radius: calc(var(--taskpro-panel-radius) - 2px);
+  border-radius: var(--taskpro-radius-control);
   cursor: pointer;
   font-size: var(--font-ui-small);
 }
@@ -515,12 +597,13 @@ settings:
 
 .taskpro-chip[role="button"]:hover,
 .taskpro-chip[role="button"]:focus-visible {
-  background: color-mix(in srgb, var(--taskpro-chip-accent) calc(var(--taskpro-chip-fill) * 2), transparent);
-  border-color: color-mix(in srgb, var(--taskpro-chip-accent) calc(var(--taskpro-chip-stroke) * 1.5), transparent);
+  background: color-mix(in srgb, var(--taskpro-chip-accent) calc(var(--taskpro-chip-fill) + 8%), transparent);
+  border-color: color-mix(in srgb, var(--taskpro-chip-accent) calc(var(--taskpro-chip-stroke) + 14%), transparent);
 }
 
 .taskpro-chip[role="button"]:active {
   opacity: var(--taskpro-badge-opacity-active);
+  transform: scale(0.97);
 }
 
 .taskpro-tag-badge {
@@ -690,7 +773,7 @@ li.task-list-item {
      what made the alert feel sluggish. The scrim alone separates the dialog
      from the note perfectly well, and costs one flat fill. */
   background: rgba(0, 0, 0, 0.62);
-  animation: taskpro-reminder-fade 160ms ease-out;
+  animation: taskpro-reminder-fade var(--taskpro-base) var(--taskpro-ease);
 }
 
 .taskpro-reminder-overlay[data-strictness='strict'] {
@@ -714,11 +797,10 @@ li.task-list-item {
   flex-direction: column;
   gap: 16px;
   padding: 24px;
-  border-radius: 14px;
-  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--taskpro-radius-column);
   background: var(--background-primary);
   color: var(--text-normal);
-  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--taskpro-float-shadow);
 }
 
 .taskpro-reminder-overlay[dir='rtl'] .taskpro-reminder-dialog {
@@ -762,7 +844,7 @@ li.task-list-item {
   gap: 10px;
   flex-wrap: wrap;
   padding: 10px 12px;
-  border-radius: 10px;
+  border-radius: var(--taskpro-radius-card);
   background: var(--background-secondary);
 }
 
@@ -774,7 +856,7 @@ li.task-list-item {
   flex: 0 0 auto;
   font-size: 0.8em;
   padding: 2px 8px;
-  border-radius: 999px;
+  border-radius: var(--taskpro-badge-radius);
   border: 1px solid color-mix(in srgb, var(--taskpro-chip-accent) var(--taskpro-chip-stroke), transparent);
   color: color-mix(in srgb, var(--taskpro-chip-accent) var(--taskpro-chip-ink-mix), var(--text-normal));
   background: color-mix(in srgb, var(--taskpro-chip-accent) var(--taskpro-chip-fill), transparent);
@@ -868,12 +950,15 @@ li.task-list-item {
   justify-content: center;
 }
 
-/* Icons scale with the badge font size so the size slider keeps working. */
+/* Icons scale with the badge font size so the size slider keeps working.
+   The label is nearly the theme's text colour; the icon is where a chip's hue
+   shows, drawn from the accent with only a touch of text colour so it holds
+   on a light theme too. */
 .taskpro-chip__icon .svg-icon {
   width: 1.05em;
   height: 1.05em;
-  stroke-width: 2.25px;
-  color: currentColor;
+  stroke-width: 2px;
+  color: color-mix(in srgb, var(--taskpro-chip-accent) 78%, var(--text-normal));
 }
 
 .taskpro-chip__label {
@@ -910,7 +995,7 @@ li.task-list-item {
   height: 30px;
   padding: 0 11px;
   border: none;
-  border-radius: var(--radius-m);
+  border-radius: var(--taskpro-radius-control);
   background: transparent;
   box-shadow: none;
   color: var(--text-muted);
@@ -918,7 +1003,7 @@ li.task-list-item {
   font-weight: var(--font-medium);
   line-height: 1;
   cursor: pointer;
-  transition: background-color 120ms ease, color 120ms ease;
+  transition: background-color var(--taskpro-fast) var(--taskpro-ease), color var(--taskpro-fast) var(--taskpro-ease);
 }
 
 .taskpro-settings button.taskpro-settings-tab:hover {
@@ -927,14 +1012,23 @@ li.task-list-item {
 }
 
 .taskpro-settings button.taskpro-settings-tab.is-active {
-  background: color-mix(in srgb, var(--interactive-accent) 14%, transparent);
-  color: var(--text-accent);
+  /* The current tab is marked the way the board's tabs are: a soft neutral
+     fill and full-strength text, not a colour of its own. */
+  background-image: linear-gradient(
+    color-mix(in srgb, var(--text-normal) 8%, transparent),
+    color-mix(in srgb, var(--text-normal) 8%, transparent)
+  );
+  color: var(--text-normal);
   font-weight: var(--font-semibold);
 }
 
+.taskpro-settings button.taskpro-settings-tab:active {
+  transform: scale(0.98);
+}
+
 .taskpro-settings button.taskpro-settings-tab:focus-visible {
-  outline: 2px solid var(--interactive-accent);
-  outline-offset: 2px;
+  outline: none;
+  box-shadow: var(--taskpro-focus-ring);
 }
 
 /* One icon size throughout: 16px beside a tab or a setting's name, 16px in
@@ -982,7 +1076,7 @@ li.task-list-item {
   justify-content: center;
   width: 30px;
   height: 30px;
-  border-radius: 8px;
+  border-radius: var(--taskpro-radius-card);
   background: color-mix(in srgb, var(--interactive-accent) 13%, transparent);
   color: var(--text-accent);
 }
@@ -1101,6 +1195,13 @@ li.task-list-item {
 .taskpro-priority-badge {
   padding-block: var(--taskpro-chip-padding-block);
   padding-inline: var(--taskpro-chip-padding-inline);
+}
+
+/* The capsule leaves less room at its ends, so the icon and the label sit a
+   little further in. */
+.taskpro-interactive-badge {
+  border-radius: var(--taskpro-status-radius);
+  padding-inline: calc(var(--taskpro-chip-padding-inline) + 2px);
 }
 
 
@@ -1399,7 +1500,7 @@ button.taskpro-chip:focus-visible {
   height: auto;
   padding: 6px 8px;
   border: 0;
-  border-radius: var(--radius-s);
+  border-radius: var(--taskpro-radius-control);
   background: transparent;
   box-shadow: none;
   color: var(--text-muted);
@@ -1521,10 +1622,9 @@ button.taskpro-chip:focus-visible {
   z-index: var(--layer-menu, 65);
   max-width: 260px;
   padding: 10px;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: var(--radius-m);
+  border-radius: var(--taskpro-radius-panel);
   background: var(--background-primary);
-  box-shadow: var(--shadow-s);
+  box-shadow: var(--taskpro-float-shadow);
 }
 
 /* ── Tag manager ─────────────────────────────────────────────────────────── */
@@ -1549,7 +1649,7 @@ button.taskpro-chip:focus-visible {
   align-items: center;
   gap: 10px;
   padding: 6px 8px;
-  border-radius: var(--radius-m);
+  border-radius: var(--taskpro-radius-card);
 }
 .taskpro-tag-manager .taskpro-tag-manager__add {
   grid-template-columns: 22px minmax(120px, 1fr) auto;
@@ -1675,7 +1775,7 @@ button.taskpro-chip:focus-visible {
   padding-block: var(--taskpro-chip-padding-block);
   padding-inline: var(--taskpro-chip-padding-inline);
   font-size: var(--taskpro-badge-font-size);
-  font-weight: var(--font-semibold);
+  font-weight: var(--font-medium);
 }
 
 /* ── Header ──────────────────────────────────────────────────────────────── */
@@ -1727,16 +1827,21 @@ button.taskpro-chip:focus-visible {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  /* The row gap leaves room for the line under the tabs when the rest of the
+     bar wraps onto a second row. */
+  gap: 10px 8px;
+  padding-bottom: 5px;
 }
 
-/* Segmented control: scope and layout. */
+/* Segmented control: a small set of exclusive choices (the scope, the
+   calendar's view, its two calendars, the timeline's zoom). The layout switch
+   is a row of tabs instead, below. */
 .taskpro-board .taskpro-segmented {
   display: inline-flex;
   gap: 2px;
   padding: 2px;
-  border-radius: var(--radius-m);
-  background: var(--background-modifier-hover);
+  border-radius: var(--taskpro-radius-control);
+  background: color-mix(in srgb, var(--text-normal) 5.5%, transparent);
 }
 
 .taskpro-board button.taskpro-segmented__item {
@@ -1747,23 +1852,91 @@ button.taskpro-chip:focus-visible {
   max-width: 22ch;
   padding: 0 10px;
   border: 0;
-  border-radius: calc(var(--radius-m) - 2px);
+  border-radius: calc(var(--taskpro-radius-control) - 2px);
   background: transparent;
   box-shadow: none;
   color: var(--text-muted);
   font-size: var(--font-ui-small);
   cursor: pointer;
+  transition: background-color var(--taskpro-fast) var(--taskpro-ease), color var(--taskpro-fast) var(--taskpro-ease),
+    box-shadow var(--taskpro-base) var(--taskpro-ease);
 }
 .taskpro-board button.taskpro-segmented__item:hover {
-  background: color-mix(in srgb, var(--background-primary) 50%, transparent);
+  background: color-mix(in srgb, var(--text-normal) 6%, transparent);
   color: var(--text-normal);
+}
+.taskpro-board button.taskpro-segmented__item:active {
+  transform: scale(0.98);
+}
+.taskpro-board button.taskpro-segmented__item:focus-visible {
+  outline: none;
+  box-shadow: var(--taskpro-focus-ring);
 }
 .taskpro-board button.taskpro-segmented__item.is-active {
   /* An image, so a theme's button:hover colour cannot replace it. */
-  background-image: linear-gradient(var(--background-primary), var(--background-primary));
-  box-shadow: 0 1px 2px color-mix(in srgb, var(--text-normal) 16%, transparent);
+  background-image: linear-gradient(var(--taskpro-board-surface), var(--taskpro-board-surface));
+  box-shadow: var(--taskpro-lift-1);
   color: var(--text-normal);
   font-weight: var(--font-medium);
+}
+.taskpro-board button.taskpro-segmented__item.is-active:focus-visible {
+  box-shadow: var(--taskpro-lift-1), var(--taskpro-focus-ring);
+}
+
+/* The layout switch: the page's tabs, marked the way Notion marks its views.
+   A hairline runs under the row, the current tab sits on it with a 2px bar,
+   and the rest are plain text that gets a soft fill under the pointer. The
+   line belongs to the tabs (it is as wide as the board, not as wide as the
+   bar), so it stays under them when the rest of the bar wraps. */
+.taskpro-board .taskpro-segmented.taskpro-board__layout {
+  position: relative;
+  gap: 2px;
+  padding: 0;
+  border-radius: 0;
+  background: none;
+}
+.taskpro-board .taskpro-board__layout::before {
+  content: "";
+  position: absolute;
+  bottom: -5px;
+  inset-inline-start: 0;
+  width: calc(100cqw - 2 * var(--taskpro-board-gutter));
+  height: 1px;
+  background: var(--taskpro-board-row-line);
+  pointer-events: none;
+}
+.taskpro-board .taskpro-board__layout button.taskpro-segmented__item {
+  position: relative;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: var(--taskpro-radius-inner);
+  font-weight: var(--font-medium);
+}
+.taskpro-board .taskpro-board__layout button.taskpro-segmented__item.is-active {
+  background-image: none;
+  box-shadow: none;
+}
+.taskpro-board .taskpro-board__layout button.taskpro-segmented__item.is-active::after {
+  content: "";
+  position: absolute;
+  bottom: -5px;
+  inset-inline: 0;
+  height: 2px;
+  border-radius: 2px 2px 0 0;
+  background: var(--text-normal);
+}
+.taskpro-board .taskpro-board__layout button.taskpro-segmented__item.is-active .taskpro-segmented__icon {
+  color: var(--text-normal);
+}
+.taskpro-board .taskpro-board__layout button.taskpro-segmented__item.is-active:focus-visible {
+  box-shadow: var(--taskpro-focus-ring);
+}
+
+/* The scope sits beside the tabs and is quieter than they are. */
+.taskpro-board .taskpro-board__scope button.taskpro-segmented__item {
+  height: 24px;
+  padding: 0 9px;
+  font-size: var(--font-ui-smaller);
 }
 .taskpro-board button.taskpro-segmented__item.is-disabled {
   opacity: 0.45;
@@ -1782,16 +1955,36 @@ button.taskpro-chip:focus-visible {
   position: relative;
   display: flex;
   align-items: center;
-  flex: 1 1 180px;
+  /* Small to start with, so the toolbar keeps to a line for as long as it
+     can, and then it takes what the line has left. */
+  flex: 1 1 132px;
+  min-width: 132px;
   max-width: 320px;
 }
 .taskpro-board .taskpro-board__search input {
-  /* Border, fill and focus ring are left to Obsidian and the theme, so the
-     field looks like every other search field in the vault. */
+  /* Quiet until it is used, as Notion's search is: no box at rest, a soft
+     fill under the pointer, the theme's own field once it has focus (its
+     border and ring are left to Obsidian and the theme, so the field looks
+     like every other search field in the vault while it is in use). */
   width: 100%;
   height: 30px;
   padding-inline: 30px 10px;
+  border-radius: var(--taskpro-radius-control);
   font-size: var(--font-ui-small);
+}
+.taskpro-board .taskpro-board__search:not(.is-compact) input:not(:focus) {
+  border-color: transparent;
+  background-color: transparent;
+  box-shadow: none;
+  transition: background-color var(--taskpro-fast) var(--taskpro-ease);
+}
+.taskpro-board .taskpro-board__search:not(.is-compact) input:not(:focus):hover {
+  border-color: transparent;
+  background-color: var(--background-modifier-hover);
+  box-shadow: none;
+}
+.taskpro-board .taskpro-board__search:not(.is-compact) input:not(:focus):not(:placeholder-shown) {
+  background-color: color-mix(in srgb, var(--text-normal) 5.5%, transparent);
 }
 .taskpro-board .taskpro-board__search-icon {
   position: absolute;
@@ -1815,19 +2008,46 @@ button.taskpro-chip:focus-visible {
   height: 28px;
   padding: 0 10px;
   border: 0;
-  border-radius: var(--radius-s);
+  border-radius: var(--taskpro-radius-control);
   background: transparent;
   box-shadow: none;
   color: var(--text-muted);
   font-size: var(--font-ui-small);
   cursor: pointer;
+  transition: background-color var(--taskpro-fast) var(--taskpro-ease), color var(--taskpro-fast) var(--taskpro-ease);
 }
 .taskpro-board button.taskpro-board__control:hover {
   background: var(--background-modifier-hover);
   color: var(--text-normal);
 }
+.taskpro-board button.taskpro-board__control:active {
+  transform: scale(0.98);
+}
+.taskpro-board button.taskpro-board__control:focus-visible {
+  outline: none;
+  box-shadow: var(--taskpro-focus-ring);
+}
 .taskpro-board .taskpro-board__control-icon {
   display: inline-flex;
+}
+/* In a narrower pane the toolbar keeps to one line by letting words go, the
+   name first (the icon and the value say it), then the value too (the tooltip
+   does), and a filter with something set keeps its count. */
+@container taskpro-board (max-width: 1120px) {
+  .taskpro-board button.taskpro-board__control.has-value .taskpro-board__control-label {
+    display: none;
+  }
+}
+@container taskpro-board (max-width: 900px) {
+  .taskpro-board button.taskpro-board__control {
+    padding: 0 8px;
+  }
+  .taskpro-board button.taskpro-board__control .taskpro-board__control-label {
+    display: none;
+  }
+  .taskpro-board button.taskpro-board__control.has-value:not(.is-active) .taskpro-board__control-value {
+    display: none;
+  }
 }
 .taskpro-board .taskpro-board__control-value {
   color: var(--text-normal);
@@ -1877,14 +2097,20 @@ button.taskpro-chip:focus-visible {
   align-items: center;
   gap: 8px;
   margin: 0 var(--taskpro-board-gutter) 4px;
-  padding: 4px 6px 4px 10px;
-  border: 1px dashed var(--background-modifier-border);
-  border-radius: var(--radius-m);
+  padding: 3px 6px 3px 10px;
+  border-radius: var(--taskpro-radius-control);
+  background: color-mix(in srgb, var(--text-normal) 3.5%, transparent);
+  box-shadow: inset 0 0 0 1px transparent;
   color: var(--text-faint);
+  transition: background-color var(--taskpro-base) var(--taskpro-ease), box-shadow var(--taskpro-base) var(--taskpro-ease);
+}
+.taskpro-board .taskpro-board__add:hover {
+  background: color-mix(in srgb, var(--text-normal) 5.5%, transparent);
 }
 .taskpro-board .taskpro-board__add:focus-within {
-  border-style: solid;
-  border-color: var(--interactive-accent);
+  background: var(--taskpro-board-surface);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--interactive-accent) 70%, transparent),
+    0 0 0 3px color-mix(in srgb, var(--interactive-accent) 18%, transparent);
 }
 .taskpro-board .taskpro-board__add-icon {
   display: inline-flex;
@@ -1912,7 +2138,7 @@ button.taskpro-chip:focus-visible {
   height: 26px;
   padding: 0 8px;
   border: 0;
-  border-radius: var(--radius-s);
+  border-radius: var(--taskpro-radius-inner);
   background: transparent;
   box-shadow: none;
   color: var(--text-muted);
@@ -1944,15 +2170,119 @@ button.taskpro-chip:focus-visible {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
-  padding: 64px 16px;
-  color: var(--text-faint);
+  gap: 6px;
+  padding: 72px 16px;
+  color: var(--text-muted);
   font-size: var(--font-ui-medium);
   text-align: center;
 }
+/* The icon sits in a soft tile, as an empty page's icon does in Notion. */
+.taskpro-board .taskpro-board__empty-icon {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  margin-bottom: 8px;
+  border-radius: var(--taskpro-radius-column);
+  background: color-mix(in srgb, var(--text-normal) 4.5%, transparent);
+  box-shadow: inset 0 0 0 1px var(--taskpro-board-row-line);
+  color: var(--text-faint);
+}
 .taskpro-board .taskpro-board__empty-icon .svg-icon {
-  width: 30px;
+  width: 22px;
+  height: 22px;
+}
+.taskpro-board .taskpro-board__empty-text {
+  max-width: 38ch;
+  text-wrap: balance;
+}
+.taskpro-board button.taskpro-board__empty-action {
   height: 30px;
+  margin-top: 10px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: var(--taskpro-radius-control);
+  background-image: linear-gradient(
+    color-mix(in srgb, var(--text-normal) 7%, transparent),
+    color-mix(in srgb, var(--text-normal) 7%, transparent)
+  );
+  box-shadow: none;
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-medium);
+  cursor: pointer;
+}
+.taskpro-board button.taskpro-board__empty-action:hover {
+  background-image: linear-gradient(
+    color-mix(in srgb, var(--text-normal) 11%, transparent),
+    color-mix(in srgb, var(--text-normal) 11%, transparent)
+  );
+}
+.taskpro-board button.taskpro-board__empty-action:active {
+  transform: scale(0.98);
+}
+.taskpro-board button.taskpro-board__empty-action:focus-visible {
+  outline: none;
+  box-shadow: var(--taskpro-focus-ring);
+}
+
+/* Loading: rows in the shape of the ones that are coming. The light that
+   passes over them is one gradient moved sideways, so it costs a transform and
+   nothing else. */
+.taskpro-board .taskpro-board__skeleton {
+  display: flex;
+  flex-direction: column;
+  padding-top: 14px;
+}
+.taskpro-board .taskpro-board__skeleton-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 41px;
+  padding-inline: 8px;
+  border-bottom: 1px solid var(--taskpro-board-row-line);
+}
+.taskpro-board .taskpro-board__skeleton-dot,
+.taskpro-board .taskpro-board__skeleton-bar {
+  position: relative;
+  flex: 0 0 auto;
+  overflow: hidden;
+  border-radius: var(--taskpro-radius-chip);
+  background: color-mix(in srgb, var(--text-normal) 6.5%, transparent);
+}
+.taskpro-board .taskpro-board__skeleton-dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+}
+.taskpro-board .taskpro-board__skeleton-bar {
+  width: var(--w, 34%);
+  height: 12px;
+}
+.taskpro-board .taskpro-board__skeleton-bar.is-chip {
+  width: 68px;
+  height: 20px;
+}
+.taskpro-board .taskpro-board__skeleton-row > .taskpro-board__skeleton-bar:nth-child(2) {
+  margin-inline-end: auto;
+}
+.taskpro-board .taskpro-board__skeleton-dot::after,
+.taskpro-board .taskpro-board__skeleton-bar::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--text-normal) 7%, transparent), transparent);
+  transform: translateX(-100%);
+  animation: taskpro-shimmer 1.5s var(--taskpro-ease) infinite;
+}
+.taskpro-board[dir="rtl"] .taskpro-board__skeleton-dot::after,
+.taskpro-board[dir="rtl"] .taskpro-board__skeleton-bar::after {
+  animation-direction: reverse;
+}
+@keyframes taskpro-shimmer {
+  to {
+    transform: translateX(100%);
+  }
 }
 
 .taskpro-board button.taskpro-board__icon-btn {
@@ -1974,7 +2304,7 @@ button.taskpro-chip:focus-visible {
   table-layout: fixed;
 }
 
-.taskpro-board .taskpro-table__col--check { width: 34px; }
+.taskpro-board .taskpro-table__col--check { width: var(--taskpro-check-col, 34px); }
 .taskpro-board .taskpro-table__col--more { width: 40px; }
 
 .taskpro-board .taskpro-table th {
@@ -2056,7 +2386,7 @@ button.taskpro-chip:focus-visible {
   inset-inline-end: 0;
   width: 1px;
   background: transparent;
-  transition: background-color 120ms var(--taskpro-ease);
+  transition: background-color var(--taskpro-fast) var(--taskpro-ease);
 }
 .taskpro-board .taskpro-table thead:hover .taskpro-table__resize::after {
   background: var(--background-modifier-border);
@@ -2092,7 +2422,6 @@ button.taskpro-chip:focus-visible {
   box-sizing: border-box;
   padding: 8px;
   overflow: hidden;
-  border: 1px solid var(--taskpro-panel-edge);
   border-radius: var(--taskpro-radius-inner);
   background: var(--taskpro-board-surface);
   box-shadow: var(--taskpro-float-shadow);
@@ -2131,13 +2460,67 @@ button.taskpro-chip:focus-visible {
 
 .taskpro-board .taskpro-table td {
   overflow: hidden;
-  padding: 7px 8px;
+  padding: 5px 8px;
   border-bottom: 1px solid var(--taskpro-board-row-line);
   vertical-align: middle;
 }
 
+/* Column lines, as faint as the row lines: they keep a wide table's columns
+   apart without a header to look up at. The check and the ⋯ belong to the
+   title and the row, so the lines run between the properties only. */
+.taskpro-board .taskpro-table th:not(.taskpro-table__check):not(.taskpro-table__more),
+.taskpro-board .taskpro-table__row td:not(.taskpro-table__check):not(.taskpro-table__more) {
+  border-inline-end: 1px solid var(--taskpro-board-row-line);
+}
+
+/* Frozen: the check and the title stay in view while the properties scroll
+   under them, as a frozen first column does in Notion. A row's hover is laid
+   over their own surface as an image, so what passes underneath never shows
+   through. */
+.taskpro-board {
+  --taskpro-check-col: 34px;
+}
+.taskpro-board .taskpro-table td.taskpro-table__check,
+.taskpro-board .taskpro-table th.taskpro-table__check,
+.taskpro-board .taskpro-table td.taskpro-table__task,
+.taskpro-board .taskpro-table th.taskpro-table__task {
+  position: sticky;
+  z-index: 2;
+  background-color: var(--taskpro-board-surface);
+}
+.taskpro-board .taskpro-table td.taskpro-table__check,
+.taskpro-board .taskpro-table th.taskpro-table__check {
+  inset-inline-start: 0;
+}
+.taskpro-board .taskpro-table td.taskpro-table__task,
+.taskpro-board .taskpro-table th.taskpro-table__task {
+  inset-inline-start: var(--taskpro-check-col);
+}
+.taskpro-board .taskpro-table th.taskpro-table__check,
+.taskpro-board .taskpro-table th.taskpro-table__task {
+  z-index: 4;
+}
+/* A frozen column sticks inside the body's side padding, not at its edge, so
+   the properties would show in that strip as they pass. Each frozen cell
+   casts its own surface over it. */
+.taskpro-board .taskpro-table td.taskpro-table__check,
+.taskpro-board .taskpro-table th.taskpro-table__check {
+  box-shadow: calc(-1 * var(--taskpro-board-gutter)) 0 0 0 var(--taskpro-board-surface);
+}
+.taskpro-board[dir="rtl"] .taskpro-table td.taskpro-table__check,
+.taskpro-board[dir="rtl"] .taskpro-table th.taskpro-table__check {
+  box-shadow: var(--taskpro-board-gutter) 0 0 0 var(--taskpro-board-surface);
+}
+
 .taskpro-board .taskpro-table__row:hover td {
   background: var(--background-modifier-hover);
+}
+.taskpro-board .taskpro-table__row:hover td.taskpro-table__check,
+.taskpro-board .taskpro-table__row:hover td.taskpro-table__task,
+.taskpro-board .taskpro-table__new-row:hover td.taskpro-table__check,
+.taskpro-board .taskpro-table__new-row:hover td.taskpro-table__task {
+  background-color: var(--taskpro-board-surface);
+  background-image: linear-gradient(var(--background-modifier-hover), var(--background-modifier-hover));
 }
 
 .taskpro-board .taskpro-table td.is-editable {
@@ -2163,11 +2546,17 @@ button.taskpro-chip:focus-visible {
   opacity: 1;
 }
 
-/* Group header rows */
+/* Group header rows. The toggle stays at the start while the properties
+   scroll, so a group is still named when its rows are far to the side. */
 .taskpro-board .taskpro-table__group td {
   padding: 18px 2px 6px;
+  overflow: visible;
   border-bottom: 1px solid var(--background-modifier-border);
   background: transparent;
+}
+.taskpro-board .taskpro-table__group .taskpro-table__group-toggle {
+  position: sticky;
+  inset-inline-start: 6px;
 }
 .taskpro-board .taskpro-table__group:first-child td {
   padding-top: 10px;
@@ -2194,7 +2583,7 @@ button.taskpro-chip:focus-visible {
 .taskpro-board .taskpro-table__caret {
   display: inline-flex;
   color: var(--text-faint);
-  transition: transform 120ms ease;
+  transition: transform var(--taskpro-fast) var(--taskpro-ease);
 }
 .taskpro-board .taskpro-table__group.is-collapsed .taskpro-table__caret {
   transform: rotate(-90deg);
@@ -2393,6 +2782,23 @@ button.taskpro-chip:focus-visible {
   flex: 0 0 auto;
   margin-inline-start: auto;
 }
+/* Like the card's ⋯: it shows up on the row under the pointer as a small
+   raised button, Notion's "Open". */
+.taskpro-board .taskpro-table__row .taskpro-board__open {
+  border-radius: var(--taskpro-radius-inner);
+  background-color: var(--taskpro-board-surface);
+  box-shadow: var(--taskpro-ring), 0 1px 2px color-mix(in srgb, var(--taskpro-shadow-ink) 12%, transparent);
+  color: var(--text-muted);
+  transition: opacity var(--taskpro-fast) var(--taskpro-ease), background-color var(--taskpro-fast) var(--taskpro-ease);
+}
+.taskpro-board .taskpro-table__row .taskpro-board__open:hover {
+  background-color: color-mix(in srgb, var(--text-normal) 6%, var(--taskpro-board-surface));
+  color: var(--text-normal);
+}
+.taskpro-board.is-touch .taskpro-table__row .taskpro-board__open {
+  background-color: transparent;
+  box-shadow: none;
+}
 
 .taskpro-board .taskpro-board__tags {
   display: flex;
@@ -2564,10 +2970,10 @@ button.taskpro-chip:focus-visible {
   display: flex;
   flex: 0 0 var(--taskpro-kanban-width, 272px);
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   max-height: 100%;
-  padding: 8px;
-  border-radius: var(--radius-l);
+  padding: 6px;
+  border-radius: var(--taskpro-radius-column);
   background: color-mix(in srgb, var(--taskpro-column-accent) 6%, var(--background-secondary));
 }
 .taskpro-board .taskpro-kanban__column.is-drop-target {
@@ -2580,14 +2986,14 @@ button.taskpro-chip:focus-visible {
   align-items: center;
   gap: 8px;
   min-width: 0;
-  min-height: 26px;
-  padding: 2px 0 2px 4px;
+  min-height: 28px;
+  padding: 4px 4px 2px 8px;
   cursor: grab;
   user-select: none;
   -webkit-user-select: none;
 }
 .taskpro-board[dir="rtl"] .taskpro-kanban__header {
-  padding: 2px 4px 2px 0;
+  padding: 4px 8px 2px 4px;
 }
 .taskpro-board .taskpro-kanban.is-moving-column,
 .taskpro-board .taskpro-kanban.is-moving-column * {
@@ -2631,7 +3037,7 @@ button.taskpro-chip:focus-visible {
   width: 2px;
   border-radius: 1px;
   background: transparent;
-  transition: background-color 120ms var(--taskpro-ease);
+  transition: background-color var(--taskpro-fast) var(--taskpro-ease);
 }
 .taskpro-board .taskpro-kanban__resize:hover::after,
 .taskpro-board .taskpro-kanban__resize.is-active::after {
@@ -2653,7 +3059,7 @@ button.taskpro-chip:focus-visible {
   height: 34px;
   padding: 0 10px;
   border: 0;
-  border-radius: var(--radius-l);
+  border-radius: var(--taskpro-radius-column);
   background: transparent;
   box-shadow: none;
   color: var(--text-faint);
@@ -2669,7 +3075,7 @@ button.taskpro-chip:focus-visible {
   flex-direction: column;
   gap: 2px;
   padding: 8px;
-  border-radius: var(--radius-l);
+  border-radius: var(--taskpro-radius-column);
   background: var(--background-secondary);
 }
 .taskpro-board .taskpro-kanban__hidden-head {
@@ -2767,16 +3173,20 @@ button.taskpro-chip:focus-visible {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 9px 10px;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: var(--radius-m);
+  padding: 10px 12px;
+  border: 0;
+  border-radius: var(--taskpro-radius-card);
   background: var(--background-primary);
-  box-shadow: 0 1px 1px color-mix(in srgb, var(--text-normal) 5%, transparent);
+  box-shadow: var(--taskpro-lift-1);
   cursor: grab;
+  transition: box-shadow var(--taskpro-base) var(--taskpro-ease);
 }
 .taskpro-board .taskpro-card:hover {
-  border-color: var(--background-modifier-border-hover, var(--background-modifier-border));
-  box-shadow: var(--shadow-s);
+  box-shadow: var(--taskpro-lift-2);
+}
+.taskpro-board .taskpro-card:focus-visible {
+  outline: none;
+  box-shadow: var(--taskpro-lift-1), var(--taskpro-focus-ring);
 }
 .taskpro-board .taskpro-card.is-dragging {
   opacity: 0.45;
@@ -2797,7 +3207,9 @@ button.taskpro-chip:focus-visible {
 .taskpro-board .taskpro-card .taskpro-board__title {
   display: -webkit-box;
   overflow: hidden;
+  font-weight: var(--font-medium);
   line-height: 1.35;
+  text-wrap: pretty;
   white-space: normal;
   overflow-wrap: anywhere;
   -webkit-box-orient: vertical;
@@ -2806,8 +3218,19 @@ button.taskpro-chip:focus-visible {
 .taskpro-board .taskpro-card .taskpro-board__open {
   display: none;
 }
+/* The card's ⋯ appears on hover as a small raised button of its own, as
+   Notion's does, so it reads as something to press rather than as text. */
 .taskpro-board .taskpro-card__more {
+  border-radius: var(--taskpro-radius-inner);
+  background-color: var(--taskpro-board-surface);
+  box-shadow: var(--taskpro-ring), 0 1px 2px color-mix(in srgb, var(--taskpro-shadow-ink) 12%, transparent);
+  color: var(--text-muted);
   opacity: 0;
+  transition: opacity var(--taskpro-fast) var(--taskpro-ease), background-color var(--taskpro-fast) var(--taskpro-ease);
+}
+.taskpro-board .taskpro-card__more:hover {
+  background-color: color-mix(in srgb, var(--text-normal) 6%, var(--taskpro-board-surface));
+  color: var(--text-normal);
 }
 .taskpro-board .taskpro-card__props {
   display: flex;
@@ -2831,31 +3254,77 @@ button.taskpro-chip:focus-visible {
   font-size: var(--font-ui-smaller);
 }
 
-.taskpro-board button.taskpro-kanban__add {
+/* "+ New": ends a board column and every group of the table. Quiet until the
+   pointer is over it, and one click from a field that adds the task with what
+   the group stands for. */
+.taskpro-board button.taskpro-board__new {
   display: flex;
   align-items: center;
+  justify-content: flex-start;
   gap: 6px;
   width: 100%;
   height: 30px;
   padding: 0 8px;
   border: 0;
-  border-radius: var(--radius-s);
+  border-radius: var(--taskpro-radius-card);
   background: transparent;
   box-shadow: none;
   color: var(--text-faint);
   font-size: var(--font-ui-small);
+  text-align: start;
   cursor: pointer;
+  transition: background-color var(--taskpro-fast) var(--taskpro-ease), color var(--taskpro-fast) var(--taskpro-ease);
 }
-.taskpro-board button.taskpro-kanban__add:hover {
+.taskpro-board button.taskpro-board__new:hover {
   background: color-mix(in srgb, var(--text-normal) 6%, transparent);
   color: var(--text-muted);
 }
-.taskpro-board .taskpro-kanban__add-icon {
+.taskpro-board button.taskpro-board__new:focus-visible {
+  outline: none;
+  box-shadow: var(--taskpro-focus-ring);
+}
+.taskpro-board .taskpro-board__new-icon {
   display: inline-flex;
 }
-.taskpro-board input.taskpro-kanban__add-input {
+.taskpro-board input.taskpro-board__new-input {
   width: 100%;
   height: 32px;
+}
+
+/* In the table it is a row of its own: the plus stands under the checks and
+   the word under the titles, and the whole row takes the hover. */
+.taskpro-board .taskpro-table__new-row td {
+  height: 34px;
+  padding-block: 0;
+  border-bottom: 0;
+  color: var(--text-faint);
+  transition: background-color var(--taskpro-fast) var(--taskpro-ease), color var(--taskpro-fast) var(--taskpro-ease);
+}
+.taskpro-board .taskpro-table__new-row td.taskpro-table__check {
+  cursor: pointer;
+}
+.taskpro-board .taskpro-table__new-row:hover td {
+  background: var(--background-modifier-hover);
+  color: var(--text-muted);
+}
+.taskpro-board .taskpro-table__new-row .taskpro-board__new-icon {
+  width: 16px;
+  justify-content: center;
+}
+.taskpro-board button.taskpro-board__new.is-row {
+  height: 34px;
+  margin-inline: -4px;
+  width: calc(100% + 8px);
+  padding-inline: 4px;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+}
+.taskpro-board button.taskpro-board__new.is-row:hover {
+  background: transparent;
+}
+.taskpro-board input.taskpro-board__new-input.is-row {
+  height: 28px;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -2880,21 +3349,13 @@ button.taskpro-chip:focus-visible {
   --taskpro-cal-line: var(--taskpro-board-row-line);
   --taskpro-cal-half-line: color-mix(in srgb, var(--background-modifier-border) 38%, transparent);
   --taskpro-cal-weekend: color-mix(in srgb, var(--text-normal) 4%, var(--taskpro-board-surface));
-  --taskpro-cal-today: var(--interactive-accent);
+  /* Today and now are one thing, so they are one colour: the red of the line
+     that crosses the day, on the day's number. The number is white on that
+     red, and a theme's red is picked to sit on its background, not to carry
+     white text, so the badge takes the red a little darker (white on it is
+     about 5:1 on the stock themes, not 3). */
   --taskpro-cal-now: var(--color-red, #e03e3e);
-  /* One look for everything that floats over the board: a hairline edge, a
-     soft diffuse shadow from above, a panel radius, and tighter corners on
-     what sits inside. */
-  --taskpro-panel-edge: color-mix(in srgb, var(--text-normal) 11%, transparent);
-  --taskpro-float-shadow: 0 1px 2px rgb(15 15 15 / 0.05), 0 8px 24px -4px rgb(15 15 15 / 0.12);
-  --taskpro-radius-panel: 10px;
-  --taskpro-radius-inner: 6px;
-  --taskpro-ease: cubic-bezier(0.2, 0, 0, 1);
-}
-.theme-dark .taskpro-board {
-  /* A dark surface needs a deeper shadow to lift off it at all. */
-  --taskpro-panel-edge: color-mix(in srgb, var(--text-normal) 14%, transparent);
-  --taskpro-float-shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 10px 28px -4px rgb(0 0 0 / 0.5);
+  --taskpro-cal-today: color-mix(in srgb, var(--taskpro-cal-now) 82%, #000);
 }
 
 .taskpro-board .taskpro-board__body.is-calendar {
@@ -2947,14 +3408,15 @@ button.taskpro-chip:focus-visible {
   flex: 0 0 auto;
   height: 28px;
   padding: 0 12px;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: var(--radius-s);
+  border: 1px solid var(--taskpro-board-row-line);
+  border-radius: var(--taskpro-radius-control);
   background: transparent;
   box-shadow: none;
   color: var(--text-normal);
   font-size: var(--font-ui-small);
   font-weight: var(--font-medium);
   cursor: pointer;
+  transition: background-color var(--taskpro-fast) var(--taskpro-ease);
 }
 .taskpro-board button.taskpro-cal-nav__today:hover {
   background-image: linear-gradient(var(--background-modifier-hover), var(--background-modifier-hover));
@@ -3012,7 +3474,7 @@ button.taskpro-chip:focus-visible {
   min-width: 0;
   height: 22px;
   padding: 0 6px;
-  border-radius: 5px;
+  border-radius: var(--taskpro-radius-chip);
   background: color-mix(in srgb, var(--taskpro-cal-accent) 14%, var(--taskpro-board-surface));
   color: color-mix(in srgb, var(--taskpro-cal-accent) 34%, var(--text-normal));
   font-size: var(--font-ui-smaller);
@@ -3085,7 +3547,7 @@ button.taskpro-chip:focus-visible {
   flex-direction: column;
   overflow: hidden;
   border: 1px solid var(--taskpro-cal-line);
-  border-radius: var(--radius-m);
+  border-radius: var(--taskpro-radius-panel);
 }
 .taskpro-board .taskpro-cal__weekdays {
   display: grid;
@@ -3155,7 +3617,7 @@ button.taskpro-chip:focus-visible {
   height: 24px;
   padding: 0 6px;
   border: 0;
-  border-radius: 12px;
+  border-radius: var(--taskpro-radius-chip);
   background: transparent;
   box-shadow: none;
   color: var(--text-normal);
@@ -3171,7 +3633,7 @@ button.taskpro-chip:focus-visible {
 .taskpro-board .is-today > .taskpro-cal__cell-head > button.taskpro-cal__daynum,
 .taskpro-board .taskpro-cal__col-head.is-today > button.taskpro-cal__daynum {
   background-image: linear-gradient(var(--taskpro-cal-today), var(--taskpro-cal-today));
-  color: var(--text-on-accent);
+  color: #fff;
 }
 .taskpro-board .taskpro-cal__alt {
   min-width: 0;
@@ -3192,7 +3654,7 @@ button.taskpro-chip:focus-visible {
   margin-inline-start: auto;
   padding: 0;
   border: 0;
-  border-radius: var(--radius-s);
+  border-radius: var(--taskpro-radius-chip);
   background: transparent;
   box-shadow: none;
   color: var(--text-faint);
@@ -3251,7 +3713,7 @@ button.taskpro-chip:focus-visible {
   min-width: 0;
   overflow: hidden;
   border: 1px solid var(--taskpro-cal-line);
-  border-radius: var(--radius-m);
+  border-radius: var(--taskpro-radius-panel);
 }
 .taskpro-board .taskpro-cal__scroller {
   position: relative;
@@ -3365,7 +3827,7 @@ button.taskpro-chip:focus-visible {
   background-size: 100% var(--taskpro-cal-hour), 100% var(--taskpro-cal-hour);
 }
 .taskpro-board .taskpro-cal__col.is-today {
-  background-color: color-mix(in srgb, var(--taskpro-cal-today) 4%, transparent);
+  background-color: color-mix(in srgb, var(--taskpro-cal-today) 3%, transparent);
 }
 
 .taskpro-board .taskpro-cal__block,
@@ -3542,7 +4004,7 @@ button.taskpro-chip:focus-visible {
   border: 1px solid color-mix(in srgb, var(--taskpro-cal-accent) 55%, transparent);
   border-inline-start: 3px solid var(--taskpro-cal-accent);
   background: color-mix(in srgb, var(--taskpro-cal-accent) 24%, var(--taskpro-board-surface));
-  box-shadow: var(--taskpro-float-shadow);
+  box-shadow: var(--taskpro-shadow-3);
   color: color-mix(in srgb, var(--taskpro-cal-accent) 30%, var(--text-normal));
   pointer-events: none;
 }
@@ -3598,13 +4060,13 @@ button.taskpro-chip:focus-visible {
   border: 1.5px solid var(--interactive-accent);
   border-radius: 6px;
   background: var(--taskpro-board-surface);
-  box-shadow: var(--taskpro-float-shadow);
+  box-shadow: var(--taskpro-shadow-2);
   color: var(--interactive-accent);
   line-height: 0;
   cursor: pointer;
   pointer-events: auto;
-  transition: background-color 140ms ease, color 140ms ease, transform 140ms ease;
-  animation: taskpro-quick-in 120ms ease-out;
+  transition: background-color var(--taskpro-base) var(--taskpro-ease), color var(--taskpro-base) var(--taskpro-ease), transform var(--taskpro-base) var(--taskpro-ease);
+  animation: taskpro-quick-in var(--taskpro-fast) var(--taskpro-ease);
 }
 @keyframes taskpro-quick-in {
   from {
@@ -3691,6 +4153,28 @@ button.taskpro-chip:focus-visible {
   border-radius: 50%;
   background: var(--taskpro-cal-now);
 }
+/* The time it is, in the gutter at the line's height, on the badge's red. The
+   hour mark it would sit on is hidden while it is there. */
+.taskpro-board .taskpro-cal__now-label {
+  position: absolute;
+  z-index: 4;
+  inset-inline-end: 9px;
+  top: calc(var(--start) * var(--taskpro-cal-hour) / 60);
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: var(--taskpro-cal-today);
+  color: #fff;
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--font-semibold);
+  line-height: 1.2;
+  pointer-events: none;
+  transform: translateY(-50%);
+  white-space: nowrap;
+}
+.taskpro-board .taskpro-cal__hour.is-covered {
+  visibility: hidden;
+}
 
 .taskpro-board .taskpro-cal.is-dragging,
 .taskpro-board .taskpro-cal.is-dragging * {
@@ -3715,7 +4199,7 @@ button.taskpro-chip:focus-visible {
   min-height: 0;
   overflow: hidden;
   border: 1px solid var(--taskpro-cal-line);
-  border-radius: var(--radius-m);
+  border-radius: var(--taskpro-radius-panel);
   background: color-mix(in srgb, var(--background-secondary) 55%, var(--taskpro-board-surface));
 }
 .taskpro-board .taskpro-cal__sidebar-head {
@@ -3749,7 +4233,7 @@ button.taskpro-chip:focus-visible {
   align-items: flex-start;
   gap: 8px;
   padding: 6px;
-  border-radius: var(--radius-s);
+  border-radius: var(--taskpro-radius-inner);
   cursor: grab;
 }
 .taskpro-board .taskpro-cal__free:hover {
@@ -3953,7 +4437,7 @@ button.taskpro-chip:focus-visible {
   gap: 12px;
   padding: 10px 6px;
   border-bottom: 1px solid var(--taskpro-cal-line);
-  border-radius: var(--radius-s);
+  border-radius: var(--taskpro-radius-card);
 }
 .taskpro-board .taskpro-cal__agenda-day.is-past .taskpro-cal__agenda-head {
   opacity: 0.7;
@@ -3970,7 +4454,7 @@ button.taskpro-chip:focus-visible {
   height: 36px;
   padding: 0;
   border: 0;
-  border-radius: 50%;
+  border-radius: var(--taskpro-radius-card);
   background: transparent;
   box-shadow: none;
   color: var(--text-normal);
@@ -3984,7 +4468,7 @@ button.taskpro-chip:focus-visible {
 }
 .taskpro-board .taskpro-cal__agenda-day.is-today button.taskpro-cal__agenda-num {
   background-image: linear-gradient(var(--taskpro-cal-today), var(--taskpro-cal-today));
-  color: var(--text-on-accent);
+  color: #fff;
 }
 .taskpro-board .taskpro-cal__agenda-label {
   flex: 1 1 auto;
@@ -4020,7 +4504,7 @@ button.taskpro-chip:focus-visible {
   gap: 10px;
   min-height: 34px;
   padding: 4px 8px;
-  border-radius: var(--radius-s);
+  border-radius: var(--taskpro-radius-inner);
 }
 .taskpro-board .taskpro-cal__agenda-item:hover {
   background: var(--background-modifier-hover);
@@ -4082,13 +4566,12 @@ button.taskpro-chip:focus-visible {
   width: 344px;
   max-width: calc(100% - 16px);
   padding: 12px;
-  border: 1px solid var(--taskpro-panel-edge);
   border-radius: var(--taskpro-radius-panel);
   background: var(--taskpro-board-surface);
   box-shadow: var(--taskpro-float-shadow);
   color: var(--text-normal);
   font-size: var(--font-ui-small);
-  animation: taskpro-panel-in 140ms var(--taskpro-ease);
+  animation: taskpro-panel-in var(--taskpro-base) var(--taskpro-ease);
 }
 @keyframes taskpro-panel-in {
   from {
@@ -4255,7 +4738,7 @@ button.taskpro-chip:focus-visible {
   gap: 8px;
   min-width: 0;
   padding: 6px 8px;
-  border-radius: var(--radius-s);
+  border-radius: var(--taskpro-radius-inner);
   cursor: pointer;
 }
 .taskpro-board .taskpro-cal-picker__option:hover,
@@ -4593,7 +5076,7 @@ button.taskpro-chip:focus-visible {
   color: var(--text-faint);
   opacity: 0;
   cursor: pointer;
-  transition: opacity 120ms var(--taskpro-ease), background-color 120ms var(--taskpro-ease);
+  transition: opacity var(--taskpro-fast) var(--taskpro-ease), background-color var(--taskpro-fast) var(--taskpro-ease);
 }
 .taskpro-board .taskpro-cal-inspector__subtask:hover button.taskpro-cal-inspector__subtask-plan,
 .taskpro-board button.taskpro-cal-inspector__subtask-plan:focus-visible {
@@ -4724,9 +5207,9 @@ button.taskpro-chip:focus-visible {
 .taskpro-board button.taskpro-cal-prop__link,
 .taskpro-board button.taskpro-cal-inspector__remove {
   transition:
-    background-color 120ms var(--taskpro-ease),
-    box-shadow 120ms var(--taskpro-ease),
-    color 120ms var(--taskpro-ease);
+    background-color var(--taskpro-fast) var(--taskpro-ease),
+    box-shadow var(--taskpro-fast) var(--taskpro-ease),
+    color var(--taskpro-fast) var(--taskpro-ease);
 }
 .taskpro-board .taskpro-cal__free:focus-visible,
 .taskpro-board .taskpro-cal-prop__pick:focus-visible,
@@ -4841,14 +5324,13 @@ button.taskpro-chip:focus-visible {
   max-height: min(560px, calc(100% - 8px));
   padding: 4px;
   overflow: hidden;
-  border: 1px solid var(--taskpro-panel-edge);
   border-radius: var(--taskpro-radius-panel);
   background: var(--taskpro-board-surface);
   box-shadow: var(--taskpro-float-shadow);
   color: var(--text-normal);
   font-size: var(--font-ui-small);
   outline: none;
-  animation: taskpro-menu-in 120ms var(--taskpro-ease);
+  animation: taskpro-menu-in var(--taskpro-base) var(--taskpro-ease);
 }
 .taskpro-board .taskpro-menu.is-submenu {
   z-index: calc(var(--layer-popover, 30) + 3);
@@ -4876,21 +5358,27 @@ button.taskpro-chip:focus-visible {
   unicode-bidi: plaintext;
 }
 .taskpro-board input.taskpro-menu__search {
+  /* Part of the menu, not a field in it: no box, a hairline under, and the
+     hairline takes the accent while it has the focus (as in Notion's). */
   flex: 0 0 auto;
   width: auto;
-  height: 30px;
-  margin: 4px 4px 4px;
-  padding: 0 8px;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--background-secondary) 60%, var(--taskpro-board-surface));
-  box-shadow: none;
+  height: 32px;
+  margin: 2px 4px 4px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: 0 1px 0 var(--taskpro-board-row-line);
   color: var(--text-normal);
   font-size: var(--font-ui-small);
+  transition: box-shadow var(--taskpro-base) var(--taskpro-ease);
+}
+.taskpro-board input.taskpro-menu__search:hover {
+  box-shadow: 0 1px 0 var(--taskpro-board-row-line);
 }
 .taskpro-board input.taskpro-menu__search:focus {
-  border-color: var(--interactive-accent);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--interactive-accent) 22%, transparent);
+  border: 0;
+  box-shadow: 0 1px 0 var(--interactive-accent);
 }
 .taskpro-board .taskpro-menu__list {
   min-height: 0;
@@ -4916,7 +5404,7 @@ button.taskpro-chip:focus-visible {
   min-height: 28px;
   padding: 0 8px;
   border-radius: var(--taskpro-radius-inner);
-  transition: background-color 100ms var(--taskpro-ease);
+  transition: background-color var(--taskpro-fast) var(--taskpro-ease);
   cursor: pointer;
   user-select: none;
   -webkit-user-select: none;
@@ -4992,7 +5480,7 @@ button.taskpro-chip:focus-visible {
   height: 16px;
   border-radius: 999px;
   background: color-mix(in srgb, var(--text-normal) 16%, transparent);
-  transition: background-color 140ms var(--taskpro-ease);
+  transition: background-color var(--taskpro-base) var(--taskpro-ease);
 }
 .taskpro-board .taskpro-menu__switch::after {
   content: "";
@@ -5004,7 +5492,7 @@ button.taskpro-chip:focus-visible {
   border-radius: 50%;
   background: var(--background-primary);
   box-shadow: 0 1px 2px color-mix(in srgb, #000 22%, transparent);
-  transition: inset-inline-start 140ms var(--taskpro-ease);
+  transition: inset-inline-start var(--taskpro-base) var(--taskpro-ease);
 }
 .taskpro-board .taskpro-menu__switch.is-on {
   background: var(--interactive-accent);
@@ -5199,8 +5687,8 @@ button.taskpro-chip:focus-visible {
   min-height: 0;
   overflow: auto;
   overscroll-behavior: contain;
-  border: 1px solid var(--taskpro-panel-edge, var(--background-modifier-border));
-  border-radius: var(--taskpro-radius-panel, 10px);
+  border: 1px solid var(--taskpro-cal-line);
+  border-radius: var(--taskpro-radius-panel);
   background: var(--taskpro-board-surface);
 }
 .taskpro-board .taskpro-tl__canvas {
@@ -5287,11 +5775,11 @@ button.taskpro-chip:focus-visible {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 18px;
-  height: 16px;
-  padding-inline: 3px;
-  border-radius: 8px;
-  background: var(--taskpro-cal-now);
+  min-width: 20px;
+  height: 20px;
+  padding-inline: 4px;
+  border-radius: var(--taskpro-radius-chip);
+  background: var(--taskpro-cal-today);
   color: #fff;
   font-weight: var(--font-semibold);
 }
@@ -5329,10 +5817,22 @@ button.taskpro-chip:focus-visible {
   inset-block: 0;
   inset-inline-start: calc(var(--tl-list) + var(--x) * var(--tl-day));
   z-index: 2;
-  width: 2px;
-  margin-inline-start: -1px;
+  width: 1px;
   background: var(--taskpro-cal-now);
+  opacity: 0.85;
   pointer-events: none;
+}
+/* The line starts under today's number with a dot, so the eye can follow the
+   number down to it. */
+.taskpro-board .taskpro-tl__today::before {
+  content: "";
+  position: absolute;
+  top: -3px;
+  inset-inline-start: -3px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--taskpro-cal-now);
 }
 .taskpro-board .taskpro-tl__row {
   position: relative;
@@ -5424,29 +5924,34 @@ button.taskpro-chip:focus-visible {
   box-sizing: border-box;
   width: calc(var(--w) * var(--tl-day) - 4px);
   min-width: 10px;
-  border: 1px solid color-mix(in srgb, var(--tl-accent) 50%, transparent);
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--tl-accent) 20%, var(--taskpro-board-surface));
-  box-shadow: 0 1px 1px color-mix(in srgb, var(--text-normal) 6%, transparent);
+  border: 0;
+  border-radius: var(--taskpro-radius-inner);
+  background: color-mix(in srgb, var(--tl-accent) 19%, var(--taskpro-board-surface));
+  /* A card lifted a hair off the chart: its colour's ring, then the shared
+     lift under it. */
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tl-accent) 44%, transparent),
+    0 1px 2px color-mix(in srgb, var(--taskpro-shadow-ink) 10%, transparent);
   cursor: grab;
   touch-action: pan-y;
-  transition: box-shadow 120ms var(--taskpro-ease, ease);
+  transition: box-shadow var(--taskpro-base) var(--taskpro-ease), background-color var(--taskpro-base) var(--taskpro-ease);
 }
 .taskpro-board .taskpro-tl__bar:hover {
-  box-shadow: 0 1px 3px color-mix(in srgb, var(--text-normal) 14%, transparent);
+  background: color-mix(in srgb, var(--tl-accent) 26%, var(--taskpro-board-surface));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tl-accent) 58%, transparent),
+    0 2px 6px -1px color-mix(in srgb, var(--taskpro-shadow-ink) 18%, transparent);
 }
 .taskpro-board .taskpro-tl__bar:focus-visible,
 .taskpro-board .taskpro-tl__milestone:focus-visible {
-  outline: 2px solid var(--interactive-accent);
-  outline-offset: 1px;
+  outline: none;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tl-accent) 48%, transparent), var(--taskpro-focus-ring);
 }
 .taskpro-board .taskpro-tl__bar-fill {
   position: absolute;
   inset-block: 0;
   inset-inline-start: 0;
   width: calc(var(--progress) * 100%);
-  border-radius: 5px;
-  background: color-mix(in srgb, var(--tl-accent) 34%, var(--taskpro-board-surface));
+  border-radius: inherit;
+  background: color-mix(in srgb, var(--tl-accent) 30%, var(--taskpro-board-surface));
   pointer-events: none;
 }
 .taskpro-board .taskpro-tl__bar-label {
@@ -5457,7 +5962,7 @@ button.taskpro-chip:focus-visible {
   min-width: 0;
   padding-inline: 8px;
   overflow: hidden;
-  color: color-mix(in srgb, var(--tl-accent) 40%, var(--text-normal));
+  color: color-mix(in srgb, var(--tl-accent) 26%, var(--text-normal));
   font-size: var(--font-ui-smaller);
   font-weight: var(--font-medium);
   text-overflow: ellipsis;
@@ -5510,11 +6015,10 @@ button.taskpro-chip:focus-visible {
     transparent 0 5px,
     color-mix(in srgb, var(--taskpro-accent-waiting) 22%, transparent) 5px 9px
   );
-  border-style: dashed;
 }
 .taskpro-board .taskpro-tl__bar.is-dragging {
   z-index: 8;
-  box-shadow: var(--taskpro-float-shadow, 0 8px 24px rgba(0, 0, 0, 0.18));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tl-accent) 55%, transparent), var(--taskpro-shadow-3);
   cursor: grabbing;
 }
 .taskpro-board .taskpro-tl.is-dragging,
@@ -5548,7 +6052,7 @@ button.taskpro-chip:focus-visible {
   border-radius: 2px;
   background: color-mix(in srgb, var(--tl-accent) 70%, var(--text-normal));
   opacity: 0;
-  transition: opacity 120ms var(--taskpro-ease, ease);
+  transition: opacity var(--taskpro-fast) var(--taskpro-ease);
 }
 .taskpro-board .taskpro-tl__bar:hover .taskpro-tl__handle::after,
 .taskpro-board .taskpro-tl__bar.is-dragging .taskpro-tl__handle::after {
@@ -5646,10 +6150,9 @@ button.taskpro-chip:focus-visible {
   inset-inline-start: calc(var(--x) * var(--tl-day));
   z-index: 9;
   padding: 3px 8px;
-  border: 1px solid var(--taskpro-panel-edge, var(--background-modifier-border));
-  border-radius: 6px;
+  border-radius: var(--taskpro-radius-inner);
   background: var(--taskpro-board-surface);
-  box-shadow: var(--taskpro-float-shadow, 0 6px 18px rgba(0, 0, 0, 0.16));
+  box-shadow: var(--taskpro-float-shadow);
   color: var(--text-normal);
   font-size: var(--font-ui-smaller);
   font-variant-numeric: tabular-nums;
@@ -5673,7 +6176,9 @@ button.taskpro-chip:focus-visible {
 .taskpro-board .taskpro-tl__link {
   fill: none;
   stroke: color-mix(in srgb, var(--text-muted) 70%, transparent);
-  stroke-width: 1.4;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 .taskpro-board .taskpro-tl__link.is-late {
   stroke: var(--taskpro-accent-overdue);
@@ -5769,11 +6274,11 @@ button.taskpro-chip:focus-visible {
   inset: 0;
   z-index: calc(var(--layer-popover, 30) + 1);
   background: rgba(0, 0, 0, 0.34);
-  animation: taskpro-sheet-fade 180ms var(--taskpro-ease, ease);
+  animation: taskpro-sheet-fade var(--taskpro-base) var(--taskpro-ease);
 }
 .taskpro-board .taskpro-sheet-backdrop.is-leaving {
   opacity: 0;
-  transition: opacity 200ms var(--taskpro-ease, ease);
+  transition: opacity var(--taskpro-base) var(--taskpro-ease);
 }
 @keyframes taskpro-sheet-fade {
   from {
@@ -5792,12 +6297,13 @@ button.taskpro-chip:focus-visible {
   max-width: none;
   max-height: min(84%, 680px);
   padding: 0 8px calc(10px + var(--taskpro-bottom-inset, env(safe-area-inset-bottom, 0px)));
-  border-width: 1px 0 0;
-  border-radius: 16px 16px 0 0;
-  box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.22);
+  border-radius: var(--taskpro-radius-sheet) var(--taskpro-radius-sheet) 0 0;
+  /* Its top edge, then a wide soft shadow cast upward onto the board. */
+  box-shadow: 0 -1px 0 var(--taskpro-panel-edge), var(--taskpro-highlight),
+    0 -12px 40px -8px color-mix(in srgb, var(--taskpro-shadow-ink) 40%, transparent);
   font-size: var(--font-ui-medium);
-  animation: taskpro-sheet-in 240ms var(--taskpro-ease, ease);
-  transition: transform 220ms var(--taskpro-ease, ease);
+  animation: taskpro-sheet-in var(--taskpro-slow) var(--taskpro-ease);
+  transition: transform var(--taskpro-slow) var(--taskpro-ease);
 }
 .taskpro-board .taskpro-menu.is-sheet.is-dragging,
 .taskpro-board .taskpro-cal-popover.is-sheet.is-dragging {
@@ -5852,9 +6358,17 @@ button.taskpro-chip:focus-visible {
   white-space: normal;
 }
 .taskpro-board .taskpro-menu.is-sheet input.taskpro-menu__search {
+  /* On a phone the field is a field: filled, so there is something to aim at. */
   height: 42px;
   margin: 2px 4px 8px;
+  padding: 0 12px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--text-normal) 5.5%, transparent);
+  box-shadow: none;
   font-size: 16px;
+}
+.taskpro-board .taskpro-menu.is-sheet input.taskpro-menu__search:focus {
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--interactive-accent) 70%, transparent);
 }
 .taskpro-board .taskpro-menu.is-sheet .taskpro-menu__list {
   padding-bottom: 4px;
@@ -5908,7 +6422,7 @@ button.taskpro-chip:focus-visible {
   height: 44px;
   padding: 0;
   border: 0;
-  border-radius: 22px;
+  border-radius: var(--taskpro-radius-touch);
   background: transparent;
   box-shadow: none;
   color: var(--text-normal);
@@ -5969,7 +6483,7 @@ button.taskpro-chip:focus-visible {
   height: 40px;
   padding: 0 12px;
   border: 1px solid var(--background-modifier-border);
-  border-radius: 20px;
+  border-radius: var(--taskpro-radius-touch);
   background: var(--taskpro-board-surface);
   box-shadow: none;
   color: var(--text-normal);
@@ -6019,7 +6533,7 @@ button.taskpro-chip:focus-visible {
 .taskpro-board button.taskpro-board__icon-btn.taskpro-board__bar-icon-btn {
   width: 40px;
   height: 40px;
-  border-radius: 20px;
+  border-radius: var(--taskpro-radius-touch);
 }
 .taskpro-board button.taskpro-board__icon-btn.taskpro-board__bar-icon-btn.is-active {
   background: color-mix(in srgb, var(--interactive-accent) 12%, transparent);
@@ -6113,7 +6627,7 @@ body.is-mobile .taskpro-board.taskpro-board button.taskpro-tl__undated-toggle {
   width: 100%;
   height: 46px;
   padding: 0 12px;
-  border-radius: 10px;
+  border-radius: var(--taskpro-radius-touch);
   font-size: 16px;
 }
 .taskpro-board .taskpro-add-sheet__row {
@@ -6130,7 +6644,7 @@ body.is-mobile .taskpro-board.taskpro-board button.taskpro-tl__undated-toggle {
   height: 40px;
   padding: 0 12px;
   border: 1px solid var(--background-modifier-border);
-  border-radius: 20px;
+  border-radius: var(--taskpro-radius-touch);
   background: transparent;
   box-shadow: none;
   color: var(--text-muted);
@@ -6151,7 +6665,7 @@ body.is-mobile .taskpro-board.taskpro-board button.taskpro-tl__undated-toggle {
   flex: 0 0 auto;
   height: 40px;
   padding: 0 20px;
-  border-radius: 20px;
+  border-radius: var(--taskpro-radius-touch);
 }
 
 /* ── The table as a list ───────────────────────────────────────────────── */
@@ -6210,7 +6724,7 @@ body.is-mobile .taskpro-board.taskpro-board button.taskpro-tl__undated-toggle {
 .taskpro-board .taskpro-list__swipe .svg-icon {
   width: 20px;
   height: 20px;
-  transition: transform 160ms var(--taskpro-ease, ease);
+  transition: transform var(--taskpro-base) var(--taskpro-ease);
 }
 .taskpro-board .taskpro-list__swipe.is-done {
   background: var(--taskpro-accent-done);
@@ -6234,7 +6748,7 @@ body.is-mobile .taskpro-board.taskpro-board button.taskpro-tl__undated-toggle {
   padding: 11px 2px;
   background: var(--taskpro-board-surface);
   touch-action: pan-y;
-  transition: transform 200ms var(--taskpro-ease, ease);
+  transition: transform var(--taskpro-base) var(--taskpro-ease);
 }
 .taskpro-board .taskpro-list__row.is-swiping .taskpro-list__content {
   transition: none;
@@ -6395,7 +6909,7 @@ body.is-mobile .taskpro-board.taskpro-board button.taskpro-tl__undated-toggle {
   height: 36px;
   padding: 0 10px;
   border: 1px solid var(--background-modifier-border);
-  border-radius: 18px;
+  border-radius: 10px;
   background: transparent;
   box-shadow: none;
   cursor: pointer;
@@ -6471,7 +6985,7 @@ body.is-mobile .taskpro-board.taskpro-board button.taskpro-tl__undated-toggle {
   justify-content: center;
   width: 30px;
   height: 30px;
-  border-radius: 15px;
+  border-radius: var(--taskpro-radius-card);
   font-size: var(--font-ui-small);
   font-variant-numeric: tabular-nums;
 }
@@ -6480,7 +6994,7 @@ body.is-mobile .taskpro-board.taskpro-board button.taskpro-tl__undated-toggle {
   font-weight: var(--font-bold);
 }
 .taskpro-board .taskpro-cal__month.is-dots .is-selected .taskpro-cal__cell-number {
-  background: var(--taskpro-cal-today);
+  background: var(--interactive-accent);
   color: var(--text-on-accent, #fff);
   font-weight: var(--font-semibold);
 }
@@ -6569,6 +7083,17 @@ body.is-mobile .taskpro-board.taskpro-board button.taskpro-tl__undated-toggle {
   min-width: 40px;
   min-height: 40px;
 }
+/* A card's ⋯ is a full finger wide, but it leans out of the card's padding
+   rather than making the title's row that tall. */
+.taskpro-board.is-touch .taskpro-card__top button.taskpro-board__icon-btn {
+  margin-block: -9px;
+  margin-inline-end: -9px;
+}
+/* Always there on a touch screen, so it does not need to look raised. */
+.taskpro-board.is-touch .taskpro-card__more {
+  background-color: transparent;
+  box-shadow: none;
+}
 .taskpro-board.is-touch .taskpro-kanban__header button.taskpro-kanban__menu {
   width: 40px;
   height: 40px;
@@ -6648,4 +7173,29 @@ body.is-mobile .taskpro-board.taskpro-board button.taskpro-tl__undated-toggle {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ── Reduced motion ─────────────────────────────────────────────────────────
+   A person who asks their system for less motion gets none from TaskPro:
+   panels appear where they are going, hover and press changes are instant,
+   and nothing pulses or slides. What the motion carried is also said some
+   other way (a menu opens beside what opened it, a drop target is outlined),
+   so nothing is lost. */
+@media (prefers-reduced-motion: reduce) {
+  .taskpro-board,
+  .taskpro-board *,
+  .taskpro-board *::before,
+  .taskpro-board *::after,
+  .taskpro-chip,
+  .taskpro-chip *,
+  .taskpro-panel-overlay,
+  .taskpro-panel-overlay *,
+  .taskpro-reminder-overlay,
+  .taskpro-reminder-overlay *,
+  .notice [class*="taskpro-"] {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

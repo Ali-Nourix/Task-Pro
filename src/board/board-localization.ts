@@ -12,6 +12,7 @@ export interface BoardLabels {
   loading: string;
   empty: string;
   emptyFiltered: string;
+  emptyClear: string;
   scopeTarget: (folder: string) => string;
   scopeVault: string;
   scopeTargetUnset: string;
@@ -115,6 +116,7 @@ const EN: BoardLabels = {
   loading: 'Reading your notes…',
   empty: 'No tasks here yet. Add one above, or write “- [ ] ” in any note.',
   emptyFiltered: 'No task matches the current search and filters.',
+  emptyClear: 'Clear search and filters',
   scopeTarget: (folder) => folder,
   scopeVault: 'Whole vault',
   scopeTargetUnset: 'Set a target folder under TaskPro → General to show only that folder.',
@@ -235,6 +237,7 @@ const FA: BoardLabels = {
   loading: 'در حال خواندن یادداشت‌ها…',
   empty: 'هنوز تسکی اینجا نیست. از بالا یکی اضافه کنید یا در هر یادداشتی «- [ ] » بنویسید.',
   emptyFiltered: 'هیچ تسکی با جستجو و فیلترهای فعلی جور نیست.',
+  emptyClear: 'پاک کردن جستجو و فیلترها',
   scopeTarget: (folder) => folder,
   scopeVault: 'کل والت',
   scopeTargetUnset: 'برای نمایش فقط یک پوشه، در تنظیمات TaskPro بخش General پوشه هدف را تعیین کنید.',

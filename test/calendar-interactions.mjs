@@ -36,8 +36,21 @@ function inDays(days) {
 }
 const HOUR = 48;
 
+/**
+ * Every page in these tests believes it is 15:00 today. The calendar opens on
+ * the hours around the current time and draws a line at it, so a test that
+ * takes its coordinates from the screen would otherwise behave differently in
+ * the morning and at night.
+ */
+async function atThreeInTheAfternoon(page) {
+  const now = new Date();
+  now.setHours(15, 0, 0, 0);
+  await page.clock.setFixedTime(now);
+}
+
 async function open(query, width = 1400) {
   const page = await browser.newPage({ viewport: { width, height: 900 } });
+  await atThreeInTheAfternoon(page);
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto(`file://${path.join(here, 'board-preview.html')}?layout=calendar&${query}`);
@@ -354,6 +367,20 @@ try {
   const faTime = await page.locator('.taskpro-cal__block-time').first().evaluate((el) => getComputedStyle(el).direction);
   eq(faTime, 'ltr', 'a time range reads left to right in Persian');
   eq(page.errors, [], 'no page errors in the Persian week');
+  await page.close();
+
+  // The time it is stands in the gutter at the line's height, and the hour mark it would sit on gives way.
+  page = await open('cal=week');
+  const gutterLabel = await page.locator('.taskpro-cal__now-label').textContent();
+  ok(/^(15:00|3:00\s?PM)$/.test(gutterLabel.trim()), 'the now label tells the time');
+  const [lineY, labelY] = await page.evaluate(() => {
+    const centre = (el) => el.getBoundingClientRect().top + el.getBoundingClientRect().height / 2;
+    return [centre(document.querySelector('.taskpro-cal__now')), centre(document.querySelector('.taskpro-cal__now-label'))];
+  });
+  ok(Math.abs(lineY - labelY) <= 2, 'level with the line');
+  eq(await page.locator('.taskpro-cal__hour.is-covered').count(), 1, 'one hour mark is covered');
+  eq(await page.locator('.taskpro-cal__hour.is-covered').evaluate((el) => el.style.getPropertyValue('--hour')), '15', 'the one under it');
+  eq(page.errors, [], 'no page errors with the now label');
   await page.close();
 } finally {
   await browser.close();

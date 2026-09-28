@@ -8,7 +8,7 @@
    class names are the ones Obsidian itself puts on <body>, so the plugin's own
    `.theme-dark` rules apply here exactly as they do in the app.
    --------------------------------------------------------------------------- */
-:root {
+body {
   --font-ui: Inter, "Segoe UI", Roboto, sans-serif;
   --font-text: Inter, "Segoe UI", Roboto, sans-serif;
   --font-monospace: "JetBrains Mono", Consolas, monospace;
