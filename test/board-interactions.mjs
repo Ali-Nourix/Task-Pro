@@ -60,7 +60,7 @@ try {
 
   // Status from the status chip's menu.
   await row(page, 'Accessibility pass').locator('.taskpro-table__status .taskpro-chip').click();
-  await page.locator('.menu .menu-item', { hasText: 'In Progress' }).click();
+  await page.locator('.taskpro-menu__item', { hasText: 'In Progress' }).click();
   await page.waitForTimeout(50);
   eq((await note(page, 'Projects/Website redesign.md')).includes('- [/] Accessibility pass'), true, 'status menu writes the status');
 
@@ -82,7 +82,7 @@ try {
 
   // Priority from the cell's menu.
   await row(page, 'Pick the display typeface').locator('.taskpro-table__priority').click();
-  await page.locator('.menu .menu-item', { hasText: 'Highest' }).click();
+  await page.locator('.taskpro-menu__item', { hasText: 'Highest' }).click();
   await page.waitForTimeout(50);
   eq((await note(page, 'Projects/Website redesign.md')).includes('Pick the display typeface @tag(deep-work) @priority(highest)'), true, 'priority written');
 
@@ -194,6 +194,132 @@ try {
   eq(await page.locator('.taskpro-menu').count(), 1, 'the ⋯ button opens the same menu');
   await page.keyboard.press('Escape');
   eq(page.errors, [], 'no page errors with the row menu');
+  await page.close();
+
+  // ── Table columns: the plan's hours, and moving, resizing, hiding columns ─
+  page = await open('?scope=vault&group=none', 1500);
+  const headers = () => page.$$eval('thead th[data-column]', (els) => els.map((el) => el.dataset.column));
+  eq(await headers(page), ['status', 'tags', 'priority', 'deadline', 'plan', 'progress', 'note'], 'default columns, repeat hidden');
+  const planCell = row(page, 'Send the quote to Acme').locator('.taskpro-table__plan');
+  eq(await planCell.locator('.taskpro-chip__label').textContent(), 'Today', 'the plan cell names the day');
+  eq(await planCell.locator('.taskpro-board__time').textContent(), '14:00 – 15:30', 'and the hours, from when to when');
+
+  // Sorting by plan puts the earliest plan first.
+  await page.locator('th[data-column="plan"]').click();
+  eq((await titles(page)).slice(0, 3), ['Send the quote to Acme', 'Draft the launch post', 'Weekly review and planning'], 'sorted by plan');
+  await page.locator('th[data-column="plan"]').click();
+  await page.locator('th[data-column="plan"]').click();
+
+  // Drag a header onto another place.
+  const drag = async (from, to, steps = 8) => {
+    await page.mouse.move(from.x, from.y);
+    await page.mouse.down();
+    await page.mouse.move(to.x, to.y, { steps });
+    await page.mouse.up();
+    await page.waitForTimeout(50);
+  };
+  const center = async (selector) => {
+    const box = await page.locator(selector).boundingBox();
+    return { x: box.x + box.width / 2, y: box.y + box.height / 2, box };
+  };
+  const noteHead = await center('th[data-column="note"]');
+  const status = await center('th[data-column="status"]');
+  await drag(noteHead, { x: status.box.x + 6, y: status.y });
+  eq(await headers(page), ['note', 'status', 'tags', 'priority', 'deadline', 'plan', 'progress'], 'a dragged header moves its column');
+  eq((await page.$$eval('tbody .taskpro-table__row:first-child td[data-column]', (els) => els.map((el) => el.dataset.column)))[0], 'note', 'and its cells move with it');
+  eq(await page.locator('th.is-sorted').count(), 0, 'the drop is not a click that sorts');
+
+  // Drag an edge to resize; a double click puts the width back.
+  const colWidth = (id) => page.$eval(`col[data-column="${id}"]`, (el) => el.style.width);
+  const edge = await page.locator('th[data-column="tags"] .taskpro-table__resize').boundingBox();
+  await drag({ x: edge.x + edge.width / 2, y: edge.y + 10 }, { x: edge.x + edge.width / 2 + 60, y: edge.y + 10 });
+  eq(await colWidth('tags'), '240px', 'dragging the edge widens the column');
+  eq(await page.locator('th.is-sorted').count(), 0, 'resizing does not sort');
+  await page.locator('th[data-column="tags"] .taskpro-table__resize').dblclick();
+  await page.waitForTimeout(50);
+  eq(await colWidth('tags'), '180px', 'a double click resets the width');
+
+  // The header's menu hides a column; the + menu shows it again and adds another.
+  await page.locator('th[data-column="priority"]').click({ button: 'right' });
+  await page.locator('.taskpro-menu__item', { hasText: 'Hide property' }).click();
+  eq((await headers(page)).includes('priority'), false, 'hidden from the header menu');
+  await page.locator('.taskpro-table__add-btn').click();
+  eq(await page.locator('.taskpro-menu__item', { hasText: 'Priority' }).getAttribute('aria-checked'), 'false', 'the properties menu shows it off');
+  await page.locator('.taskpro-menu__item', { hasText: 'Priority' }).click();
+  await page.locator('.taskpro-menu__item', { hasText: 'Repeat' }).click();
+  eq(await page.locator('.taskpro-menu').count(), 1, 'the menu stays open while switching properties');
+  eq((await headers(page)).includes('priority') && (await headers(page)).includes('repeat'), true, 'shown again, and a new column added');
+  eq(await row(page, 'Weekly review and planning').locator('.taskpro-table__repeat .taskpro-chip__label').textContent(), 'Every week', 'the repeat column');
+  eq(await row(page, 'Weekly review and planning').locator('.taskpro-board__title-wrap .taskpro-board__repeat').count(), 0, 'no repeat mark by the title while the column says it');
+
+  // The properties list reorders by its grips.
+  const items = () => page.$$eval('.taskpro-menu__item', (els) => els.map((el) => el.querySelector('.taskpro-menu__label').textContent));
+  const grip = await page.locator('.taskpro-menu__item', { hasText: 'Progress' }).locator('.taskpro-menu__grip').boundingBox();
+  const target = await page.locator('.taskpro-menu__item', { hasText: 'Tags' }).boundingBox();
+  await drag({ x: grip.x + grip.width / 2, y: grip.y + grip.height / 2 }, { x: grip.x + grip.width / 2, y: target.y + 3 });
+  eq((await items()).slice(0, 4), ['Note', 'Status', 'Progress', 'Tags'], 'a property dragged in the list');
+  eq((await headers(page)).slice(0, 4), ['note', 'status', 'progress', 'tags'], 'and in the table');
+  await page.locator('.taskpro-menu__item', { hasText: 'Reset to default' }).click();
+  eq(await headers(page), ['status', 'tags', 'priority', 'deadline', 'plan', 'progress', 'note'], 'reset to the default columns');
+  await page.keyboard.press('Escape');
+
+  // A header moves with Alt and the arrow keys too.
+  await page.locator('th[data-column="tags"]').focus();
+  await page.keyboard.press('Alt+ArrowRight');
+  eq((await headers(page)).slice(0, 3), ['status', 'priority', 'tags'], 'Alt+→ moves a column later');
+  eq(page.errors, [], 'no page errors with the table columns');
+  await page.close();
+
+  // Persian: the far edge is on the left, so dragging it left widens the column.
+  page = await open('?scope=vault&group=none&lang=fa', 1500);
+  const faEdge = await page.locator('th[data-column="tags"] .taskpro-table__resize').boundingBox();
+  await drag({ x: faEdge.x + faEdge.width / 2, y: faEdge.y + 10 }, { x: faEdge.x + faEdge.width / 2 - 40, y: faEdge.y + 10 });
+  eq(await page.$eval('col[data-column="tags"]', (el) => el.style.width), '220px', 'RTL resize follows the edge');
+  const faNote = await center('th[data-column="note"]');
+  const faStatus = await center('th[data-column="status"]');
+  await drag(faNote, { x: faStatus.box.x + faStatus.box.width - 6, y: faStatus.y });
+  eq((await headers(page))[0], 'note', 'RTL drag lands where the line showed');
+  eq(page.errors, [], 'no page errors with RTL columns');
+  await page.close();
+
+  // ── Board: what cards show, and the columns' order, width and hiding ─────
+  page = await open('?layout=board&scope=vault', 1800);
+  const cardOf = (title) => page.locator('.taskpro-card', { hasText: title });
+  eq(await cardOf('Send the quote to Acme').locator('.taskpro-schedule-badge .taskpro-chip__label').textContent(), 'Today, 14:00 – 15:30', 'a card shows its plan with the hours');
+  await page.locator('.taskpro-board__properties').click();
+  await page.locator('.taskpro-menu__item', { hasText: 'Plan' }).click();
+  await page.locator('.taskpro-menu__item', { hasText: 'Status' }).click();
+  await page.keyboard.press('Escape');
+  eq(await cardOf('Send the quote to Acme').locator('.taskpro-schedule-badge').count(), 0, 'a property switched off leaves the cards');
+  eq(await cardOf('Send the quote to Acme').locator('.taskpro-interactive-badge').count(), 1, 'one switched on joins them');
+
+  const groups = () => page.$$eval('.taskpro-kanban__column', (els) => els.map((el) => el.dataset.group));
+  eq(await groups(), ['[ ]', '[/]', '[!]', '[x]'], 'status columns');
+  const doneHead = await page.locator('.taskpro-kanban__column[data-group="[x]"] .taskpro-kanban__header').boundingBox();
+  const openHead = await page.locator('.taskpro-kanban__column[data-group="[ ]"] .taskpro-kanban__header').boundingBox();
+  await drag({ x: doneHead.x + 60, y: doneHead.y + doneHead.height / 2 }, { x: openHead.x + 10, y: openHead.y + 10 }, 12);
+  eq(await groups(), ['[x]', '[ ]', '[/]', '[!]'], 'a column dragged by its header');
+
+  const width = () => page.$eval('.taskpro-kanban__column', (el) => Math.round(el.getBoundingClientRect().width));
+  eq(await width(), 272, 'columns start at their width');
+  const handle = await page.locator('.taskpro-kanban__column[data-group="[x]"] .taskpro-kanban__resize').boundingBox();
+  await drag({ x: handle.x + 4, y: handle.y + 20 }, { x: handle.x + 84, y: handle.y + 20 });
+  eq(await width(), 352, 'dragging an edge widens every column');
+  await page.locator('.taskpro-kanban__column[data-group="[x]"] .taskpro-kanban__resize').dblclick();
+  await page.waitForTimeout(50);
+  eq(await width(), 272, 'a double click puts the width back');
+
+  await page.locator('.taskpro-kanban__column[data-group="[!]"] .taskpro-kanban__header').hover();
+  await page.locator('.taskpro-kanban__column[data-group="[!]"] .taskpro-kanban__menu').click();
+  await page.locator('.taskpro-menu__item', { hasText: 'Hide column' }).click();
+  eq(await groups(), ['[x]', '[ ]', '[/]'], 'a column hidden from its menu');
+  eq(await page.locator('.taskpro-kanban__hidden-item').count(), 1, 'and listed at the end of the board');
+  await page.locator('.taskpro-kanban__hidden-item').click();
+  eq(await groups(), ['[x]', '[ ]', '[/]', '[!]'], 'a click puts it back');
+  await page.locator('.taskpro-kanban__column[data-group="[x]"] .taskpro-kanban__header').click({ button: 'right' });
+  await page.locator('.taskpro-menu__item', { hasText: 'Reset column order' }).click();
+  eq(await groups(), ['[ ]', '[/]', '[!]', '[x]'], 'the order reset');
+  eq(page.errors, [], 'no page errors with the board columns');
   await page.close();
 } finally {
   await browser.close();

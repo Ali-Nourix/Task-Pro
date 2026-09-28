@@ -202,8 +202,20 @@ the ribbon or with **Open Task Board**, and it opens as a tab of its own.
 - **Group** by status, tag, priority, deadline (*Overdue*, *Today*, *Next 7
   days*, *Later*, *Past*) or note, and fold away groups you do not need; a
   task with two tags appears under both, as in a Notion multi-select.
-- **Sort** by title, status, priority, deadline, progress or note — click a
-  column header once, twice to reverse, a third time for note order.
+- **Sort** by title, status, priority, deadline, plan, progress or note —
+  click a column header once, twice to reverse, a third time for note order.
+- **Arrange the columns** the way a Notion view's properties are arranged:
+  drag a header to move its column, drag its edge to resize it (double-click
+  the edge for its default width), and right-click it to sort, move or hide
+  it. The **+** at the end of the header row, or **Properties** in the
+  toolbar, switches each property on or off and drags them into order; on the
+  board it picks what a card shows. **Plan** shows the day and the hours
+  (*Today · 09:30 – 11:00*), and **Repeat** can be switched on as a column.
+- **Arrange the board's columns** too: drag a column by its header to move
+  it, drag the edge between two columns to make every column wider or
+  narrower, and use a column's **⋯** (or right-click its header) to hide it.
+  Hidden columns are listed at the end of the board, one click from coming
+  back. Grouped by tag, **New tag** there adds a column.
 - **Filter** by status, priority and tag, and **search** titles, tag names and
   note names. Active filters show as pills you can click away.
 - **Edit in place:** tick a task off, change its status or priority from a menu,

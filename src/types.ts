@@ -2,6 +2,7 @@
 // Core type definitions for TaskPro
 // ─────────────────────────────────────────────────────────────────────────────
 
+import type { BoardColumnPref } from './board/board-columns';
 import type { TaskCreationIndex } from './task-registry';
 import type { TaskTag } from './tags';
 
@@ -372,7 +373,7 @@ export const DEFAULT_CALENDAR_SETTINGS: CalendarSettings = {
 export type BoardScope = 'target' | 'vault';
 export type BoardLayout = 'table' | 'board' | 'calendar';
 export type BoardGroupBy = 'none' | 'status' | 'tag' | 'priority' | 'deadline' | 'note';
-export type BoardSortKey = 'document' | 'title' | 'status' | 'priority' | 'deadline' | 'progress' | 'note';
+export type BoardSortKey = 'document' | 'title' | 'status' | 'priority' | 'deadline' | 'plan' | 'progress' | 'note';
 export type BoardSortDir = 'asc' | 'desc';
 /** A priority filter entry: a level, or tasks that have none. */
 export type BoardPriorityFilter = TaskPriority | 'none';
@@ -401,6 +402,16 @@ export interface BoardPreferences {
   calendarShowDeadlines: boolean;
   calendarShowDailyNotes: boolean;
   calendarShowDone: boolean;
+  /** The table's property columns: order, width, and which are hidden. Unset is the default set. */
+  tableColumns?: BoardColumnPref[];
+  /** The properties a board card shows, in order. Unset is the default set. */
+  cardProperties?: BoardColumnPref[];
+  /** The order of a board's columns, per grouping, by group value. */
+  groupOrder?: Partial<Record<BoardGroupBy, string[]>>;
+  /** Board columns taken off the board, by group id (`status:[x]`). */
+  hiddenGroups?: string[];
+  /** The width of every column on the board, in pixels. */
+  kanbanColumnWidth?: number;
 }
 
 export const DEFAULT_BOARD_PREFERENCES: BoardPreferences = {

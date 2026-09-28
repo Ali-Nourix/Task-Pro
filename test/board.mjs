@@ -11,6 +11,7 @@ const build = await esbuild.build({
       export { parseBoardTasks } from "../src/board/task-store";
       export { filterTasks, sortTasks, groupTasks, deadlineBucket, summarize, daysUntil } from "../src/board/board-query";
       export { displayTitle } from "../src/board/task-board";
+      export * as columns from "../src/board/board-columns";
     `,
     resolveDir: new URL('.', import.meta.url).pathname,
     loader: 'ts',
@@ -36,7 +37,7 @@ const build = await esbuild.build({
 const mod = await import(
   'data:text/javascript;base64,' + Buffer.from(build.outputFiles[0].text).toString('base64')
 );
-const { parseBoardTasks, filterTasks, sortTasks, groupTasks, deadlineBucket, summarize, daysUntil, displayTitle } = mod;
+const { parseBoardTasks, filterTasks, sortTasks, groupTasks, deadlineBucket, summarize, daysUntil, displayTitle, columns } = mod;
 
 let checked = 0;
 const eq = (actual, expected, label) => {
@@ -146,5 +147,48 @@ eq(byStatus[0].id, 'status:[ ]', 'group ids are stable for remembering collapsed
 // ── titles in cells ────────────────────────────────────────────────────────
 eq(displayTitle('Read [[Books/Deep Work|the book]] and [[Notes/Plan]]'), 'Read the book and Plan', 'wiki links show their alias or name');
 eq(displayTitle('See [the spec](https://example.com) **now**'), 'See the spec now', 'markdown links and emphasis');
+
+// ── columns: which properties show, in what order, how wide ──────────────
+{
+  const { resolveColumns, moveColumn, setColumn, visibleColumns, columnWidth, orderGroups, moveValue, clampKanbanWidth, DEFAULT_CARD_PROPERTIES } = columns;
+  const ids = (list) => list.map((column) => column.id);
+  eq(ids(resolveColumns(undefined)), ['status', 'tags', 'priority', 'deadline', 'plan', 'progress', 'note', 'repeat'], 'default columns');
+  eq(ids(visibleColumns(resolveColumns(undefined))), ['status', 'tags', 'priority', 'deadline', 'plan', 'progress', 'note'], 'repeat starts hidden');
+  const saved = resolveColumns([
+    { id: 'note', width: 90000 },
+    { id: 'status', hidden: true },
+    { id: 'nope' },
+    { id: 'note' },
+    { id: 'tags', width: 10 },
+  ]);
+  eq(ids(saved).slice(0, 3), ['note', 'status', 'tags'], 'the saved order first; unknown and repeated ids dropped');
+  eq(ids(saved).slice(3), ['priority', 'deadline', 'plan', 'progress', 'repeat'], 'properties added since are appended as they are by default');
+  eq([saved[0].width, saved[2].width, saved[1].hidden], [640, 90, true], 'widths kept in range, hidden kept');
+  eq(resolveColumns([{ id: 'tags', width: 180 }])[0].width, undefined, 'a width equal to the default is not stored');
+  eq(ids(moveColumn(resolveColumns(undefined), 'note', 'status')).slice(0, 2), ['note', 'status'], 'move before another column');
+  eq(ids(moveColumn(resolveColumns(undefined), 'status', null)).at(-1), 'status', 'move to the end');
+  const wide = setColumn(resolveColumns(undefined), 'plan', { width: 260 });
+  eq(columnWidth(wide.find((column) => column.id === 'plan')), 260, 'a resized column');
+  eq('width' in setColumn(wide, 'plan', { width: undefined }).find((column) => column.id === 'plan'), false, 'resetting drops the width');
+  eq('hidden' in setColumn(resolveColumns(undefined), 'repeat', { hidden: false }).find((column) => column.id === 'repeat'), false, 'showing drops the flag');
+  eq(ids(visibleColumns(resolveColumns(undefined, DEFAULT_CARD_PROPERTIES))), ['tags', 'priority', 'deadline', 'plan', 'progress', 'note'], 'default card properties');
+
+  const groups = [{ value: '[ ]' }, { value: '[/]' }, { value: '[!]' }, { value: '[x]' }];
+  eq(orderGroups(groups, ['[x]', '[ ]']).map((g) => g.value), ['[x]', '[ ]', '[/]', '[!]'], 'saved board columns first, new ones where grouping put them');
+  eq(orderGroups(groups, undefined).map((g) => g.value), ['[ ]', '[/]', '[!]', '[x]'], 'no saved order keeps the grouping order');
+  eq(moveValue(['a', 'b', 'c'], 'c', 'a'), ['c', 'a', 'b'], 'a board column moved before another');
+  eq(moveValue(['a', 'b', 'c'], 'a', null), ['b', 'c', 'a'], 'a board column moved last');
+  eq([clampKanbanWidth(10), clampKanbanWidth(300.4), clampKanbanWidth(9999)], [220, 300, 520], 'board column widths kept in range');
+}
+
+// ── sorting by plan ───────────────────────────────────────────────────────
+{
+  const planned = parseBoardTasks(
+    'Plan.md',
+    ['- [ ] b @schedule(2026-05-03 09:00-10:00)', '- [ ] none', '- [ ] a @schedule(2026-05-03)', '- [ ] c @schedule(2026-05-01 18:00)'].join('\n')
+  );
+  const order = sortTasks(planned, 'plan', 'asc', { getProgress: () => undefined, today }).map((task) => task.text.split(' ')[0]);
+  eq(order, ['c', 'a', 'b', 'none'], 'by day then start, a day plan before timed ones, unplanned last');
+}
 
 console.log(`BOARD_OK (${checked} checks)`);

@@ -22,6 +22,8 @@ export interface MenuEntry {
   /** The current value, or a key, shown on the far side. */
   hint?: string;
   checked?: boolean;
+  /** Drawn as an on/off switch on the far side, for a property that is shown or hidden. */
+  toggle?: boolean;
   /** Destructive, drawn in the error colour. */
   warning?: boolean;
   disabled?: boolean;
@@ -29,12 +31,23 @@ export interface MenuEntry {
   keywords?: string;
   /** Built when the submenu opens, so it reflects the task at that moment. */
   submenu?: () => MenuSection[];
+  /**
+   * Choosing it leaves the menu open and draws it again, for a list of
+   * switches (which properties show) that are flipped one after another.
+   */
+  keepOpen?: boolean;
   onSelect?: () => unknown;
 }
 
 export interface MenuSection {
   title?: string;
   entries: MenuEntry[];
+  /**
+   * Makes the section's rows draggable by a grip, and movable with Alt and
+   * the arrow keys: the entry at `from` goes before the one at `before`
+   * (the entry count puts it last). The menu is drawn again afterwards.
+   */
+  reorder?: (from: number, before: number) => unknown;
 }
 
 export interface ContextMenuOptions {
@@ -42,7 +55,8 @@ export interface ContextMenuOptions {
   container: HTMLElement;
   /** A point (a right click), or a rectangle to open under (a chip). */
   at: { x: number; y: number } | DOMRect;
-  sections: MenuSection[];
+  /** Sections, or a function that builds them: one is asked again when a `keepOpen` row is chosen. */
+  sections: MenuSection[] | (() => MenuSection[]);
   /** A title row above the menu, such as the task's name. */
   header?: string;
   /** A placeholder turns the search field on. */
@@ -59,6 +73,9 @@ export interface ContextMenuHandle {
 interface Row {
   entry: MenuEntry;
   el: HTMLElement;
+  /** The section it is in, and where, when the section can be reordered. */
+  section?: MenuSection;
+  index?: number;
 }
 
 interface Panel {
@@ -144,24 +161,33 @@ export function openContextMenu(options: ContextMenuOptions): ContextMenuHandle 
       if (!first) list.createDiv({ cls: 'taskpro-menu__separator' });
       first = false;
       if (section.title) list.createDiv({ cls: 'taskpro-menu__heading', text: section.title });
-      for (const entry of section.entries) {
+      const movable = !!section.reorder && depth === 0 && !search?.value.trim();
+      section.entries.forEach((entry, sectionIndex) => {
         const el = list.createDiv({ cls: 'taskpro-menu__item' });
-        el.setAttribute('role', entry.checked !== undefined ? 'menuitemcheckbox' : 'menuitem');
-        if (entry.checked !== undefined) el.setAttribute('aria-checked', String(entry.checked));
+        const state = entry.toggle ?? entry.checked;
+        el.setAttribute('role', state !== undefined ? 'menuitemcheckbox' : 'menuitem');
+        if (state !== undefined) el.setAttribute('aria-checked', String(state));
         el.toggleClass('is-disabled', !!entry.disabled);
         el.toggleClass('is-warning', !!entry.warning);
         el.toggleClass('has-submenu', !!entry.submenu);
         if (entry.disabled) el.setAttribute('aria-disabled', 'true');
 
+        if (movable) {
+          const grip = el.createSpan({ cls: 'taskpro-menu__grip' });
+          setIcon(grip, 'grip-vertical');
+          grip.addEventListener('pointerdown', (event) => startReorder(event, panel, row));
+          grip.addEventListener('click', (event) => event.stopPropagation());
+        }
         const icon = el.createSpan({ cls: 'taskpro-menu__icon' });
         if (entry.swatch) icon.createSpan({ cls: 'taskpro-menu__swatch' }).style.setProperty('--taskpro-menu-swatch', entry.swatch);
         else if (entry.icon) setIcon(icon, entry.icon);
         el.createSpan({ cls: 'taskpro-menu__label', text: entry.label, attr: { dir: 'auto' } });
         if (entry.hint) el.createSpan({ cls: 'taskpro-menu__hint', text: entry.hint, attr: { dir: 'auto' } });
         if (entry.checked) setIcon(el.createSpan({ cls: 'taskpro-menu__check' }), 'check');
+        if (entry.toggle !== undefined) el.createSpan({ cls: `taskpro-menu__switch${entry.toggle ? ' is-on' : ''}` });
         if (entry.submenu) setIcon(el.createSpan({ cls: 'taskpro-menu__chevron' }), rtl ? 'chevron-left' : 'chevron-right');
 
-        const row: Row = { entry, el };
+        const row: Row = movable ? { entry, el, section, index: sectionIndex } : { entry, el };
         const index = panel.rows.push(row) - 1;
         el.addEventListener('pointerenter', () => {
           setActive(panel, index);
@@ -179,7 +205,7 @@ export function openContextMenu(options: ContextMenuOptions): ContextMenuHandle 
           event.stopPropagation();
           choose(depth, row);
         });
-      }
+      });
     }
     if (!panel.rows.length) list.createDiv({ cls: 'taskpro-menu__empty', text: '—' });
   };
@@ -197,6 +223,65 @@ export function openContextMenu(options: ContextMenuOptions): ContextMenuHandle 
     placeBeside(el, row.el.getBoundingClientRect());
   };
 
+  /** Moves a row of a reorderable section, then draws the menu again with that row still active. */
+  const reorder = (row: Row, before: number) => {
+    const { section, index } = row;
+    if (!section?.reorder || index === undefined || before === index || before === index + 1) return;
+    const entry = row.entry;
+    void section.reorder(index, before);
+    renderRoot();
+    const moved = root.rows.findIndex((r) => r.entry.label === entry.label && r.section);
+    if (moved !== -1) setActive(root, moved);
+  };
+
+  /** Drags a row by its grip; a line shows where it will land. */
+  const startReorder = (event: PointerEvent, panel: Panel, row: Row) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const siblings = panel.rows.filter((r) => r.section === row.section);
+    const startY = event.clientY;
+    let dragging = false;
+    let before = row.index!;
+    const mark = () =>
+      siblings.forEach((r, i) => {
+        r.el.toggleClass('is-drop-before', dragging && i === before && before !== row.index && before !== row.index! + 1);
+        r.el.toggleClass('is-drop-after', dragging && i === siblings.length - 1 && before === siblings.length && row.index !== siblings.length - 1);
+      });
+    const onMove = (e: PointerEvent) => {
+      if (!dragging && Math.abs(e.clientY - startY) < 3) return;
+      dragging = true;
+      row.el.addClass('is-dragging');
+      before = siblings.length;
+      for (let i = 0; i < siblings.length; i++) {
+        const box = siblings[i].el.getBoundingClientRect();
+        if (e.clientY < box.top + box.height / 2) {
+          before = i;
+          break;
+        }
+      }
+      mark();
+    };
+    const onUp = () => {
+      doc.removeEventListener('pointermove', onMove, true);
+      doc.removeEventListener('pointerup', onUp, true);
+      doc.removeEventListener('pointercancel', onCancel, true);
+      if (!open) return;
+      row.el.removeClass('is-dragging');
+      const was = dragging;
+      dragging = false;
+      mark();
+      if (was) reorder(row, before);
+    };
+    const onCancel = () => {
+      dragging = false;
+      onUp();
+    };
+    doc.addEventListener('pointermove', onMove, true);
+    doc.addEventListener('pointerup', onUp, true);
+    doc.addEventListener('pointercancel', onCancel, true);
+  };
+
   const choose = (depth: number, row: Row) => {
     const { entry } = row;
     if (entry.disabled) return;
@@ -206,9 +291,23 @@ export function openContextMenu(options: ContextMenuOptions): ContextMenuHandle 
       if (panel) setActive(panel, firstEnabled(panel, 0, 1));
       return;
     }
+    if (entry.keepOpen) {
+      const panel = panels[depth];
+      const index = panel.rows.indexOf(row);
+      void entry.onSelect?.();
+      if (depth === 0) renderRoot();
+      else {
+        closeFrom(depth + 1);
+        renderRows(panel, panel.el.querySelector<HTMLElement>('.taskpro-menu__list')!, panel.owner!.entry.submenu!(), depth);
+      }
+      if (index !== -1) setActive(panel, Math.min(index, panel.rows.length - 1));
+      return;
+    }
     handle.close();
     void entry.onSelect?.();
   };
+
+  const sections = (): MenuSection[] => (typeof options.sections === 'function' ? options.sections() : options.sections);
 
   const firstEnabled = (panel: Panel, from: number, step: 1 | -1): number => {
     const count = panel.rows.length;
@@ -236,10 +335,10 @@ export function openContextMenu(options: ContextMenuOptions): ContextMenuHandle 
     closeFrom(1);
     const query = search?.value.trim().toLowerCase() ?? '';
     if (!query) {
-      renderRows(root, rootList, options.sections, 0);
+      renderRows(root, rootList, sections(), 0);
     } else {
       const terms = query.split(/\s+/);
-      const found = flatten(options.sections).filter(({ entry, path }) => {
+      const found = flatten(sections()).filter(({ entry, path }) => {
         const haystack = `${path.join(' ')} ${entry.label} ${entry.keywords ?? ''}`.toLowerCase();
         return terms.every((term) => haystack.includes(term));
       });
@@ -302,6 +401,11 @@ export function openContextMenu(options: ContextMenuOptions): ContextMenuHandle 
       case 'ArrowDown':
       case 'ArrowUp': {
         const step = event.key === 'ArrowDown' ? 1 : -1;
+        const row = panel.rows[panel.active];
+        if (event.altKey && row?.section) {
+          reorder(row, step === 1 ? row.index! + 2 : row.index! - 1);
+          break;
+        }
         setActive(panel, firstEnabled(panel, panel.active < 0 ? (step === 1 ? 0 : panel.rows.length - 1) : panel.active + step, step));
         break;
       }
