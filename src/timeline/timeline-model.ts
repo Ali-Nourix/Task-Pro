@@ -37,6 +37,26 @@ export function taskSpan(task: Pick<BoardTask, 'schedule' | 'deadline'>): TaskSp
   return null;
 }
 
+/**
+ * Whether a blocker is planned to end after the task waiting on it starts.
+ * On the same day that takes both times to tell; a day with no time could
+ * be either side of the other, so it is not called late.
+ */
+export function finishesAfterStart(
+  blocker: Pick<BoardTask, 'schedule' | 'deadline'>,
+  task: Pick<BoardTask, 'schedule' | 'deadline'>
+): boolean {
+  const before = taskSpan(blocker);
+  const after = taskSpan(task);
+  if (!before || !after) return false;
+  const order = compareDays(before.end, after.start);
+  if (order !== 0) return order > 0;
+  // Only a plan carries a time, and only on the plan's own day.
+  const endsAt = blocker.schedule?.date === before.end ? blocker.schedule.end ?? blocker.schedule.start : undefined;
+  const startsAt = task.schedule?.date === after.start ? task.schedule.start : undefined;
+  return !!endsAt && !!startsAt && endsAt > startsAt;
+}
+
 export interface TimelineRow {
   task: BoardTask;
   depth: number;

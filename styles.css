@@ -3272,6 +3272,9 @@ button.taskpro-chip:focus-visible {
   position: sticky;
   top: 0;
   z-index: 4;
+  /* As wide as the days under it, so that when they scroll sideways (three
+     at a time on a phone) its background still covers every one of them. */
+  min-width: calc(var(--taskpro-cal-gutter) + var(--taskpro-cal-days) * var(--taskpro-cal-col-min));
   border-bottom: 1px solid var(--taskpro-cal-line);
   background: var(--taskpro-board-surface);
 }
@@ -3401,6 +3404,25 @@ button.taskpro-chip:focus-visible {
   align-items: flex-start;
   gap: 5px;
   min-width: 0;
+}
+/* Too narrow for the circle and a word beside it (side by side, or three
+   days to a phone's screen): the title goes under the circle instead of
+   breaking its words. */
+.taskpro-board .taskpro-cal__block:not(.is-short) .taskpro-cal__block-top {
+  flex-wrap: wrap;
+  row-gap: 3px;
+}
+.taskpro-board .taskpro-cal__block:not(.is-short) .taskpro-cal__block-title {
+  flex-basis: 40px;
+}
+/* Side by side in a third of a phone's width, a block is a few letters
+   wide: its words stay whole and the edge cuts them, rather than a word
+   broken over lines. */
+.taskpro-board.is-compact .taskpro-cal__block {
+  padding-inline: 5px 4px;
+}
+.taskpro-board.is-compact .taskpro-cal__block-title {
+  overflow-wrap: normal;
 }
 .taskpro-board .taskpro-cal__block-top .taskpro-cal__check {
   margin-top: 1px;
@@ -5466,6 +5488,15 @@ button.taskpro-chip:focus-visible {
   color: var(--text-muted);
   font-weight: var(--font-normal);
 }
+/* A name out on the chart: a dependency line passing by goes behind it. */
+.taskpro-board .taskpro-tl__bar.is-narrow .taskpro-tl__bar-label,
+.taskpro-board .taskpro-tl__milestone-label {
+  text-shadow:
+    0 0 2px var(--taskpro-board-surface),
+    0 0 2px var(--taskpro-board-surface),
+    0 0 3px var(--taskpro-board-surface),
+    0 0 4px var(--taskpro-board-surface);
+}
 .taskpro-board .taskpro-tl__bar.is-done {
   opacity: 0.55;
 }
@@ -5552,13 +5583,17 @@ button.taskpro-chip:focus-visible {
 .taskpro-board .taskpro-tl__milestone-label {
   position: absolute;
   inset-inline-start: calc(100% + 4px);
+  display: flex;
   max-width: 220px;
-  overflow: hidden;
   color: var(--text-muted);
   font-size: var(--font-ui-smaller);
-  text-overflow: ellipsis;
   white-space: nowrap;
   pointer-events: none;
+}
+.taskpro-board .taskpro-tl__milestone-label > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   unicode-bidi: plaintext;
 }
 .taskpro-board .taskpro-tl__milestone-label.is-hidden {
@@ -5756,7 +5791,7 @@ button.taskpro-chip:focus-visible {
   width: auto;
   max-width: none;
   max-height: min(84%, 680px);
-  padding: 0 8px calc(10px + env(safe-area-inset-bottom, 0px));
+  padding: 0 8px calc(10px + var(--taskpro-bottom-inset, env(safe-area-inset-bottom, 0px)));
   border-width: 1px 0 0;
   border-radius: 16px 16px 0 0;
   box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.22);
@@ -6006,13 +6041,41 @@ button.taskpro-chip:focus-visible {
   display: none;
 }
 
+/* What is at the foot of the screen: the phone's home indicator, and on
+   Obsidian's phone app its floating bar, which it counts in
+   --view-bottom-spacing. The round button and the last rows stay above them. */
+.taskpro-board.is-compact {
+  --taskpro-bottom-inset: var(--view-bottom-spacing, env(safe-area-inset-bottom, 0px));
+}
+
+/* Some themes give every button without an icon one height on a phone
+   (Bookcloth: 40px, from body.is-mobile button:not(:has(> svg))...), which
+   stretched a task's circle into an oval and a day's number into a pill.
+   The sizes that must hold are said again here, at a weight that wins. */
+body.is-mobile .taskpro-board.taskpro-board button.taskpro-board__check {
+  height: 16px;
+}
+body.is-mobile .taskpro-board.taskpro-board button.taskpro-board__check.taskpro-cal__check {
+  height: 13px;
+}
+body.is-mobile .taskpro-board.taskpro-board button.taskpro-cal__daynum {
+  height: 24px;
+}
+body.is-mobile .taskpro-board.taskpro-board button.taskpro-cal__fold {
+  height: 18px;
+}
+body.is-mobile .taskpro-board.taskpro-board button.taskpro-board__note,
+body.is-mobile .taskpro-board.taskpro-board button.taskpro-tl__undated-toggle {
+  height: auto;
+}
+
 /* ── New task: a round button, and its sheet ───────────────────────────── */
 .taskpro-board .taskpro-board__fab {
   display: none;
 }
 .taskpro-board.is-compact button.taskpro-board__fab {
   position: absolute;
-  bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+  bottom: calc(18px + var(--taskpro-bottom-inset));
   inset-inline-end: 18px;
   z-index: 20;
   display: inline-flex;
@@ -6037,7 +6100,7 @@ button.taskpro-chip:focus-visible {
   stroke-width: 2.2;
 }
 .taskpro-board.is-compact .taskpro-board__body {
-  padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: calc(96px + var(--taskpro-bottom-inset));
 }
 .taskpro-board .taskpro-add-sheet {
   gap: 12px;

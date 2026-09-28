@@ -392,6 +392,15 @@ try {
   const faReport = await page.locator('.taskpro-tl__row').filter({ has: page.locator('.taskpro-tl__title', { hasText: 'گزارش ماهانه' }) }).locator('.taskpro-tl__bar').boundingBox();
   await drag({ x: faReport.x + faReport.width / 2, y: faReport.y + faReport.height / 2 }, { x: faReport.x + faReport.width / 2 - 40, y: faReport.y + faReport.height / 2 });
   eq((await note(page, 'Planner/Focus.md')).split('\n').find((l) => l.includes('گزارش ماهانه')).includes(`@schedule(${iso(3)} 14:00-16:00)`), true, 'RTL: dragging left is later');
+  // A name out beside its bar follows it in time, to its left, whatever script the name is in.
+  await page.evaluate((line) => (window.__notes['Planner/Focus.md'] += `\n${line}`), `- [ ] Pick the colors @schedule(${iso(1)})`);
+  await page.locator('.taskpro-board button:has(svg.lucide-refresh-cw)').first().click();
+  await page.waitForTimeout(120);
+  for (const title of ['Pick the colors', 'ورزش صبحگاهی']) {
+    const faBar = page.locator('.taskpro-tl__row').filter({ has: page.locator('.taskpro-tl__title', { hasText: title }) }).locator('.taskpro-tl__bar');
+    const [barBox, labelBox] = [await faBar.boundingBox(), await faBar.locator('.taskpro-tl__bar-label').boundingBox()];
+    eq(labelBox.x + labelBox.width <= barBox.x, true, `RTL: "${title}" is named to the left of its bar`);
+  }
   eq(page.errors, [], 'no page errors on the Persian timeline');
   await page.close();
 

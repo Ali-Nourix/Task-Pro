@@ -12,7 +12,7 @@ const build = await esbuild.build({
       export * from "../src/board/task-relations";
       export { extractWaiting, setWaiting, extractRemind, setRemind, stripTaskMetadata, replaceTaskText, setSchedule } from "../src/task-metadata";
       export { dueReminders, planStartsAt, reminderKey } from "../src/reminders/plan-reminders";
-      export { taskSpan, buildTimeline } from "../src/timeline/timeline-model";
+      export { taskSpan, buildTimeline, finishesAfterStart } from "../src/timeline/timeline-model";
     `,
     resolveDir: new URL('.', import.meta.url).pathname,
     loader: 'ts',
@@ -54,6 +54,7 @@ const {
   planStartsAt,
   taskSpan,
   buildTimeline,
+  finishesAfterStart,
 } = mod;
 
 let checked = 0;
@@ -182,5 +183,13 @@ eq(timeline.rows[1].span, null, 'a parent with no dates of its own has no bar');
 eq(timeline.undated.map((t) => t.text), ['Someday', 'Loose end'], 'the rest have no dates');
 const filtered = buildTimeline([family[1]], family);
 eq(filtered.rows.map((r) => r.task.text), ['Launch', 'Write'], 'a filtered subtask keeps its parent for context');
+
+const plan = (date, start, end) => ({ schedule: { date, start, end } });
+eq(finishesAfterStart(plan('2026-09-29', '09:00', '09:30'), plan('2026-09-29', '10:00', '11:00')), false, 'same day, done before it starts');
+eq(finishesAfterStart(plan('2026-09-29', '09:00', '10:30'), plan('2026-09-29', '10:00', '11:00')), true, 'same day, still going when it starts');
+eq(finishesAfterStart(plan('2026-09-29'), plan('2026-09-29', '10:00')), false, 'a day with no time is not called late');
+eq(finishesAfterStart(plan('2026-09-30'), plan('2026-09-29')), true, 'a later day is late');
+eq(finishesAfterStart({ schedule: { date: '2026-09-27' }, deadline: '2026-09-30' }, plan('2026-09-29')), true, 'a span running past its start is late');
+eq(finishesAfterStart(plan('2026-09-28'), { deadline: '2026-09-29' }), false, 'before a deadline-only task is fine');
 
 console.log(`RELATIONS_OK (${checked} checks)`);

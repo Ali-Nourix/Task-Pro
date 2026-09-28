@@ -191,6 +191,11 @@ try {
     return r.left >= 0 && r.right <= 391;
   }).length);
   eq(days, 3, 'three days to a screen');
+  eq(await page.locator('.taskpro-cal__col.is-today').evaluate((c) => {
+    const r = c.getBoundingClientRect();
+    return r.left >= 0 && r.right <= 391;
+  }), true, 'today in view');
+  eq(await page.locator('.taskpro-cal__sticky').evaluate((el) => el.getBoundingClientRect().width >= el.parentElement.querySelector('.taskpro-cal__grid').getBoundingClientRect().width - 1), true, 'the header as wide as the days under it');
   // Hold a block, then drag it down an hour.
   const block = await center(page.locator('.taskpro-cal__block', { hasText: 'Auto layout' }));
   await page.gesture({ x: block.x, y: block.y }, { x: block.x, y: block.y + 48 }, { hold: 600, steps: 10 });
@@ -199,6 +204,29 @@ try {
   await page.tap('.taskpro-cal__block:has-text("Prototyping")');
   eq(await page.locator('.taskpro-cal-inspector.is-sheet, .taskpro-cal-popover.is-sheet').count(), 1, 'its card rises from the bottom');
   eq(page.errors, [], 'no page errors on the calendar');
+  await page.context().close();
+
+  // Persian: the week starts on Saturday, and opens on today, first on the right.
+  page = await open('&layout=calendar&cal=week&lang=fa');
+  const placed = await page.evaluate(() => {
+    const scroller = document.querySelector('.taskpro-cal__scroller');
+    const cols = [...document.querySelectorAll('.taskpro-cal__col')];
+    const index = cols.findIndex((c) => c.classList.contains('is-today'));
+    const edge = scroller.getBoundingClientRect().right - document.querySelector('.taskpro-cal__hours').offsetWidth;
+    return { index, count: cols.length, off: Math.round(cols[index].getBoundingClientRect().right - edge) };
+  });
+  // Near the week's end there are not three days left to show from it.
+  eq(placed.index > placed.count - 3 || Math.abs(placed.off) <= 1, true, 'RTL: the week opens with today first');
+  // Scrolled across, the header still hides what passes under it.
+  const covered = await page.evaluate(() => {
+    const box = document.querySelector('.taskpro-cal__sticky').getBoundingClientRect();
+    return [...document.querySelectorAll('.taskpro-cal__col-head')].every((head) => {
+      const r = head.getBoundingClientRect();
+      return r.left >= box.left - 1 && r.right <= box.right + 1;
+    });
+  });
+  eq(covered, true, 'RTL: the header covers the week scrolled across');
+  eq(page.errors, [], 'no page errors on the Persian week');
   await page.context().close();
 
   // ── The timeline, in Persian ───────────────────────────────────────────

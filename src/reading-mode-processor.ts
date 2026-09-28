@@ -70,6 +70,35 @@ export interface ReadingModeSettings {
 }
 
 /**
+ * Whether a rendered text node is on the item's own line: not in a list
+ * nested under it (its subtasks, rendered inside it) and not in its chips.
+ */
+function inOwnLine(node: Node, item: Element): boolean {
+  for (let el = node.parentElement; el && el !== item; el = el.parentElement) {
+    if (el.tagName === 'UL' || el.tagName === 'OL' || el.classList.contains('taskpro-badge-container')) return false;
+  }
+  return true;
+}
+
+/** The text nodes of the item's own line. */
+function ownTextWalker(item: Element): TreeWalker {
+  return document.createTreeWalker(item, NodeFilter.SHOW_TEXT, {
+    acceptNode: (node) => (inOwnLine(node, item) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT),
+  });
+}
+
+/**
+ * The item's own text. A parent's `textContent` holds its subtasks' lines
+ * as well, whose markers are theirs, not the parent's.
+ */
+function ownText(item: Element): string {
+  let text = '';
+  const walker = ownTextWalker(item);
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) text += node.textContent ?? '';
+  return text;
+}
+
+/**
  * The line a rendered task item came from. Its text is not enough for a
  * dependency, since Obsidian has already turned the link into an anchor.
  */
@@ -96,7 +125,7 @@ function renderedSubtasks(item: Element): { done: number; total: number } | null
 
 /** Removes `@waiting(…)` from a rendered line: the text around it and the links Obsidian made inside. */
 function hideWaitingMarker(root: Element): void {
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const walker = ownTextWalker(root);
   let node = walker.nextNode() as Text | null;
   while (node) {
     const at = node.textContent?.indexOf('@waiting(') ?? -1;
@@ -172,7 +201,7 @@ export function createReadingModeProcessor(
       // for every marker that is not a space, so `[/]` and `[!]` arrive checked
       // and used to read as done.
       let status: TaskStatus;
-      const itemText = item.textContent || '';
+      const itemText = ownText(item);
       const taskMarker = checkbox.getAttribute('data-task') ?? item.getAttribute('data-task');
       if (taskMarker === '!' || (!taskMarker && itemText.includes('[!]'))) {
         status = '[!]';
@@ -189,7 +218,7 @@ export function createReadingModeProcessor(
       }
 
      // Extract deadline
-     const text = item.textContent || '';
+     const text = itemText;
      const deadline = extractDeadline(text) || null;
 
       // Extract block ID - check inline first, then fall back to cache
@@ -242,8 +271,9 @@ export function createReadingModeProcessor(
       hideInlineTaskMetadata(item, settings.showRepeatBadges, settings.showTagBadges, settings.showScheduleBadges);
       if (waiting) hideWaitingMarker(item);
       
-      // Append to the list item
-      item.appendChild(badgeContainer);
+      // At the end of the item's own line: before its subtasks, when it has any.
+      const nested = Array.from(item.children).find((child) => child.tagName === 'UL' || child.tagName === 'OL');
+      item.insertBefore(badgeContainer, nested ?? null);
     });
   };
 }
@@ -254,7 +284,8 @@ export function createReadingModeProcessor(
  * chip is on — otherwise turning the chip off would hide the rule entirely.
  */
 function hideInlineTaskMetadata(root: Element, hideRepeat: boolean, hideTags: boolean, hideSchedule: boolean): void {
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  // Only the item's own line: its subtasks are items of their own, read after it.
+  const walker = ownTextWalker(root);
   const emptyTextNodes: Text[] = [];
 
   let currentNode = walker.nextNode();
