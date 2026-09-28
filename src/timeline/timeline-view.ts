@@ -40,6 +40,7 @@ import {
 import { getCalendarLabels } from '../calendar/calendar-localization';
 import { TimelineRow, buildTimeline } from './timeline-model';
 import { TimelineLabels, TimelineZoom, getTimelineLabels } from './timeline-localization';
+import { holdToDrag } from '../ui/touch';
 
 export type { TimelineZoom };
 
@@ -50,6 +51,8 @@ const ZOOMS: Record<TimelineZoom, { px: number; days: number; lead: number; step
   month: { px: 4, days: 7 * 80, lead: 45, step: 7 * 26 },
 };
 const ROW_HEIGHT = 34;
+/** Rows a finger can hit, on a touch screen. */
+const TOUCH_ROW_HEIGHT = 44;
 /** Pixels a press travels before it is a drag. */
 const DRAG_THRESHOLD = 4;
 
@@ -132,6 +135,10 @@ export class TaskTimeline {
     return ZOOMS[this.zoom];
   }
 
+  private get rowHeight(): number {
+    return this.ctx.root.hasClass('is-touch') || this.ctx.root.hasClass('is-compact') ? TOUCH_ROW_HEIGHT : ROW_HEIGHT;
+  }
+
   private weekStart(): number {
     return resolveWeekStart(this.ctx.settings().calendar.weekStart, this.system);
   }
@@ -163,7 +170,11 @@ export class TaskTimeline {
     this.iconButton(steps, this.rtl ? 'chevron-right' : 'chevron-left', labels.previous, () => this.step(-1));
     this.iconButton(steps, this.rtl ? 'chevron-left' : 'chevron-right', labels.next, () => this.step(1));
     const heading = start.createDiv({ cls: 'taskpro-cal-nav__titles' });
-    heading.createEl('h3', { cls: 'taskpro-cal-nav__title', text: `${monthTitle(from, this.system, this.language)} – ${monthTitle(to, this.system, this.language)}` });
+    // A phone has room for the months' short names only.
+    const title = this.ctx.root.hasClass('is-compact')
+      ? `${MONTH_NAMES_SHORT[this.system][this.language][partsIn(from, this.system).month - 1]} – ${monthTitle(to, this.system, this.language)}`
+      : `${monthTitle(from, this.system, this.language)} – ${monthTitle(to, this.system, this.language)}`;
+    heading.createEl('h3', { cls: 'taskpro-cal-nav__title', text: title });
 
     const end = nav.createDiv({ cls: 'taskpro-cal-nav__end' });
     this.ctx.segmented(
@@ -255,7 +266,7 @@ export class TaskTimeline {
     this.scroller = scroller;
     scroller.style.setProperty('--tl-day', `${px}px`);
     scroller.style.setProperty('--tl-days', String(count));
-    scroller.style.setProperty('--tl-row', `${ROW_HEIGHT}px`);
+    scroller.style.setProperty('--tl-row', `${this.rowHeight}px`);
     scroller.dataset.zoom = this.zoom;
     const canvas = scroller.createDiv({ cls: 'taskpro-tl__canvas' });
 
@@ -287,6 +298,11 @@ export class TaskTimeline {
     if (this.scroll) {
       scroller.scrollLeft = this.rtl ? -this.scroll.left : this.scroll.left;
       scroller.scrollTop = this.scroll.top;
+    } else if (compareDays(today, from) > 0 && compareDays(today, to) <= 0) {
+      // Fresh: today a day in from the list, however little of the chart there is room for.
+      const left = Math.max(0, (daysBetween(from, today) - 1) * px);
+      const room = scroller.clientWidth - this.listWidth();
+      if ((daysBetween(from, today) + 1) * px > room) scroller.scrollLeft = this.rtl ? -left : left;
     }
     scroller.addEventListener('scroll', () => {
       this.scroll = { left: Math.abs(scroller.scrollLeft), top: scroller.scrollTop };
@@ -523,8 +539,15 @@ export class TaskTimeline {
       event.stopPropagation();
       this.ctx.openTaskActions(task, { x: event.clientX, y: event.clientY }, el);
     });
-    el.addEventListener('pointerdown', (event) => {
-      if (event.button !== 0 || (!this.ctx.host.setDates && !this.ctx.host.setSchedule)) return;
+    el.addEventListener('pointerdown', (down) => {
+      if (down.button !== 0 || (!this.ctx.host.setDates && !this.ctx.host.setSchedule)) return;
+      // A finger holds a bar to pick it up; one that moves at once scrolls the chart.
+      holdToDrag(down, () => this.pressBar(down, el, lane, task, start, end));
+    });
+  }
+
+  private pressBar(event: PointerEvent, el: HTMLElement, lane: HTMLElement, task: BoardTask, start: DayKey, end: DayKey): void {
+    {
       const handle = (event.target as HTMLElement).closest('.taskpro-tl__handle');
       // A diamond is one day: it moves, whichever part of it is pressed.
       const mode: Drag['mode'] = el.hasClass('taskpro-tl__milestone')
@@ -561,7 +584,7 @@ export class TaskTimeline {
       doc.addEventListener('pointerup', onUp, true);
       doc.addEventListener('pointercancel', onCancel, true);
       doc.addEventListener('keydown', onKey, true);
-    });
+    }
   }
 
   /** The days a drag has reached so far, kept in order: a start never passes the end. */
@@ -679,6 +702,7 @@ export class TaskTimeline {
   ): void {
     const relations = this.ctx.relations();
     const px = this.scale.px;
+    const ROW_HEIGHT = this.rowHeight;
     const paths: Array<{ d: string; late: boolean }> = [];
     for (const row of rows) {
       const to = positions.get(row.task.id);

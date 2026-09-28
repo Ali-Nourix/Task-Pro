@@ -5,6 +5,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { claimEscape } from '../ui/escape-scope';
+import { makeSheet, wantsSheet } from '../ui/sheet';
 
 export interface PopoverHandle {
   readonly el: HTMLElement;
@@ -40,9 +41,12 @@ export function openCalendarPopover(options: PopoverOptions): PopoverHandle {
   let open = true;
   const doc = container.ownerDocument;
   const win = doc.defaultView ?? window;
+  // On a phone the card is a sheet from the bottom of the board.
+  const sheet = wantsSheet(container);
+  let undoSheet: (() => void) | null = null;
 
   const place = () => {
-    if (!open) return;
+    if (!open || sheet) return;
     const box = container.getBoundingClientRect();
     const width = el.offsetWidth;
     const height = el.offsetHeight;
@@ -85,6 +89,7 @@ export function openCalendarPopover(options: PopoverOptions): PopoverHandle {
       doc.removeEventListener('pointerdown', onPointerDown, true);
       releaseEscape();
       win.removeEventListener('resize', place);
+      undoSheet?.();
       el.remove();
       options.onClose?.();
     },
@@ -95,6 +100,7 @@ export function openCalendarPopover(options: PopoverOptions): PopoverHandle {
   // menu or panel the card opens claims it after this, so closes first.
   const releaseEscape = claimEscape(() => handle.close(), doc);
   options.build(el, handle);
+  if (sheet) undoSheet = makeSheet(el, container, () => handle.close());
   place();
   // Registered after the click that opened the card has finished.
   win.setTimeout(() => {

@@ -43,6 +43,8 @@ try {
     { page: 'board-preview.html', name: 'board kanban', extra: 'layout=board' },
     { page: 'board-preview.html', name: 'tag palette', extra: 'view=palette' },
     { page: 'board-preview.html', name: 'plan chips', extra: 'view=note&layout=calendar&note=Planner/Focus.md' },
+    { page: 'board-preview.html', name: 'subtask chips', extra: 'view=note&layout=calendar&note=Projects/Figma.md' },
+    { page: 'board-preview.html', name: 'waiting chips', extra: 'view=note&note=Planner/2026-W39.md' },
     { page: 'board-preview.html', name: 'calendar month', extra: 'layout=calendar&cal=month' },
     { page: 'board-preview.html', name: 'calendar week', extra: 'layout=calendar&cal=week' },
   ];

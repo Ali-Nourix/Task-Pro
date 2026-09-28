@@ -431,6 +431,8 @@ export interface BoardPreferences {
   timelineZoom?: TimelineZoom;
   /** Whether the timeline lists the tasks that have no dates. */
   timelineUndated?: boolean;
+  /** On a phone, the table as a list of rows (the default) or as the full table. */
+  compactTable?: 'list' | 'table';
 }
 
 export const DEFAULT_BOARD_PREFERENCES: BoardPreferences = {

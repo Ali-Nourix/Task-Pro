@@ -322,3 +322,4 @@ export class RangeSetBuilder {
 export const Decoration = { replace: () => ({}), widget: () => ({}), none: {} };
 export const ViewPlugin = { fromClass: () => ({}) };
 export const StateEffect = { define: () => ({ of: () => ({}), is: () => false }) };
+export const Platform = { isMobile: false, isPhone: false, isDesktop: true };

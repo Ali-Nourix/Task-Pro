@@ -16,6 +16,7 @@ export interface CalendarLabels {
   unscheduled: string;
   unscheduledHint: string;
   noUnscheduled: string;
+  nothingOnDay: string;
   nothingPlanned: string;
   more: (count: number) => string;
   addOn: (day: string) => string;
@@ -76,6 +77,7 @@ const EN: CalendarLabels = {
   unscheduled: 'Unscheduled',
   unscheduledHint: 'Drag a task onto the calendar to plan it.',
   noUnscheduled: 'Every open task has a place on the calendar.',
+  nothingOnDay: 'Nothing planned or due on this day.',
   nothingPlanned: 'Nothing planned',
   more: (count) => `${count} more`,
   addOn: (day) => `Add a task on ${isolate(day)}`,
@@ -135,6 +137,7 @@ const FA: CalendarLabels = {
   unscheduled: 'بدون زمان',
   unscheduledHint: 'برای برنامه‌ریزی، تسک را روی تقویم بکشید.',
   noUnscheduled: 'همه تسک‌های باز جایی روی تقویم دارند.',
+  nothingOnDay: 'برای این روز برنامه یا سررسیدی نیست.',
   nothingPlanned: 'برنامه‌ای نیست',
   more: (count) => `${count} مورد دیگر`,
   addOn: (day) => `افزودن تسک در ${isolate(day)}`,

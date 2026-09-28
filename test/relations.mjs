@@ -28,7 +28,7 @@ const build = await esbuild.build({
         b.onResolve({ filter: /^obsidian$/ }, () => ({ path: 'obsidian', namespace: 'mock' }));
         b.onLoad({ filter: /.*/, namespace: 'mock' }, () => ({
           contents:
-            'export const setIcon = () => {}; export class Menu {}; export class App {}; export class Notice {}; export class TFile {}; export class Modal {}; export class Scope { register() {} };',
+            'export const setIcon = () => {}; export class Menu {}; export class App {}; export class Notice {}; export class TFile {}; export class Modal {}; export class Scope { register() {} }; export const Platform = { isMobile: false, isPhone: false };',
           loader: 'js',
         }));
       },

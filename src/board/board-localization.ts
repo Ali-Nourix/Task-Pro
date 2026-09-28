@@ -50,6 +50,19 @@ export interface BoardLabels {
   columnMenu: string;
   resetColumnWidth: string;
   newTagColumn: string;
+  /** The phone layout's bar and sheets. */
+  viewOptions: string;
+  layoutLabel: string;
+  scopeLabel: string;
+  tableStyle: string;
+  tableStyleList: string;
+  tableStyleFull: string;
+  openSearch: string;
+  closeSearch: string;
+  addTaskButton: string;
+  columnsLabel: string;
+  markDoneSwipe: string;
+  moreSwipe: string;
   hideProperty: string;
   moveBefore: string;
   moveAfter: string;
@@ -153,6 +166,18 @@ const EN: BoardLabels = {
   columnMenu: 'Column options',
   resetColumnWidth: 'Reset column width',
   newTagColumn: 'New tag',
+  viewOptions: 'View options',
+  layoutLabel: 'Layout',
+  scopeLabel: 'Show tasks from',
+  tableStyle: 'Table style',
+  tableStyleList: 'List',
+  tableStyleFull: 'Full table',
+  openSearch: 'Search',
+  closeSearch: 'Close search',
+  addTaskButton: 'New task',
+  columnsLabel: 'Columns',
+  markDoneSwipe: 'Done',
+  moreSwipe: 'More',
   hideProperty: 'Hide property',
   moveBefore: 'Move left',
   moveAfter: 'Move right',
@@ -261,6 +286,18 @@ const FA: BoardLabels = {
   columnMenu: 'گزینه‌های ستون',
   resetColumnWidth: 'بازگشت به عرض پیش‌فرض ستون‌ها',
   newTagColumn: 'برچسب تازه',
+  viewOptions: 'گزینه‌های نما',
+  layoutLabel: 'چیدمان',
+  scopeLabel: 'تسک‌ها از',
+  tableStyle: 'شکل جدول',
+  tableStyleList: 'فهرست',
+  tableStyleFull: 'جدول کامل',
+  openSearch: 'جستجو',
+  closeSearch: 'بستن جستجو',
+  addTaskButton: 'تسک تازه',
+  columnsLabel: 'ستون‌ها',
+  markDoneSwipe: 'انجام شد',
+  moreSwipe: 'بیشتر',
   hideProperty: 'پنهان کردن ویژگی',
   moveBefore: 'جابه‌جایی به راست',
   moveAfter: 'جابه‌جایی به چپ',
