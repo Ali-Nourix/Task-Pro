@@ -127,6 +127,24 @@ try {
   await page.waitForTimeout(300);
   eq(await page.locator('.taskpro-cal-inspector').count(), 0, 'and goes with a tap outside it');
 
+  // Selecting several: Select in the sheet starts it, taps pick the rest, and a bar of icons carries the changes.
+  await page.tap('.taskpro-list__row:has-text("Dentist appointment") .taskpro-list__title');
+  await page.tap('.taskpro-menu__item:has-text("Select")');
+  await page.waitForTimeout(150);
+  eq(await page.locator('.taskpro-list__row.is-selected').count(), 1, 'Select picks the task');
+  eq(await page.locator('.taskpro-selection').count(), 1, 'and a bar rises');
+  eq(await page.locator('.taskpro-selection__label').count(), 0, 'with icons and no words, on a phone');
+  const barButton = await page.locator('.taskpro-selection__btn').nth(1).boundingBox();
+  eq(barButton.width >= 40 && barButton.height >= 40, true, 'each at least 40 by 40');
+  eq(await page.locator('.taskpro-board__fab').isVisible(), false, 'the + steps aside for it');
+  await page.tap('.taskpro-list__row:has-text("Accessibility pass") .taskpro-list__title');
+  await page.waitForTimeout(100);
+  eq(await page.locator('.taskpro-list__row.is-selected').count(), 2, 'a tap on another task picks it, and does not open its sheet');
+  eq(await page.locator('.taskpro-menu').count(), 0, 'no sheet');
+  await page.tap('.taskpro-selection__btn.is-clear');
+  eq(await page.locator('.taskpro-selection').count(), 0, 'the ✕ puts the bar away');
+  eq(await page.locator('.taskpro-board__fab').isVisible(), true, 'and the + comes back');
+
   // Dragging the handle down puts a sheet away.
   await page.tap('.taskpro-list__row:has-text("Groceries") .taskpro-list__title');
   const grabber = await center(page.locator('.taskpro-sheet-grabber'));

@@ -36,7 +36,7 @@ await esbuild.build({
   ],
 });
 
-const { App, TFile, notices, bodyElement } = await import(pathToFileURL(mockPath).href);
+const { App, TFile, notices, noticeObjects, bodyElement } = await import(pathToFileURL(mockPath).href);
 const { default: TaskProPlugin } = await import(pathToFileURL(outFile).href);
 await rm(outFile, { force: true });
 
@@ -369,6 +369,23 @@ const bareLink = await host.blockLink(inNote('Move/To.md', 'Party'));
 eq(/^\[\[Move\/To#\^[a-zA-Z0-9-]+\]\]$/.test(bareLink), true, 'a task without one gets one written into its line');
 eq(note('Move/To.md').find((l) => l.includes('Party')).endsWith(` ^${bareLink.replace(/^.*#\^/, '').replace(']]', '')}`), true, 'the line carries the ID the link names');
 eq(bare.blockId, 'notes', 'the others are left alone');
+
+// ── deleting several tasks at once ────────────────────────────────────────
+await app.vault.create('Move/Bulk1.md', ['- [ ] One', '\t- [ ] One child', '- [ ] Two', '- [ ] Three'].join('\n'));
+await app.vault.create('Move/Bulk2.md', ['- [ ] Four', '- [ ] Five'].join('\n'));
+await wait(200);
+const bulkBefore = [note('Move/Bulk1.md').slice(), note('Move/Bulk2.md').slice()];
+const doomed = [inNote('Move/Bulk1.md', 'One'), inNote('Move/Bulk1.md', 'Three'), inNote('Move/Bulk2.md', 'Five')];
+const noticesBefore = notices.length;
+eq(await host.deleteTasks(doomed), 3, 'several tasks are deleted in one call');
+eq(note('Move/Bulk1.md'), ['- [ ] Two'], 'each with what is nested under it, the lower ones first so no line moves under the next');
+eq(note('Move/Bulk2.md'), ['- [ ] Four'], 'in every note');
+eq(notices.slice(noticesBefore), ['Deleted 3 tasks'], 'with one notice');
+noticeObjects.at(-1).buttons[0].click();
+await wait(100);
+eq([note('Move/Bulk1.md'), note('Move/Bulk2.md')], bulkBefore, 'and its Undo puts every one back exactly where it was');
+eq(await host.deleteTasks([]), 0, 'nothing to delete, nothing said');
+eq(notices.length, noticesBefore + 1, 'no notice for it');
 
 // ── floating board ─────────────────────────────────────────────────────────
 const floatCommand = app.commands.find((c) => c.id === 'toggle-floating-task-board');

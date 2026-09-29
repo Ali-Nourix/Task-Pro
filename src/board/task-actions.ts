@@ -75,11 +75,14 @@ interface ActionLabels {
   addSubtask: string;
   subtaskTitle: string;
   duplicate: string;
+  select: string;
   copyLink: string;
   linkCopied: string;
   moveTo: string;
   findNote: string;
   moved: (title: string, note: string) => string;
+  movedMany: (count: number, note: string) => string;
+  deletedMany: (count: number) => string;
   moveFailed: string;
   deleteTask: string;
   deleteWithSubtasks: (count: number) => string;
@@ -135,11 +138,14 @@ const EN: ActionLabels = {
   addSubtask: 'Add a subtask…',
   subtaskTitle: 'New subtask',
   duplicate: 'Duplicate',
+  select: 'Select',
   copyLink: 'Copy link',
   linkCopied: 'Link copied',
   moveTo: 'Move to note…',
   findNote: 'Find a note…',
   moved: (title, note) => `Moved “${isolate(title)}” to ${isolate(note)}`,
+  movedMany: (count, note) => `Moved ${count} tasks to ${isolate(note)}`,
+  deletedMany: (count) => `Deleted ${count} tasks`,
   moveFailed: 'The task could not be moved',
   deleteTask: 'Delete',
   deleteWithSubtasks: (count) => (count === 1 ? 'Delete with its subtask' : `Delete with its ${count} subtasks`),
@@ -195,11 +201,14 @@ const FA: ActionLabels = {
   addSubtask: 'افزودن زیرتسک…',
   subtaskTitle: 'زیرتسک جدید',
   duplicate: 'تکثیر',
+  select: 'انتخاب',
   copyLink: 'کپی پیوند',
   linkCopied: 'پیوند کپی شد',
   moveTo: 'انتقال به یادداشت…',
   findNote: 'جستجوی یادداشت…',
   moved: (title, note) => `«${isolate(title)}» به ${isolate(note)} منتقل شد`,
+  movedMany: (count, note) => `${count} تسک به ${isolate(note)} منتقل شد`,
+  deletedMany: (count) => `${count} تسک حذف شد`,
   moveFailed: 'انتقال تسک انجام نشد',
   deleteTask: 'حذف',
   deleteWithSubtasks: (count) => `حذف همراه با ${count} زیرتسک`,
@@ -254,6 +263,14 @@ export interface TaskActionOptions {
   lead?: MenuEntry[];
   /** The reminder setting, for what "as in settings" means beside a plan. */
   planReminder?: { enabled: boolean; leadMinutes: number };
+  /**
+   * The choices are for several tasks at once: rows that need a single task's
+   * own picker (a date to pick, the tag editor) are left out, and the rows that
+   * take a value away are always offered.
+   */
+  bulk?: boolean;
+  /** Starts a selection with this task; the row is left out without it. */
+  select?: () => void;
 }
 
 /** The keywords an entry is also found by: its English label, so English typing works in Persian. */
@@ -295,7 +312,7 @@ export function prioritySections(o: TaskActionOptions): MenuSection[] {
     )
   );
   const sections: MenuSection[] = [{ entries }];
-  if (o.task.priority) {
+  if (o.task.priority || o.bulk) {
     sections.push({ entries: [{ label: labels.noPriority, icon: 'x', onSelect: () => o.host.setPriority(o.task, null) }] });
   }
   return sections;
@@ -319,11 +336,12 @@ export function tagSections(o: TaskActionOptions): MenuSection[] {
       onSelect: () => host.setTags(task, has ? task.tags.filter((k) => k !== key) : [...task.tags, key]),
     };
   });
+  if (o.bulk) return [{ entries }];
   return [{ entries }, { entries: [{ label: labels.editTags, icon: 'tags', onSelect: () => host.editTags(task) }] }];
 }
 
 /** Today, tomorrow and a week from today, each with its date beside it. */
-function nearDays(o: TaskActionOptions): Array<{ label: string; english: string; day: string }> {
+export function nearDays(o: TaskActionOptions): Array<{ label: string; english: string; day: string }> {
   const labels = getActionLabels(o.language);
   const today = todayKey();
   return [
@@ -348,11 +366,9 @@ export function deadlineSections(o: TaskActionOptions): MenuSection[] {
       `${english} deadline due`
     )
   );
-  const sections: MenuSection[] = [
-    { entries: days },
-    { entries: [{ label: labels.pickDate, icon: 'calendar-search', onSelect: () => host.editDeadline(task) }] },
-  ];
-  if (task.deadline && host.setDeadline) {
+  const sections: MenuSection[] = [{ entries: days }];
+  if (!o.bulk) sections.push({ entries: [{ label: labels.pickDate, icon: 'calendar-search', onSelect: () => host.editDeadline(task) }] });
+  if ((task.deadline || o.bulk) && host.setDeadline) {
     sections.push({ entries: [{ label: labels.removeDeadline, icon: 'x', onSelect: () => host.setDeadline!(task, null) }] });
   }
   return sections;
@@ -378,12 +394,12 @@ export function planSections(o: TaskActionOptions): MenuSection[] {
     );
   });
   const sections: MenuSection[] = [{ entries: days }];
-  if (host.editSchedule) {
+  if (host.editSchedule && !o.bulk) {
     sections.push({ entries: [{ label: labels.pickTime, icon: 'calendar-clock', onSelect: () => host.editSchedule!(task) }] });
   }
-  const remind = remindEntry(o);
+  const remind = o.bulk ? null : remindEntry(o);
   if (remind) sections.push({ entries: [remind] });
-  if (task.schedule) {
+  if (task.schedule || o.bulk) {
     sections.push({ entries: [{ label: labels.removePlan, icon: 'calendar-x', onSelect: () => setSchedule(task, null) }] });
   }
   return sections;
@@ -857,6 +873,7 @@ export function taskActionSections(o: TaskActionOptions): MenuSection[] {
         ...(o.lead ?? []),
         withKeywords({ label: labels.openInNote, icon: 'arrow-up-right', onSelect: () => host.reveal(task) }, EN.openInNote),
         withKeywords({ label: labels.rename, icon: 'pencil', onSelect: () => renameTask(o) }, 'rename title edit'),
+        ...(o.select ? [withKeywords({ label: labels.select, icon: 'square-check', onSelect: o.select }, 'select several bulk multiple')] : []),
       ],
     },
     { title: labels.properties, entries: properties },

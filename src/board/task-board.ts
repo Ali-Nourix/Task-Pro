@@ -49,12 +49,14 @@ import {
 import { BoardLabels, getBoardLabels } from './board-localization';
 import { CursorAt, moveCursor, moveFor } from './board-keys';
 import { Nesting, foldKey, hiddenByFold, nestTasks } from './board-nesting';
+import { BulkContext, renderBulkBar } from './bulk-actions';
 import { openShortcuts } from './board-shortcuts';
 import { BoardTask, TaskStore } from './task-store';
 import { TaskCalendar } from '../calendar/calendar-view';
 import { openCalendarPopover } from '../calendar/calendar-popover';
 import { autoDirection } from '../ui/fields';
 import { ChangeTracker, enter, stagger, type Entrance } from '../ui/motion';
+import { claimEscape } from '../ui/escape-scope';
 import { holdToDrag, onContextPress, readyToCarry } from '../ui/touch';
 import { TaskTimeline } from '../timeline/timeline-view';
 import { getTimelineLabels } from '../timeline/timeline-localization';
@@ -218,6 +220,11 @@ export interface TaskBoardHost {
    */
   deleteTask?(task: BoardTask): Promise<boolean>;
   /**
+   * Deletes several tasks, each with everything nested under it, with one
+   * notice that puts them all back. Resolves how many were deleted.
+   */
+  deleteTasks?(tasks: BoardTask[]): Promise<number>;
+  /**
    * The link that points at a task, `[[Note#^id]]`. A task without a block ID
    * is given one, so the link has something to point at. Null when it cannot.
    */
@@ -354,6 +361,12 @@ export class TaskBoard {
   private wasLoading = false;
   /** The task the keyboard is on: its id, and where it is among the columns, for when the id is gone. */
   private cursor: { id: string; at: CursorAt } | null = null;
+  /** The tasks picked for a bulk change: each id with the key that tells the task again once the notes have moved under it. */
+  private readonly selected = new Map<string, string>();
+  /** Where a range picked with Shift starts. */
+  private selectAnchor: string | null = null;
+  private selectionEl: HTMLElement | null = null;
+  private releaseSelectionEscape: (() => void) | null = null;
 
   constructor(
     container: HTMLElement,
@@ -574,6 +587,7 @@ export class TaskBoard {
   private actionOptions(task: BoardTask, anchor: HTMLElement): TaskActionOptions {
     const settings = this.settings;
     return {
+      select: this.isCalendar || this.isTimeline ? undefined : () => this.toggleSelected(task),
       host: this.host,
       task,
       language: settings.language,
@@ -1591,6 +1605,129 @@ export class TaskBoard {
     // The calendar keeps its own card up to date as it draws; in the other layouts it is lent.
     if (!this.isCalendar) this.calendarView?.syncCard();
     this.restoreCursor();
+    this.reconcileSelection();
+    this.refreshSelection();
+  }
+
+  // ── Selecting several ────────────────────────────────────────────────────
+
+  /** A square in the margin of a row or a card that picks it for a bulk change. */
+  private selectButton(parent: HTMLElement, task: BoardTask): void {
+    const box = parent.createEl('button', { cls: 'taskpro-board__select' });
+    box.type = 'button';
+    box.setAttribute('role', 'checkbox');
+    box.setAttribute('aria-label', this.labels.selectTask);
+    box.setAttribute('aria-checked', String(this.selected.has(task.id)));
+    box.tabIndex = -1;
+    setIcon(box.createSpan({ cls: 'taskpro-board__select-tick' }), 'check');
+    box.addEventListener('click', (event) => {
+      event.stopPropagation();
+      this.toggleSelected(task, event.shiftKey);
+    });
+  }
+
+  /** Picks a task, or drops it; with `range`, every task between the last one picked and this one. */
+  private toggleSelected(task: BoardTask, range = false): void {
+    const flat = this.navigable().flat().map((el) => el.dataset.taskId!);
+    const from = this.selectAnchor ? flat.indexOf(this.selectAnchor) : -1;
+    const to = flat.indexOf(task.id);
+    if (range && from !== -1 && to !== -1) {
+      for (const id of flat.slice(Math.min(from, to), Math.max(from, to) + 1)) this.setSelected(id, true);
+    } else {
+      this.setSelected(task.id, !this.selected.has(task.id));
+      this.selectAnchor = task.id;
+    }
+    this.refreshSelection();
+  }
+
+  private setSelected(id: string, on: boolean): void {
+    const task = this.taskIndex.get(id);
+    if (on && task) this.selected.set(id, foldKey(task));
+    else this.selected.delete(id);
+  }
+
+  private selectAll(): void {
+    for (const el of this.navigable().flat()) this.setSelected(el.dataset.taskId!, true);
+    this.refreshSelection();
+  }
+
+  private clearSelection(): void {
+    this.selected.clear();
+    this.selectAnchor = null;
+    this.refreshSelection();
+  }
+
+  /** After the notes changed: a picked task is the same one even if its line moved. */
+  private reconcileSelection(): void {
+    if (!this.selected.size) return;
+    const byKey = new Map<string, BoardTask[]>();
+    for (const task of this.taskIndex.values()) {
+      const key = foldKey(task);
+      byKey.set(key, [...(byKey.get(key) ?? []), task]);
+    }
+    const kept = new Map<string, string>();
+    for (const [id, key] of this.selected) {
+      const same = this.taskIndex.get(id);
+      if (same && foldKey(same) === key) kept.set(id, key);
+    }
+    for (const [id, key] of this.selected) {
+      if (kept.has(id)) continue;
+      const other = (byKey.get(key) ?? []).find((task) => !kept.has(task.id) && !this.selected.has(task.id));
+      if (other) kept.set(other.id, key);
+    }
+    this.selected.clear();
+    for (const [id, key] of kept) this.selected.set(id, key);
+    if (this.selectAnchor && !this.selected.has(this.selectAnchor)) this.selectAnchor = null;
+  }
+
+  /** Marks the rows and cards picked, and shows or puts away the bar. */
+  private refreshSelection(): void {
+    if (!this.bodyEl) return;
+    const picked = this.selected.size > 0 && !this.isCalendar && !this.isTimeline;
+    this.el.toggleClass('has-selection', picked);
+    for (const el of this.navigable().flat()) {
+      const on = picked && this.selected.has(el.dataset.taskId!);
+      el.toggleClass('is-selected', on);
+      el.querySelector('.taskpro-board__select')?.setAttribute('aria-checked', String(on));
+    }
+    if (!picked) {
+      this.selectionEl?.remove();
+      this.selectionEl = null;
+      this.releaseSelectionEscape?.();
+      this.releaseSelectionEscape = null;
+      return;
+    }
+    if (!this.selectionEl || !this.selectionEl.isConnected) {
+      this.selectionEl = this.el.createDiv({ cls: 'taskpro-selection' });
+      this.selectionEl.setAttribute('role', 'toolbar');
+      this.selectionEl.setAttribute('aria-label', this.labels.selectedCount(this.selected.size));
+    }
+    // Escape drops the selection first, before anything under it.
+    this.releaseSelectionEscape ??= claimEscape(() => this.clearSelection(), this.el.ownerDocument);
+    const tasks = [...this.selected.keys()].flatMap((id) => {
+      const task = this.taskIndex.get(id);
+      return task ? [task] : [];
+    });
+    tasks.sort((a, b) => (a.filePath === b.filePath ? a.lineNumber - b.lineNumber : a.filePath.localeCompare(b.filePath)));
+    this.selectionEl.setAttribute('aria-label', this.labels.selectedCount(tasks.length));
+    renderBulkBar(this.selectionEl, tasks, this.bulkContext());
+  }
+
+  private bulkContext(): BulkContext {
+    const settings = this.settings;
+    return {
+      host: this.host,
+      root: this.el,
+      language: settings.language,
+      calendarSystem: this.prefs.calendarSystem ?? settings.calendarSystem,
+      timeFormat: settings.calendar.timeFormat,
+      tags: settings.tags,
+      planReminder: settings.planReminder,
+      compact: this.compact,
+      hold: (on) => this.hold(on),
+      lookup: (id) => this.taskIndex.get(id),
+      clear: () => this.clearSelection(),
+    };
   }
 
   // ── The keyboard ─────────────────────────────────────────────────────────
@@ -1608,6 +1745,22 @@ export class TaskBoard {
       const item = (event.target as HTMLElement).closest<HTMLElement>('[data-task-id]');
       if (item) this.placeCursor(item, false);
     });
+    // A click with Ctrl, ⌘ or Shift picks the task instead of doing what it would; so does a tap while some are picked.
+    body.addEventListener(
+      'click',
+      (event) => {
+        const target = event.target as HTMLElement;
+        const item = target.closest<HTMLElement>('[data-task-id]');
+        if (!item || target.closest('.taskpro-board__select')) return;
+        const picking = event.ctrlKey || event.metaKey || event.shiftKey || (this.touch && this.selected.size > 0 && !target.closest('button, input, a'));
+        const task = picking ? this.taskIndex.get(item.dataset.taskId!) : undefined;
+        if (!task) return;
+        event.preventDefault();
+        event.stopPropagation();
+        this.toggleSelected(task, event.shiftKey);
+      },
+      true
+    );
     // Reached with Tab, the body shows where it is: the cursor is on the first task.
     body.addEventListener('focus', () => {
       if (!this.cursor && body.matches(':focus-visible')) this.placeCursor(this.navigable()[0]?.[0] ?? null, false);
@@ -1744,7 +1897,19 @@ export class TaskBoard {
       const next = moveCursor(columns.map((column) => column.length), this.cursor?.at ?? null, move);
       if (!next) return;
       event.preventDefault();
+      const previous = this.cursor?.id;
       this.placeCursor(columns[next.column][next.row]);
+      // Shift carries the selection along with the cursor.
+      if (event.shiftKey && (move === 'up' || move === 'down') && this.cursor) {
+        if (previous) this.setSelected(previous, true);
+        this.setSelected(this.cursor.id, true);
+        this.refreshSelection();
+      }
+      return;
+    }
+    if (mod && !event.altKey && event.code === 'KeyA') {
+      event.preventDefault();
+      this.selectAll();
       return;
     }
 
@@ -1758,7 +1923,10 @@ export class TaskBoard {
       return;
     }
     if (!plain || event.shiftKey) return;
-    if (event.code === 'Space') {
+    if (event.code === 'KeyX') {
+      event.preventDefault();
+      this.toggleSelected(task);
+    } else if (event.code === 'Space') {
       event.preventDefault();
       void this.host.setStatus(task, task.status === '[x]' ? '[ ]' : '[x]');
     } else if (event.code === 'KeyE' || event.key === 'F2') {
@@ -2542,7 +2710,9 @@ export class TaskBoard {
     row.dataset.status = task.status;
     row.dataset.taskId = task.id;
 
-    this.checkButton(row.createEl('td', { cls: 'taskpro-table__check' }), task);
+    const checkCell = row.createEl('td', { cls: 'taskpro-table__check' });
+    this.selectButton(checkCell, task);
+    this.checkButton(checkCell, task);
 
     const titleCell = row.createEl('td', { cls: 'taskpro-table__task' });
     this.titleBlock(titleCell, task, true, !columns.some((column) => column.id === 'repeat'), !columns.some((column) => column.id === 'waiting'), nest);
@@ -3768,6 +3938,7 @@ export class TaskBoard {
       });
     }
 
+    if (!this.touch) this.selectButton(card, task);
     const shown = visibleColumns(this.cardProperties());
     const top = card.createDiv({ cls: 'taskpro-card__top' });
     this.checkButton(top, task);

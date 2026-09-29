@@ -1419,6 +1419,7 @@ export default class TaskProPlugin extends Plugin {
       blockLink: (task) => this.blockLinkFor(task),
       notes: () => this.app.vault.getMarkdownFiles().map((file) => ({ path: file.path, name: file.basename })),
       moveTask: (task, targetPath) => this.moveTaskTo(task, targetPath),
+      deleteTasks: (tasks) => this.deleteTasksFor(tasks),
       setWaiting: (task, blockers) => this.setTaskWaiting(task, blockers),
       setDates: (task, patch) => this.setTaskDatesFor(this.boardTaskRef(task), patch),
       setRemind: (task, minutes) => this.setTaskRemindFor(this.boardTaskRef(task), minutes),
@@ -1622,21 +1623,62 @@ export default class TaskProPlugin extends Plugin {
     this.refreshDecorations();
 
     const labels = getActionLabels(this.settings.badgeLanguage);
-    const notice = new Notice(labels.deleted(title, subtasks), 8000);
+    this.undoNotice(labels.deleted(title, subtasks), () => this.putBack(file, removed));
+    return true;
+  }
+
+  /**
+   * Deletes several tasks, each with what is nested under it, and puts up one
+   * notice that puts them all back. Within a note the lower ones go first, so
+   * the lines of the ones still to go do not move. Resolves how many went.
+   */
+  private async deleteTasksFor(tasks: BoardTask[]): Promise<number> {
+    const ordered = [...tasks].sort((a, b) => (a.filePath === b.filePath ? b.lineNumber - a.lineNumber : a.filePath.localeCompare(b.filePath)));
+    const taken: Array<{ file: TFile; removed: RemovedBlock }> = [];
+    for (const task of ordered) {
+      const ref = this.boardTaskRef(task);
+      const file = ref.filePath ? this.app.vault.getFileByPath(ref.filePath) : null;
+      if (!file) continue;
+      let cut: RemovedBlock | null = null;
+      await this.app.vault.process(file, (content) => {
+        const lines = content.split('\n');
+        const index =
+          ref.lineNumber !== undefined && lines[ref.lineNumber] === ref.lineContent
+            ? ref.lineNumber
+            : this.findTaskLineIndex(lines, ref.lineContent, ref.blockId);
+        if (index === -1) return content;
+        cut = removeBlock(lines, index);
+        return cut.lines.join('\n');
+      });
+      const removed = cut as RemovedBlock | null;
+      if (removed) taken.push({ file, removed });
+    }
+    if (!taken.length) return 0;
+    this.refreshDecorations();
+    const labels = getActionLabels(this.settings.badgeLanguage);
+    this.undoNotice(labels.deletedMany(taken.length), async () => {
+      // Last out, first back: each block returns to the place it was taken from.
+      for (const { file, removed } of [...taken].reverse()) await this.putBack(file, removed);
+    });
+    return taken.length;
+  }
+
+  /** A notice with an Undo in it, which stays a few seconds. */
+  private undoNotice(message: string, onUndo: () => void | Promise<void>): void {
+    const labels = getActionLabels(this.settings.badgeLanguage);
+    const notice = new Notice(message, 8000);
     const messageEl = (notice as unknown as { messageEl?: HTMLElement; noticeEl?: HTMLElement }).messageEl
       ?? (notice as unknown as { noticeEl?: HTMLElement }).noticeEl;
-    if (messageEl?.createEl) {
-      // Obsidian's notices are left to right; a Persian sentence needs its own direction.
-      messageEl.setAttribute('dir', this.settings.badgeLanguage === 'fa' ? 'rtl' : 'ltr');
-      messageEl.addClass('taskpro-notice-with-action');
-      const undo = messageEl.createEl('button', { cls: 'taskpro-notice-undo', text: labels.undo });
-      undo.addEventListener('click', (event) => {
-        event.stopPropagation();
-        notice.hide();
-        void this.putBack(file, removed);
-      });
-    }
-    return true;
+    if (!messageEl?.createEl) return;
+    // Obsidian's notices are left to right; a Persian sentence needs its own direction.
+    messageEl.setAttribute('dir', this.settings.badgeLanguage === 'fa' ? 'rtl' : 'ltr');
+    messageEl.addClass('taskpro-notice-with-action');
+    const undo = messageEl.createEl('button', { cls: 'taskpro-notice-undo', text: labels.undo });
+    undo.addEventListener('click', (event) => {
+      event.stopPropagation();
+      notice.hide();
+      void onUndo();
+    });
   }
 
   /** Puts a removed block back where it was, exactly. */

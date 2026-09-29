@@ -38,6 +38,15 @@ function shortcutGroups(language: Language): ShortcutGroup[] {
         ],
       },
       {
+        title: 'انتخاب چند تسک',
+        items: [
+          { keys: ['X'], label: 'انتخاب یا لغو انتخاب' },
+          { keys: ['Shift', '↑', '↓'], label: 'گسترش انتخاب' },
+          { keys: [mod, 'A'], label: 'انتخاب همه' },
+          { keys: ['Esc'], label: 'لغو انتخاب' },
+        ],
+      },
+      {
         title: 'بورد',
         items: [
           { keys: ['N'], label: 'تسک جدید' },
@@ -66,6 +75,15 @@ function shortcutGroups(language: Language): ShortcutGroup[] {
         { keys: ['M'], label: 'Open the menu' },
         { keys: ['Del'], label: 'Delete' },
         { keys: [mod, 'Enter'], label: 'Open in the note' },
+      ],
+    },
+    {
+      title: 'Select several',
+      items: [
+        { keys: ['X'], label: 'Pick or drop the task' },
+        { keys: ['Shift', '↑', '↓'], label: 'Extend the pick' },
+        { keys: [mod, 'A'], label: 'Pick every task' },
+        { keys: ['Esc'], label: 'Drop the pick' },
       ],
     },
     {

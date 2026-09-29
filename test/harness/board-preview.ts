@@ -384,6 +384,15 @@ const host = {
     changed();
     return true;
   },
+  deleteTasks: async (list: BoardTask[]) => {
+    // Lower lines first, so the lines still to go do not move.
+    for (const task of [...list].sort((a, b) => b.lineNumber - a.lineNumber)) {
+      const { lines } = removeBlock(NOTES[task.filePath].split('\n'), task.lineNumber);
+      NOTES[task.filePath] = lines.join('\n');
+    }
+    changed();
+    return list.length;
+  },
   blockLink: async (task: BoardTask) => {
     const id = task.blockId ?? 'tp-link';
     if (!task.blockId) await edit(task, (line) => `${line.trimEnd()} ^${id}`);

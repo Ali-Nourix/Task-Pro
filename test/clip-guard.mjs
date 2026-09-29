@@ -321,6 +321,37 @@ try {
     await page.close();
   }
 
+  // Tasks picked: the squares in the margin, the tint, the rings on cards, the bar and its menus.
+  for (const [query, tag, pick] of [
+    ['?scope=vault&group=none', 'table selection', async (page) => {
+      const rows = page.locator('.taskpro-table__row');
+      await rows.nth(1).hover({ position: { x: 150, y: 10 } });
+      await rows.nth(1).locator('.taskpro-board__select').click();
+      await rows.nth(2).locator('.taskpro-board__select').click({ force: true });
+    }],
+    ['?scope=vault&group=none&lang=fa', 'table selection fa', async (page) => {
+      const rows = page.locator('.taskpro-table__row');
+      await rows.nth(1).hover({ position: { x: 1500, y: 10 } });
+      await rows.nth(1).locator('.taskpro-board__select').click();
+    }],
+    ['?layout=board&scope=vault', 'board selection', async (page) => {
+      const cards = page.locator('.taskpro-card');
+      await cards.nth(0).hover();
+      await cards.nth(0).locator('.taskpro-board__select').click();
+      await cards.nth(6).locator('.taskpro-board__select').click({ force: true });
+    }],
+  ]) {
+    const page = await open(query, 1400, 1000);
+    await pick(page);
+    await page.waitForTimeout(300);
+    await scan(page, tag);
+    await tabThrough(page, tag, 40);
+    await page.locator('.taskpro-selection__btn', { hasText: /Status|وضعیت/ }).click();
+    await page.waitForTimeout(300);
+    await scan(page, `${tag} · status menu`);
+    await page.close();
+  }
+
   // The phone: a narrower pane, and a finger.
   for (const [query, tag] of [
     ['?mobile=1&scope=vault', 'phone list'],

@@ -23,10 +23,37 @@ globalThis.document ??= {
 };
 
 export const notices = [];
+/** The notices as objects, for a test that presses the button in one. */
+export const noticeObjects = [];
 
 export class Notice {
   constructor(message) {
     notices.push(String(message));
+    this.buttons = [];
+    this.hidden = false;
+    // Just enough of a notice's element for the Undo button a notice can carry.
+    this.messageEl = {
+      setAttribute() {},
+      addClass() {},
+      createEl: (_tag, info) => {
+        const button = {
+          text: info?.text ?? '',
+          handlers: [],
+          addEventListener(_type, handler) {
+            this.handlers.push(handler);
+          },
+          click() {
+            for (const handler of this.handlers) handler({ stopPropagation() {} });
+          },
+        };
+        this.buttons.push(button);
+        return button;
+      },
+    };
+    noticeObjects.push(this);
+  }
+  hide() {
+    this.hidden = true;
   }
 }
 
