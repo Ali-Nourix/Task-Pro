@@ -37,6 +37,7 @@ import { RelationIndex, newBlockId, subtaskCounts } from '../../src/board/task-r
 import { TaskTag } from '../../src/tags';
 import { blockEnd, removeBlock } from '../../src/task-lines';
 import { dedentBlock } from '../../src/board/task-move';
+import { snapshotView } from '../../src/board/board-views';
 import { openTagPicker } from '../../src/ui/tag-picker';
 import { renderTagManager } from '../../src/ui/tag-manager';
 import {
@@ -274,6 +275,17 @@ const settings = {
   subtaskProgress: params.get('subtasks') !== 'off',
   planReminder: { enabled: true, leadMinutes: 10 },
 };
+
+// `?views=demo` starts with some saved views, the first of them the board as it is, for the shots of the Views menu.
+if (params.get('views') === 'demo') {
+  settings.board.views = [
+    { id: 'demo-all', name: 'All tasks', prefs: snapshotView(settings.board) },
+    { id: 'demo-week', name: 'This week', prefs: { layout: 'calendar', calendarView: 'week' } },
+    { id: 'demo-late', name: 'Overdue and today', prefs: { layout: 'table', groupBy: 'deadline', deadlines: ['overdue', 'today'] } },
+    { id: 'demo-notes', name: 'By note', prefs: { layout: 'board', groupBy: 'note' } },
+  ];
+  settings.board.activeView = 'demo-all';
+}
 
 (window as unknown as { __prefs: typeof settings.board }).__prefs = settings.board;
 

@@ -20,7 +20,7 @@ screenshots of a live vault.</sub>
 - [Features](#features)
 - [Tags](#tags)
 - [Task board](#task-board)
-  - [Floating over everything](#floating-over-everything) · [On a phone](#on-a-phone)
+  - [Floating over everything](#floating-over-everything) · [On a phone](#on-a-phone) · [Keyboard](#keyboard) · [Selecting several tasks](#selecting-several-tasks) · [Views](#views) · [Moving a task](#moving-a-task)
 - [Subtasks and waiting](#subtasks-and-waiting)
 - [Timeline](#timeline)
 - [Calendar](#calendar)
@@ -213,8 +213,14 @@ the ribbon or with **Open Task Board**, and it opens as a tab of its own.
   column to change its status, priority or tag), the [timeline](#timeline) and
   the [calendar](#calendar).
 - **Group** by status, tag, priority, deadline (*Overdue*, *Today*, *Next 7
-  days*, *Later*, *Past*) or note, and fold away groups you do not need; a
+  days*, *Later*, *Past*), plan (*Missed*, *Today*, *Next 7 days*, *Later*,
+  *Past*, *Not planned*) or note, and fold away groups you do not need; a
   task with two tags appears under both, as in a Notion multi-select.
+- **Sub-items:** in the table a subtask sits one step in under its parent,
+  whatever the grouping. A parent shows how many subtasks it has after its
+  title, and a click folds them away and brings them back (the fold is kept).
+  Only what is on the screen counts: a subtask whose parent is filtered out or
+  in another group stands at the edge instead of hanging under nothing.
 - **Sort** by title, status, priority, deadline, plan, progress or note —
   click a column header once, twice to reverse, a third time for note order.
 - **Arrange the columns** the way a Notion view's properties are arranged:
@@ -233,8 +239,15 @@ the ribbon or with **Open Task Board**, and it opens as a tab of its own.
   task that is still waiting shows an hourglass beside its title. The
   **Progress** column shows a parent's done subtasks (*2/4*) when it has no
   progress bar of its own. See [Subtasks and waiting](#subtasks-and-waiting).
-- **Filter** by status, priority and tag, and **search** titles, tag names and
-  note names. Active filters show as pills you can click away.
+- **Filter** by status, priority, tag, deadline (*Overdue*, *Today*, *Next 7
+  days*, *Later*, *Past*, *None*), plan or note from a searchable menu, and
+  **search** titles, tag names and note names. Active filters show as pills
+  you can click away, and **Clear filters** takes them all off.
+- **Density, wrapped titles and empty columns:** **Properties → View** sets
+  how much room the table's rows and the board's cards take (compact,
+  comfortable or spacious), lets a long title run over as many lines as it
+  needs, and leaves out the board's columns that have nothing in them. A
+  finger keeps its 44px whatever the density.
 - **Edit in place:** tick a task off, change its status or priority from a menu,
   set the deadline, pick tags, or click a title to rename it. Every edit is
   written into the note the task lives in, keeping all of its markers, and a
@@ -242,7 +255,11 @@ the ribbon or with **Open Task Board**, and it opens as a tab of its own.
   **↗** opens the note with the cursor on the task.
 - **Right-click any task** — a row, a card, or a task on the calendar — or
   press its **⋯** button for the [task menu](#the-task-menu): every property
-  a task can carry, one hover away.
+  a task can carry, one hover away. Its first row, **Open card**, opens the
+  same card the calendar does, with a row for each property and the subtasks
+  under them, from the table, the board and the timeline too; a table row's
+  **Open** button and a card's own space do the same. Its **Copy link** and
+  **Move to note…** are described under [Moving a task](#moving-a-task).
 - **Add tasks** from the row at the top, from a board column's **New** button,
   or from the **New** row that ends each group of the table. A new task goes
   into the note of your choice and takes on the active filters (or the group it
@@ -323,8 +340,100 @@ is still there, one or two taps in.
   labels for screen readers, and the bottom of the board keeps clear of the
   home indicator and of Obsidian's own bar.
 
+<table>
+<tr>
+<td><img src="docs/images/task-board-phone-light.png" alt="The task board on a phone: groups of two-line rows and a round + button" width="260"></td>
+<td><img src="docs/images/task-board-phone-selection-light.png" alt="The same list with one task picked and a bar of icons over its foot" width="260"></td>
+</tr>
+</table>
+
 The board uses the phone layout wherever it is narrow, so a sidebar pane on a
 desktop gets it too, and a touch screen keeps the larger targets at any width.
+
+### Keyboard
+
+The table and the board have a cursor that moves through the tasks the way the
+eye does, and a key for each thing you do to the task under it. Press **`?`**
+(or the keyboard button in the header) for a sheet that lists them all.
+
+<img src="docs/images/task-board-shortcuts-dark.png" alt="The sheet that lists the board's keyboard shortcuts, in groups" width="300">
+
+| Key | Does |
+| --- | --- |
+| `↑` `↓` (or `K` `J`) | Move through the tasks |
+| `←` `→` | Between a board's columns (mirrored in Persian); in the table, fold and unfold a parent's subtasks, and `←` from a subtask steps up to its parent |
+| `Home` `End` | The first and the last task |
+| `Enter` | Open the task's card |
+| `Ctrl`/`⌘` `Enter` | Open its note, with the cursor on the task |
+| `Space` | Tick it off, and back |
+| `E` | Rename it |
+| `M` | Open its menu |
+| `Delete` | Remove it (**Undo** is offered) |
+| `X`, `Shift` `↑` `↓`, `Ctrl`/`⌘` `A` | [Select](#selecting-several-tasks) it, a run of them, all of them |
+| `N` | Go to the new-task field |
+| `/` | Go to the search |
+| `Esc` | Close the innermost thing open: a menu, a card, the selection, then the board |
+
+Letters are read from the physical key, so they work on a Persian keyboard
+layout as they do on a Latin one. Menus, cards and inline edits give the focus
+back when they close, so the keys carry on where they were, and the cursor
+never slides the table sideways.
+
+### Selecting several tasks
+
+A square in a row's margin, and on the corner of a card, picks it. `Ctrl` or
+`⌘` with a click picks one more, `Shift` with a click picks a range, and
+**Select** in the task menu starts a selection (on a phone, taps then carry it
+on). Picked tasks are tinted and stay picked while the notes change under them.
+
+<img src="docs/images/task-board-selection-light.png" alt="The table with three tasks picked and the bar of changes risen over its foot" width="820">
+
+A bar rises over the board with what can be done to all of them at once:
+**status**, **priority**, **tags**, **deadline**, **plan**, **move to a note**
+and **delete**. Its menus are the ones a single task has, built from a stand-in
+task that has only what all the picked share (a status they all have is
+ticked), and each choice is made on every picked task in turn. A move or a
+delete takes a parent's subtasks with it once, even when they are picked too,
+and deleting several puts up one notice whose **Undo** puts every one back
+where it was. `Esc` drops the selection before it closes anything under it.
+
+On a phone the bar rises above Obsidian's own floating bar, with icons and the
+count alone so that every action fits.
+
+### Views
+
+**Views**, in the toolbar (a page of the options sheet on a phone), lists the
+views you have saved, saves the board as it is now, and puts a saved one back,
+the way a Notion database keeps its views: *This week*, *Overdue and today*,
+*By note*.
+
+<img src="docs/images/task-board-views-light.png" alt="The Views menu, listing four saved views with Save this view, Manage views and Default view under them" width="820">
+
+- A view holds what makes the board look as it does: the layout, grouping,
+  sort, filters, properties and density, and the calendar's and the timeline's
+  options. It leaves out the search, the groups and parents you folded, and
+  the note new tasks go into.
+- Applying a view sets every one of those to the view's value or to the
+  default, so a view means the same board whatever it was applied over.
+- The button shows the view's name, with a dot once the board has been changed
+  since; **Update** takes the change into the view. Views can be renamed,
+  duplicated and deleted, and **Default view** puts everything back.
+
+### Moving a task
+
+**Copy link** in the task menu copies a `[[Note#^id]]` block link to the task,
+writing the block ID into the line when it has none. **Move to note…** lists
+every note in the vault in a searchable menu: the inbox first, then the notes
+beside the task's own, then the ones that hold tasks.
+
+- The task goes with everything nested under it, and is set down at the left
+  edge of the other note. A block ID the other note already uses is swapped for
+  a new one.
+- What TaskPro keeps about a task outside its line goes with it: its progress
+  bar, its timer, and the sync mapping between a copy and its source.
+- The links that say a task waits on another are rewritten, both on the tasks
+  that moved and on the tasks elsewhere that wait on them.
+- A note that cannot be written to gets the task back exactly where it was.
 
 ## Subtasks and waiting
 
@@ -855,6 +964,30 @@ Chip colours, padding, radius and opacity are exposed to the
 - `Esc` goes to the innermost thing open. Obsidian handles keys before the
   page does, so a card or a drag pushes a keymap scope of its own: the first
   `Esc` closes the card, and only the next one closes the floating board.
+- Spacing comes from one scale of tokens (`--taskpro-space-1` to `-8`: 2, 4, 6,
+  8, 10, 12, 16 and 24px) and rings from one halo (`--taskpro-halo`, 4px). A
+  ring, such as a focus ring or the one around a hovered task's family, is
+  drawn outside its element, so any box that clips its children (`overflow`
+  other than visible) pads itself by the halo and leans out by as much: the
+  children stand where they did and the clip edge is a halo further out. A box
+  with no room to spare draws its ring inside. `test/clip-guard.mjs` walks every
+  view and fails on a ring that an ancestor cuts.
+- Motion is CSS, in one section of the stylesheet that a reduced-motion setting
+  switches off, and only opacity and transform move. `ui/motion.ts` decides
+  which elements play: the board asks for an entrance when the layout, the
+  grouping or a filter changes, and compares each redraw with the last to find
+  the tasks that just arrived or changed status. A redraw for any other reason
+  plays nothing.
+- Moving a task cuts its block out of one note (with what is nested under it),
+  changes the block IDs the other note already uses, sets the block down there,
+  and then carries what is kept elsewhere: progress and timers in `data.json`,
+  the sync mapping, and the `@waiting` links on both sides. If the second note
+  cannot be written, the first gets its lines back untouched.
+- The bar over a selection builds its menus with the same functions as a
+  single task's menu, given a stand-in task with what all the picked share and
+  a host that applies each change to every picked task in turn (one write at a
+  time, since two writes to one note at once would leave the second reading a
+  note the first had changed).
 - No full-screen `backdrop-filter`. Blurring the window behind an overlay makes
   the compositor re-blur everything whenever anything above it repaints, which
   is why the reminder alert used to feel sluggish with a long task list. The
@@ -866,7 +999,7 @@ Chip colours, padding, radius and opacity are exposed to the
 npm install
 npm run dev     # watch build
 npm run build   # typecheck + production build
-npm test        # markers, recurrence, timers, board data, subtasks and waiting, plan reminders, the timeline's model, calendar dates and daily notes, and the plugin's edit paths
+npm test        # markers, recurrence, timers, board data (the keyboard cursor, nesting, saved views), subtasks and waiting, moving a task between notes, plan reminders, the timeline's model, calendar dates and daily notes, and the plugin's edit paths
 ```
 
 `npm test` includes an integration test (`test/plugin-edits.mjs`) that loads the
@@ -874,10 +1007,13 @@ whole plugin against an in-memory vault (`test/harness/obsidian-node-mock.mjs`)
 and drives the same edit path the chip menu and the board use: status,
 priority, deadline, tags and renames, tag sync to a source note, the tag list,
 removing a tag from every note, plans and how they roll forward, and daily
-notes created from a template. `test/calendar.mjs` covers the calendar's date
+notes created from a template, and the moves between notes (a block ID that
+collides, tasks waiting on the moved one, a note that refuses the write, deleting
+several tasks and undoing it). `test/calendar.mjs` covers the calendar's date
 arithmetic in both calendars, name formats, templates and block layout, and
-`test/relations.mjs` the subtask counts, `@waiting` links and cycles, when a
-plan's reminder is due, and how the timeline lays tasks out.
+`test/relations.mjs` the subtask counts, `@waiting` links and cycles, how a
+moved block is rewritten, when a plan's reminder is due, and how the timeline
+lays tasks out.
 
 The distributable files are `main.js`, `manifest.json`, and `styles.css`.
 
@@ -892,7 +1028,7 @@ Obsidian:
 | --- | --- | --- |
 | `test/chips-preview.html` | Task lines with every chip, and each chip's states | `?light`, `?theme=<name>` |
 | `test/reminder-preview.html` | The reminder alert | `?light`, `?theme=<name>`, `?strict` |
-| `test/board-preview.html` | The task board, calendar, timeline, tag picker, tag manager and tag chips, built by the plugin's own classes | `?light`, `?theme=<name>`, `?layout=<board\|calendar\|timeline>`, `?mobile=1` (the phone layout), `?cal=<month\|week\|day\|agenda>`, `?system=jalali`, `?group=<tag\|priority\|…>`, `?lang=fa`, `?view=<picker\|manager\|note\|palette>` |
+| `test/board-preview.html` | The task board, calendar, timeline, tag picker, tag manager and tag chips, built by the plugin's own classes | `?light`, `?theme=<name>`, `?layout=<board\|calendar\|timeline>`, `?mobile=1` (the phone layout), `?cal=<month\|week\|day\|agenda>`, `?system=jalali`, `?group=<tag\|priority\|…>`, `?lang=fa`, `?density=<compact\|comfortable\|spacious>`, `?wrap=on`, `?hideempty=on`, `?views=demo` (with some saved views), `?view=<picker\|manager\|note\|palette>` |
 
 `board-preview.html` loads a bundle of the real board code against a stub host
 whose edits land in in-memory notes, so it can be clicked through like the
@@ -910,7 +1046,7 @@ npm i --no-save playwright lucide-static && npx playwright install chromium
 
 npm run previews        # regenerate the images in this README
 npm run check:contrast  # measure every chip, board and tag colour against WCAG AA on every theme
-npm run test:ui         # click and drag through the board, calendar and timeline, then again with a finger on a phone-sized screen, and the Reading view's chips
+npm run test:ui         # click and drag through the board, calendar and timeline, then again with a finger on a phone-sized screen, the Reading view's chips, and the clip guard (no ring cut by the box around it, in every view)
 ```
 
 These need Playwright, and the board harness needs Lucide's icon set (the icons

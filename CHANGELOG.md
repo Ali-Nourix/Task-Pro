@@ -277,6 +277,136 @@ focus rings now.
   and the panel radius 12px (was 10px). A setting you have changed keeps its
   value.
 
+### Room to breathe
+
+- A month cell clips what does not fit, and the ring that marks a hovered
+  task's family (like a keyboard focus ring) is drawn outside its chip, so a
+  lit chip lost its sides at the edge of the list. Every gap, padding and
+  margin now comes from one scale of space tokens (`--taskpro-space-1` to
+  `-8`: 2, 4, 6, 8, 10, 12, 16 and 24px), and a box that clips its children
+  pads itself by the halo token (`--taskpro-halo`, 4px) and leans out by as
+  much. Children stand where they did, and the clip edge is a halo further
+  out. Where a box has no room to spare (the table's **New** row) the ring is
+  drawn inside instead.
+- `test/clip-guard.mjs` walks every view of the board, the calendar and the
+  timeline, in both directions of writing, and fails on any ring that an
+  ancestor cuts. It failed on the old styles.
+
+### Motion
+
+Each animation says what just happened. Only opacity and transform move.
+
+- Changing the layout, the grouping or a filter brings the new view in. The
+  calendar and the timeline turn a page toward the day they are heading to,
+  and the bar under the layout tabs travels to the tab you chose.
+- A task you just added, or whose status just changed, flashes where it lands,
+  and its check pops. Opening a group lets its rows follow one another in. The
+  timeline's bars grow from their start, and a lit family fades up instead of
+  blinking on.
+- The board decides what plays. A redraw for any other reason (a search, a
+  note changing under it) plays nothing, and a reload or an import that brings
+  in a crowd of tasks at once does not flash them all.
+- With reduced motion set in the system, none of it plays.
+
+### Finding tasks and moving them
+
+- **Filter** is the board's own searchable menu now (a popover on a desktop, a
+  sheet on a phone). Besides status, priority and tag it filters by
+  **Deadline** (overdue, today, next 7 days, later, past, none), **Plan**
+  (missed, today, next 7 days, later, past, not planned) and **Note**. Each
+  active filter is a pill, and **Clear filters** takes them all off.
+- Tasks can be **grouped by plan**, as they can by deadline.
+- The task menu has **Copy link**, which copies a `[[Note#^id]]` block link
+  (writing the ID into the line when the task has none), and **Move to note…**,
+  a searchable list of every note in the vault: the inbox first, then the notes
+  beside the task's own, then the ones that hold tasks.
+  - A move takes the task with everything nested under it, sets it down at the
+    left edge of the other note, and swaps a block ID the other note already
+    uses for a new one.
+  - What TaskPro keeps about a task outside its line goes with it: its progress
+    bar, its timer, and the sync mapping between a copy and its source.
+  - The links that say a task waits on another are rewritten, both on the tasks
+    that moved and on the tasks elsewhere that wait on them.
+  - A note that cannot be written to gets the task back exactly where it was.
+
+### The card, from every layout
+
+- The card the calendar opens (a row for each property, then the subtasks with
+  a row to add one) opens from the table, the board and the timeline too, so a
+  task looks the same whichever layout it is opened from. **Open card** is the
+  first row of the task menu in every layout and on the phone's sheet. A table
+  row shows an **Open** button on hover beside the one for its note, a board
+  card shows one beside its **⋯**, and a click on the card's own space opens it
+  as well.
+- The card follows the notes as they change, and closes with its task.
+
+### View options
+
+- **Properties → View** sets how much room a view takes. **Density** (compact,
+  comfortable or spacious) sizes the table's rows and the board's cards through
+  tokens on the board's root. **Wrap titles** lets a title in the table run
+  over as many lines as it needs. **Hide empty columns** leaves out the
+  columns of a board that have nothing in them, without listing them as hidden
+  ones. A finger keeps its 44px whatever the density.
+
+### Keyboard
+
+- The table and the board take the arrow keys (and `J` and `K`) to move a
+  cursor through the tasks; `←` and `→` go between a board's columns (mirrored
+  in Persian) and `Home` and `End` go to the ends. On the task under the cursor:
+  `Enter` opens the card, `Space` ticks it off and back, `E` renames it, `M`
+  opens its menu, `Delete` removes it and `Ctrl`/`⌘` with `Enter` opens its
+  note. `N` goes to the new-task field and `/` to the search.
+- `?`, or the keyboard button in the header, opens a sheet that lists them all.
+- Letters are read from the physical key, so they work on a Persian layout as
+  they do on a Latin one.
+- Menus, cards and inline edits give the focus back when they close, so the
+  keys carry on where they were. The cursor is shown while the board has the
+  focus, and never slides the table sideways.
+
+### Sub-items
+
+- In the table a subtask sits one step in under its parent, whatever the
+  grouping. Only what is on the screen counts: a subtask whose parent is
+  filtered out, or in another group, stands at the edge instead of hanging under
+  nothing.
+- A parent shows how many subtasks it has after its title; a click folds them
+  away and brings them back, and the fold is kept. `←` and `→` do the same from
+  the keyboard, and `←` on a subtask steps up to its parent.
+
+### Selecting several tasks
+
+- A square in a row's margin, and on the corner of a card, picks it. `Ctrl` or
+  `⌘` with a click picks one more and `Shift` with a click picks a range. `X`,
+  `Shift` with the arrows and `Ctrl`/`⌘` with `A` do the same from the keyboard,
+  and **Select** in the task menu starts a selection; on a phone, taps then
+  carry it on. Picked tasks are tinted, and stay picked while the notes change
+  under them. `Esc` drops the selection before anything under it.
+- A bar rises over the board with what can be done to all of them: status,
+  priority, tags, deadline, plan, moving them to a note, deleting them. Its menus
+  are a single task's, built by the same code from a stand-in task that has only
+  what all the picked share (so a status they all have is ticked), and each
+  choice is applied to every task in turn.
+- A move or a delete takes a parent's subtasks with it once, even when they are
+  picked too. Deleting several puts up one notice whose **Undo** puts every one
+  back where it was.
+- On a phone the bar rises above Obsidian's floating bar and shows icons and
+  the count alone, so all of it fits the width.
+
+### Saved views
+
+- **Views** in the toolbar (a page of the options sheet on a phone) lists the
+  views you have saved, saves the board as it is now, and puts a saved one
+  back. A view holds what makes the board look as it does: the layout,
+  grouping, sort, filters, properties and density, and the calendar's and the
+  timeline's options. It leaves out the search, the groups and parents you
+  folded, and the note new tasks go into.
+- Applying a view sets every one of those, to the view's value or to the
+  default, so it means the same board whatever it was applied over. The button
+  shows the view's name, with a dot once the board has been changed since;
+  **Update** takes the change into the view. Views can be renamed, duplicated
+  and deleted, and **Default view** puts everything back.
+
 ### Fixes
 
 - A task added under a heading is laid out the Markdown way: a blank line
@@ -334,6 +464,9 @@ focus rings now.
 - Closing a column's or a group's **New** field with `Esc` after adding a task
   raised an error in the console, because taking the field out of the page
   blurred it and asked to close it again.
+- On a phone, swiping the board within a moment of tapping a column's tab could
+  be pulled back to that column. The tab's scroll now lets go once a hand is on
+  the board.
 
 ### Under the hood
 
@@ -360,6 +493,24 @@ focus rings now.
   shadows tinted from the page colour, easing and three durations, and a focus
   ring. `test/obsidian-theme.css` declares the theme's variables on `<body>`
   too, so the harness would catch a rule that stops following the theme.
+- `ui/motion.ts` decides which elements play an entrance (`enter`, `stagger`)
+  and which tasks just arrived or changed (`ChangeTracker`); the animations
+  themselves are CSS, gathered in one section of `styles.css` that a reduced
+  motion setting switches off. The UI tests open pages with reduced motion
+  asked for, so nothing is mid-flight when they take coordinates; the motion
+  tests open live pages.
+- The pieces that decide are pure and tested without a page: `board-keys.ts`
+  (where the cursor goes), `board-nesting.ts` (which tasks nest under which),
+  `board-views.ts` (what a saved view holds and when it counts as changed) and
+  `task-move.ts` (cutting a block out of one note and setting it down in
+  another, and the links that follow it). `test/plugin-edits.mjs` moves tasks
+  through the whole plugin on an in-memory Obsidian, including a colliding block
+  ID with tasks waiting on it, a note that refuses the write, and a bulk delete
+  with its Undo.
+- What the board asks of the plugin gained `blockLink`, `notes`, `moveTask` and
+  `deleteTasks`; the harness answers them with stand-ins, so the menu, the
+  card and the bar of a selection are tested in Chromium as they are drawn in
+  Obsidian.
 - The UI tests believe it is 15:00 (a fixed clock), so a test that takes its
   coordinates from the calendar does not depend on the time of day. New
   checks cover the tabs, the capsule, the theme's colour on a tag, the New
