@@ -2816,6 +2816,10 @@ button.taskpro-chip:focus-visible {
   flex: 0 0 auto;
   margin-inline-start: auto;
 }
+/* Two side by side (the card, then the note): only the first takes the free room. */
+.taskpro-board .taskpro-board__open + .taskpro-board__open {
+  margin-inline-start: 0;
+}
 /* Like the card's ⋯: it shows up on the row under the pointer as a small
    raised button, Notion's "Open". */
 .taskpro-board .taskpro-table__row .taskpro-board__open {
