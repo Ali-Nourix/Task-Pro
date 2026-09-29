@@ -221,6 +221,10 @@ try {
   for (const [query, tag] of [
     ['?scope=vault', 'table'],
     ['?scope=vault&lang=fa', 'table fa'],
+    ['?scope=vault&group=none', 'nested table'],
+    ['?scope=vault&group=none&density=compact', 'nested table compact'],
+    ['?scope=vault&group=none&wrap=on&lang=fa', 'nested table wrapped fa'],
+    ['?layout=board&scope=vault&density=compact', 'board compact'],
     ['?layout=board&scope=vault', 'board'],
     ['?layout=board&scope=vault&lang=fa', 'board fa'],
     ['?layout=timeline&scope=vault', 'timeline'],

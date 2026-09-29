@@ -450,6 +450,8 @@ export interface BoardPreferences {
   wrapTitles?: boolean;
   /** The board leaves out the columns that have no task in them. */
   hideEmptyGroups?: boolean;
+  /** Parents in the table whose subtasks are folded away: a note and an ID or title, see foldKey. */
+  foldedTasks?: string[];
 }
 
 export const DEFAULT_BOARD_PREFERENCES: BoardPreferences = {

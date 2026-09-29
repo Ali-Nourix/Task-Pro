@@ -48,6 +48,7 @@ import {
 } from './board-query';
 import { BoardLabels, getBoardLabels } from './board-localization';
 import { CursorAt, moveCursor, moveFor } from './board-keys';
+import { Nesting, foldKey, hiddenByFold, nestTasks } from './board-nesting';
 import { openShortcuts } from './board-shortcuts';
 import { BoardTask, TaskStore } from './task-store';
 import { TaskCalendar } from '../calendar/calendar-view';
@@ -127,6 +128,9 @@ const ROWS_PER_PAGE = 150;
 
 /** Narrower than this, the board is laid out for a phone: one bar, sheets, a list. */
 const COMPACT_WIDTH = 640;
+
+/** What a row of the nested table knows of its place: see nestTasks. */
+type TableNest = Nesting & { folded: boolean };
 
 /** The classes of a "+ New" button, its icon (none, when the row draws the plus itself) and the field it turns into. */
 interface NewClasses {
@@ -323,6 +327,11 @@ export class TaskBoard {
   private swallowClick = false;
   /** How many of each task's subtasks are done, and what each task waits on; rebuilt with the body. */
   private subtasks = new Map<string, SubtaskCount>();
+  /** Every task by id, and how the tasks in the table nest: rebuilt with the body. */
+  private taskIndex = new Map<string, BoardTask>();
+  private nestings = new Map<string, Nesting>();
+  /** The parent whose subtasks have just been shown again, and follow one another in. */
+  private revealing: string | null = null;
   private relationIndex: RelationIndex | null = null;
   /** Laid out for a phone: narrow, whatever the device. */
   private compact = false;
@@ -1661,6 +1670,35 @@ export class TaskBoard {
     this.placeCursor(same ?? near, false);
   }
 
+  /**
+   * Folds the parent under the cursor, or unfolds it; from a subtask, or a
+   * parent already folded, folding steps up to the parent instead. Resolves
+   * whether it did anything.
+   */
+  private walkTree(collapse: boolean): boolean {
+    const task = this.cursorTask();
+    const nest = task ? this.nestings.get(task.id) : undefined;
+    if (!task || !nest) return false;
+    const folded = (this.prefs.foldedTasks ?? []).includes(foldKey(task));
+    if (collapse) {
+      if (nest.children && !folded) {
+        this.setFolded(task, true);
+        return true;
+      }
+      const parent = nest.parent && this.bodyEl.querySelector<HTMLElement>(`[data-task-id="${nest.parent.replace(/["\\]/g, '\\$&')}"]`);
+      if (parent) {
+        this.placeCursor(parent);
+        return true;
+      }
+      return false;
+    }
+    if (nest.children && folded) {
+      this.setFolded(task, false);
+      return true;
+    }
+    return false;
+  }
+
   private cursorTask(): BoardTask | null {
     const id = this.cursor?.id;
     return id ? this.host.store.all().find((task) => task.id === id) ?? null : null;
@@ -1692,6 +1730,14 @@ export class TaskBoard {
 
     // The cursor: only from the body itself, where the focus rests when nothing inside has it.
     if (target !== this.bodyEl) return;
+    // In a table the sideways keys work the tree: fold a parent, unfold it, or step up to it from a subtask.
+    if (plain && this.prefs.layout !== 'board' && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
+      const collapse = event.key === (this.language === 'fa' ? 'ArrowRight' : 'ArrowLeft');
+      if (this.walkTree(collapse)) {
+        event.preventDefault();
+        return;
+      }
+    }
     const move = plain ? moveFor(event, this.language === 'fa') : null;
     if (move) {
       const columns = this.navigable();
@@ -1735,6 +1781,7 @@ export class TaskBoard {
       this.pendingEntrance = null;
     }
     this.expanding = null;
+    this.revealing = null;
     if (performance.now() > this.arrivals.until) return;
     const arrived = (id: string) => this.arrivals.added.has(id) || this.arrivals.changed.has(id);
     this.bodyEl.querySelectorAll<HTMLElement>('[data-task-id]').forEach((el) => {
@@ -1843,6 +1890,7 @@ export class TaskBoard {
     const all = this.host.store.all();
     this.subtasks = subtaskCounts(all);
     this.relationIndex = new RelationIndex(all);
+    this.taskIndex = new Map(all.map((task) => [task.id, task]));
   }
 
   /** What every task waits on, for the calendar and the timeline as well. */
@@ -1919,7 +1967,11 @@ export class TaskBoard {
     const span = String(columns.length + 3);
 
     const table = this.bodyEl.createEl('table', { cls: 'taskpro-table' });
-    table.toggleClass('is-document-order', this.prefs.sortKey === 'document' && (groupBy === 'none' || groupBy === 'note'));
+    // In the order of the notes, a subtask sits under its parent, which can fold it away.
+    const nested = this.prefs.sortKey === 'document';
+    table.toggleClass('is-document-order', nested);
+    this.nestings = new Map();
+    const folded = new Set(this.prefs.foldedTasks ?? []);
     const colgroup = table.createEl('colgroup');
     colgroup.createEl('col', { cls: 'taskpro-table__col--check' });
     colgroup.createEl('col', { cls: 'taskpro-table__col--task' });
@@ -1952,17 +2004,23 @@ export class TaskBoard {
         if (this.prefs.collapsedGroups.includes(group.id)) continue;
       }
       const limit = this.rowLimits.get(group.id) ?? ROWS_PER_PAGE;
-      group.tasks.slice(0, limit).forEach((task, index) => {
-        const row = this.renderRow(body, task, columns);
-        if (this.expanding === group.id) {
+      const nesting = nested ? nestTasks(group.tasks, (id) => this.taskIndex.get(id)) : null;
+      if (nesting) for (const [id, entry] of nesting) this.nestings.set(id, entry);
+      const isFolded = (id: string) => folded.has(foldKey(this.taskIndex.get(id)!));
+      const rows = nesting ? group.tasks.filter((task) => !hiddenByFold(task.id, nesting, isFolded)) : group.tasks;
+      rows.slice(0, limit).forEach((task, index) => {
+        const entry = nesting?.get(task.id);
+        const row = this.renderRow(body, task, columns, entry && { ...entry, folded: isFolded(task.id) });
+        const revealed = this.revealing !== null && !!nesting && this.underTask(task.id, this.revealing, nesting);
+        if (this.expanding === group.id || revealed) {
           row.addClass('is-expanding');
           stagger(row, index);
         }
       });
-      if (group.tasks.length > limit) {
+      if (rows.length > limit) {
         const more = body.createEl('tr', { cls: 'taskpro-table__more-row' });
         const cell = more.createEl('td', { attr: { colspan: span } });
-        const button = cell.createEl('button', { text: labels.showMore(Math.min(ROWS_PER_PAGE, group.tasks.length - limit)) });
+        const button = cell.createEl('button', { text: labels.showMore(Math.min(ROWS_PER_PAGE, rows.length - limit)) });
         button.addEventListener('click', () => {
           this.rowLimits.set(group.id, limit + ROWS_PER_PAGE);
           this.renderBody();
@@ -2478,7 +2536,7 @@ export class TaskBoard {
     return folder.split('/').pop() ?? '';
   }
 
-  private renderRow(body: HTMLElement, task: BoardTask, columns: readonly BoardColumnPref[]): HTMLElement {
+  private renderRow(body: HTMLElement, task: BoardTask, columns: readonly BoardColumnPref[], nest?: TableNest): HTMLElement {
     const labels = this.labels;
     const row = body.createEl('tr', { cls: 'taskpro-table__row' });
     row.dataset.status = task.status;
@@ -2487,7 +2545,7 @@ export class TaskBoard {
     this.checkButton(row.createEl('td', { cls: 'taskpro-table__check' }), task);
 
     const titleCell = row.createEl('td', { cls: 'taskpro-table__task' });
-    this.titleBlock(titleCell, task, true, !columns.some((column) => column.id === 'repeat'), !columns.some((column) => column.id === 'waiting'));
+    this.titleBlock(titleCell, task, true, !columns.some((column) => column.id === 'repeat'), !columns.some((column) => column.id === 'waiting'), nest);
     row.toggleClass('is-waiting', this.relations().isWaiting(task));
 
     for (const column of columns) this.renderCell(row, task, column.id);
@@ -2776,11 +2834,13 @@ export class TaskBoard {
   }
 
   /** The title, editable in place; `withRepeat` marks a repeating task when no repeat column says so. */
-  private titleBlock(parent: HTMLElement, task: BoardTask, withOpen = true, withRepeat = true, withWaiting = true): void {
+  private titleBlock(parent: HTMLElement, task: BoardTask, withOpen = true, withRepeat = true, withWaiting = true, nest?: TableNest): void {
     const labels = this.labels;
     const wrap = parent.createDiv({ cls: 'taskpro-board__title-wrap' });
-    if (task.depth > 0) {
-      wrap.style.setProperty('--taskpro-depth', String(Math.min(6, Math.round(task.depth / 2))));
+    // In a nested table the depth is what is shown of its ancestors; elsewhere it is how far the line is indented.
+    const depth = nest ? nest.depth : task.depth > 0 ? Math.min(6, Math.round(task.depth / 2)) : 0;
+    if (depth > 0) {
+      wrap.style.setProperty('--taskpro-depth', String(Math.min(6, depth)));
       wrap.addClass('is-subtask');
     }
     const title = wrap.createSpan({ cls: 'taskpro-board__title', text: displayTitle(task.text) || '—' });
@@ -2822,6 +2882,8 @@ export class TaskBoard {
       repeat.title = text;
     }
 
+    if (nest?.children) this.foldButton(wrap, task, nest);
+
     // A card already opens its note from the note link in its footer.
     if (!withOpen) return;
     const card = this.iconButton(wrap, 'maximize-2', labels.openCard, (event) => {
@@ -2834,6 +2896,48 @@ export class TaskBoard {
       void this.host.reveal(task);
     });
     open.addClass('taskpro-board__open');
+  }
+
+  /** Shows how many subtasks a parent has, and folds them away or brings them back. */
+  private foldButton(wrap: HTMLElement, task: BoardTask, nest: TableNest): void {
+    const labels = this.labels;
+    const fold = wrap.createEl('button', { cls: 'taskpro-board__fold' });
+    fold.type = 'button';
+    fold.toggleClass('is-folded', nest.folded);
+    fold.setAttribute('aria-expanded', String(!nest.folded));
+    const text = nest.folded ? labels.showSubtasks(nest.children) : labels.hideSubtasks(nest.children);
+    fold.setAttribute('aria-label', text);
+    fold.title = text;
+    setIcon(fold.createSpan({ cls: 'taskpro-board__fold-caret' }), this.language === 'fa' && nest.folded ? 'chevron-left' : nest.folded ? 'chevron-right' : 'chevron-down');
+    fold.createSpan({ cls: 'taskpro-board__fold-count', text: String(nest.children) });
+    fold.addEventListener('click', (event) => {
+      event.stopPropagation();
+      this.setFolded(task, !nest.folded);
+    });
+  }
+
+  /** Folds a parent's subtasks away, or brings them back; the choice is kept. */
+  private setFolded(task: BoardTask, folded: boolean): void {
+    const key = foldKey(task);
+    const kept = new Set(this.prefs.foldedTasks ?? []);
+    if (folded) kept.add(key);
+    else {
+      kept.delete(key);
+      this.revealing = task.id;
+    }
+    void this.updatePrefs({ foldedTasks: [...kept] }, false);
+  }
+
+  /** Whether a task is somewhere below another among the tasks shown. */
+  private underTask(id: string, ancestor: string, nesting: ReadonlyMap<string, Nesting>): boolean {
+    const seen = new Set<string>([id]);
+    let up = nesting.get(id)?.parent;
+    while (up && !seen.has(up)) {
+      if (up === ancestor) return true;
+      seen.add(up);
+      up = nesting.get(up)?.parent;
+    }
+    return false;
   }
 
   private startTitleEdit(wrap: HTMLElement, title: HTMLElement, task: BoardTask): void {
