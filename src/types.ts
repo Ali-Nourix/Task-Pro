@@ -387,7 +387,10 @@ export const DEFAULT_CALENDAR_SETTINGS: CalendarSettings = {
 // board reopens exactly as it was left.
 export type BoardScope = 'target' | 'vault';
 export type BoardLayout = 'table' | 'board' | 'calendar' | 'timeline';
-export type BoardGroupBy = 'none' | 'status' | 'tag' | 'priority' | 'deadline' | 'note';
+export type BoardGroupBy = 'none' | 'status' | 'tag' | 'priority' | 'deadline' | 'plan' | 'note';
+
+/** Where a date falls against today: what the board groups and filters deadlines and plans by. */
+export type DeadlineBucket = 'overdue' | 'today' | 'week' | 'later' | 'past' | 'none';
 export type BoardSortKey = 'document' | 'title' | 'status' | 'priority' | 'deadline' | 'plan' | 'progress' | 'note';
 export type BoardSortDir = 'asc' | 'desc';
 /** A priority filter entry: a level, or tasks that have none. */
@@ -405,6 +408,12 @@ export interface BoardPreferences {
   priorities: BoardPriorityFilter[];
   /** Tag keys shown (a task matches if it has any). `''` is "no tag". Empty means all. */
   tags: string[];
+  /** Where a deadline may fall for a task to show. Unset or empty means anywhere. */
+  deadlines?: DeadlineBucket[];
+  /** Where a plan may fall for a task to show; `overdue` is a plan that was missed. Unset or empty means anywhere. */
+  plans?: DeadlineBucket[];
+  /** The notes (paths) whose tasks show. Unset or empty means every note. */
+  notes?: string[];
   /** Group keys the user folded away, per grouping. */
   collapsedGroups: string[];
   /** Note that the quick-add row writes new tasks into. */

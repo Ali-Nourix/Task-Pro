@@ -1,9 +1,8 @@
 // ── board/board-localization.ts ───────────────────────────────────────────
 // Text for the task board.
 
-import { BoardGroupBy, BoardSortKey, Language } from '../types';
+import { BoardGroupBy, BoardSortKey, DeadlineBucket, Language } from '../types';
 import { isolate } from '../bidi';
-import { DeadlineBucket } from './board-query';
 
 export interface BoardLabels {
   title: string;
@@ -29,6 +28,11 @@ export interface BoardLabels {
   filterStatus: string;
   filterPriority: string;
   filterTags: string;
+  filterDeadline: string;
+  filterPlan: string;
+  filterNote: string;
+  /** The search field over the filter menu. */
+  filterSearch: string;
   clearFilters: string;
   columns: {
     task: string;
@@ -80,6 +84,8 @@ export interface BoardLabels {
   noPriority: string;
   noDeadline: string;
   buckets: Record<DeadlineBucket, string>;
+  /** The same buckets for the day a task is planned for. */
+  planBuckets: Record<DeadlineBucket, string>;
   addPlaceholder: string;
   addInto: string;
   chooseInbox: string;
@@ -130,6 +136,7 @@ const EN: BoardLabels = {
     tag: 'Tag',
     priority: 'Priority',
     deadline: 'Deadline',
+    plan: 'Plan',
     note: 'Note',
   },
   sort: 'Sort',
@@ -149,6 +156,10 @@ const EN: BoardLabels = {
   filterStatus: 'Status',
   filterPriority: 'Priority',
   filterTags: 'Tags',
+  filterDeadline: 'Deadline',
+  filterPlan: 'Plan',
+  filterNote: 'Note',
+  filterSearch: 'Search filters…',
   clearFilters: 'Clear filters',
   columns: {
     task: 'Task',
@@ -203,6 +214,14 @@ const EN: BoardLabels = {
     past: 'Past',
     none: 'No deadline',
   },
+  planBuckets: {
+    overdue: 'Missed',
+    today: 'Today',
+    week: 'Next 7 days',
+    later: 'Later',
+    past: 'Past',
+    none: 'Not planned',
+  },
   addPlaceholder: 'Add a task…',
   addInto: 'Adds to',
   chooseInbox: 'Choose the note new tasks go into',
@@ -251,6 +270,7 @@ const FA: BoardLabels = {
     tag: 'برچسب',
     priority: 'اولویت',
     deadline: 'سررسید',
+    plan: 'برنامه',
     note: 'یادداشت',
   },
   sort: 'مرتب‌سازی',
@@ -270,6 +290,10 @@ const FA: BoardLabels = {
   filterStatus: 'وضعیت',
   filterPriority: 'اولویت',
   filterTags: 'برچسب‌ها',
+  filterDeadline: 'سررسید',
+  filterPlan: 'برنامه',
+  filterNote: 'یادداشت',
+  filterSearch: 'جستجوی فیلترها…',
   clearFilters: 'پاک کردن فیلترها',
   columns: {
     task: 'تسک',
@@ -323,6 +347,14 @@ const FA: BoardLabels = {
     later: 'بعدتر',
     past: 'گذشته',
     none: 'بدون سررسید',
+  },
+  planBuckets: {
+    overdue: 'از دست رفته',
+    today: 'امروز',
+    week: '۷ روز آینده',
+    later: 'بعدتر',
+    past: 'گذشته',
+    none: 'برنامه‌ریزی‌نشده',
   },
   addPlaceholder: 'افزودن تسک…',
   addInto: 'افزودن به',

@@ -38,6 +38,7 @@ import { buildChip } from '../ui/chips';
 import {
   BOARD_STATUS_ORDER,
   BoardGroup,
+  DEADLINE_BUCKET_ORDER,
   DeadlineBucket,
   filterTasks,
   groupTasks,
@@ -105,7 +106,12 @@ const ENTERING_PREFS = new Set<string>([
   'timelineZoom',
   'timelineUndated',
   'compactTable',
+  'deadlines',
+  'plans',
+  'notes',
 ]);
+/** The ways to group tasks, in the order the menus list them. */
+const GROUPINGS: readonly BoardGroupBy[] = ['none', 'status', 'tag', 'priority', 'deadline', 'plan', 'note'];
 /**
  * How long a task that has just arrived stays marked, in milliseconds. It is
  * only the time a second drawing straight after the first can still find it;
@@ -857,7 +863,7 @@ export class TaskBoard {
     setIcon(filter.createSpan({ cls: 'taskpro-board__bar-icon' }), 'filter');
     if (count) filter.createSpan({ cls: 'taskpro-board__bar-count', text: String(count) });
     filter.toggleClass('is-active', count > 0);
-    filter.addEventListener('click', () => this.openFilterSheet(filter));
+    filter.addEventListener('click', () => this.openFilterMenu(filter));
 
     const options = this.iconButton(this.toolbarEl, 'sliders-horizontal', labels.viewOptions, () => this.openViewOptions(options));
     options.addClass('taskpro-board__bar-icon-btn', 'taskpro-board__properties');
@@ -900,13 +906,14 @@ export class TaskBoard {
    * preference changed from one redraws the body at once and the bar when
    * the sheet closes, so the sheet stays in place meanwhile.
    */
-  private openSheetMenu(anchor: HTMLElement, header: string, sections: () => MenuSection[]): void {
+  private openSheetMenu(anchor: HTMLElement, header: string, sections: () => MenuSection[], searchPlaceholder?: string): void {
     this.hold(true);
     openContextMenu({
       container: this.el,
       at: anchor.getBoundingClientRect(),
       rtl: this.language === 'fa',
       header,
+      searchPlaceholder,
       sections,
       onClose: () => {
         this.hold(false);
@@ -956,7 +963,7 @@ export class TaskBoard {
 
       const board = this.prefs.layout === 'board';
       const grouping = board ? this.kanbanGrouping() : this.prefs.groupBy;
-      const groupings: BoardGroupBy[] = ['none', 'status', 'tag', 'priority', 'deadline', 'note'];
+      const groupings = GROUPINGS;
       const keys: BoardSortKey[] = ['document', 'title', 'status', 'priority', 'deadline', 'plan', 'progress', 'note'];
       const rows: MenuEntry[] = [
         {
@@ -1028,56 +1035,6 @@ export class TaskBoard {
   }
 
   /** The filters as switches: several can be flipped before the sheet goes away. */
-  private openFilterSheet(anchor: HTMLElement): void {
-    const labels = this.labels;
-    const toggle = <T,>(list: T[], value: T): T[] => (list.includes(value) ? list.filter((v) => v !== value) : [...list, value]);
-    const flip = (patch: Partial<BoardPreferences>) => {
-      this.quietPrefs(patch);
-      this.renderActiveFilters();
-    };
-    this.openSheetMenu(anchor, labels.filter, () => {
-      const prefs = this.prefs;
-      const priorities: BoardPriorityFilter[] = [...TASK_PRIORITIES, 'none'];
-      const sections: MenuSection[] = [
-        {
-          title: labels.filterStatus,
-          entries: BOARD_STATUS_ORDER.map((status) => ({
-            label: STATUS_LABELS[this.language][status],
-            icon: STATUS_ICON_NAMES[status],
-            checked: prefs.statuses.includes(status),
-            keepOpen: true,
-            onSelect: () => flip({ statuses: toggle(prefs.statuses, status) }),
-          })),
-        },
-        {
-          title: labels.filterPriority,
-          entries: priorities.map((priority) => ({
-            label: priority === 'none' ? labels.noPriority : PRIORITY_LABELS[this.language][priority],
-            icon: priority === 'none' ? 'minus' : PRIORITY_ICON_NAMES[priority],
-            checked: prefs.priorities.includes(priority),
-            keepOpen: true,
-            onSelect: () => flip({ priorities: toggle(prefs.priorities, priority) }),
-          })),
-        },
-        {
-          title: labels.filterTags,
-          entries: [...this.settings.tags, { key: '', name: labels.noTag, color: 'gray' }].map((tag) => ({
-            label: tag.name,
-            swatch: tag.key ? resolveTagColor(tag.color) : undefined,
-            icon: tag.key ? undefined : 'minus',
-            checked: prefs.tags.includes(tag.key),
-            keepOpen: true,
-            onSelect: () => flip({ tags: toggle(prefs.tags, tag.key) }),
-          })),
-        },
-      ];
-      if (this.activeFilterCount()) {
-        sections.push({ entries: [{ label: labels.clearFilters, icon: 'x', keepOpen: true, onSelect: () => flip({ statuses: [], priorities: [], tags: [] }) }] });
-      }
-      return sections;
-    });
-  }
-
   /** New tasks on a phone: a round button where the thumb rests, at the bottom on the trailing side. */
   private renderFab(): void {
     const labels = this.labels;
@@ -1170,7 +1127,7 @@ export class TaskBoard {
     const button = this.controlButton(parent, 'layers', labels.group, labels.groupBy[current]);
     button.addEventListener('click', (event) => {
       const menu = new Menu();
-      const options: BoardGroupBy[] = ['none', 'status', 'tag', 'priority', 'deadline', 'note'];
+      const options = GROUPINGS;
       for (const option of options) {
         // A board always has columns, so "no grouping" is a table-only choice.
         if (this.prefs.layout === 'board' && option === 'none') continue;
@@ -1233,7 +1190,13 @@ export class TaskBoard {
   }
 
   private activeFilterCount(): number {
-    return this.prefs.statuses.length + this.prefs.priorities.length + this.prefs.tags.length;
+    const { statuses, priorities, tags, deadlines, plans, notes } = this.prefs;
+    return statuses.length + priorities.length + tags.length + (deadlines?.length ?? 0) + (plans?.length ?? 0) + (notes?.length ?? 0);
+  }
+
+  /** The preferences that turn every filter off. */
+  private clearedFilters(): Partial<BoardPreferences> {
+    return { statuses: [], priorities: [], tags: [], deadlines: [], plans: [], notes: [] };
   }
 
   private renderFilterControl(parent: HTMLElement): void {
@@ -1241,58 +1204,119 @@ export class TaskBoard {
     const count = this.activeFilterCount();
     const button = this.controlButton(parent, 'filter', labels.filter, count ? String(count) : undefined);
     if (count) button.addClass('is-active');
-    button.addEventListener('click', (event) => {
-      const menu = new Menu();
-      const toggle = <T,>(list: T[], value: T): T[] =>
-        list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
+    button.addEventListener('click', () => this.openFilterMenu(button));
+  }
 
-      menu.addItem((item) => item.setTitle(labels.filterStatus).setIsLabel(true));
-      for (const status of BOARD_STATUS_ORDER) {
-        menu.addItem((item) =>
-          item
-            .setTitle(STATUS_LABELS[this.language][status])
-            .setIcon(STATUS_ICON_NAMES[status])
-            .setChecked(this.prefs.statuses.includes(status))
-            .onClick(() => void this.updatePrefs({ statuses: toggle(this.prefs.statuses, status) }))
-        );
-      }
+  /**
+   * The filters, in the menu the board uses everywhere (a popover on a desktop,
+   * a sheet on a phone): sections of switches that stay open while several are
+   * flipped, with a search that finds any of them, at any depth.
+   */
+  private openFilterMenu(anchor: HTMLElement): void {
+    const flip = (patch: Partial<BoardPreferences>) => {
+      this.quietPrefs(patch);
+      this.renderActiveFilters();
+    };
+    this.openSheetMenu(anchor, this.labels.filter, () => this.filterSections(flip), this.labels.filterSearch);
+  }
 
-      menu.addSeparator();
-      menu.addItem((item) => item.setTitle(labels.filterPriority).setIsLabel(true));
-      const priorities: BoardPriorityFilter[] = [...TASK_PRIORITIES, 'none'];
-      for (const priority of priorities) {
-        menu.addItem((item) =>
-          item
-            .setTitle(priority === 'none' ? labels.noPriority : PRIORITY_LABELS[this.language][priority])
-            .setIcon(priority === 'none' ? 'minus' : PRIORITY_ICON_NAMES[priority])
-            .setChecked(this.prefs.priorities.includes(priority))
-            .onClick(() => void this.updatePrefs({ priorities: toggle(this.prefs.priorities, priority) }))
-        );
-      }
+  private filterSections(flip: (patch: Partial<BoardPreferences>) => void): MenuSection[] {
+    const labels = this.labels;
+    const toggle = <T,>(list: readonly T[], value: T): T[] =>
+      list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
+    const priorities: BoardPriorityFilter[] = [...TASK_PRIORITIES, 'none'];
+    /** What a submenu's row says of its choices: the one chosen, or how many. */
+    const summary = (names: string[]) => (names.length > 1 ? String(names.length) : (names[0] ?? ''));
+    const buckets = (names: Record<DeadlineBucket, string>, key: 'deadlines' | 'plans'): MenuEntry[] =>
+      DEADLINE_BUCKET_ORDER.map((bucket) => ({
+        label: names[bucket],
+        icon: key === 'deadlines' ? 'calendar' : 'clock',
+        checked: !!this.prefs[key]?.includes(bucket),
+        keepOpen: true,
+        onSelect: () => flip({ [key]: toggle(this.prefs[key] ?? [], bucket) }),
+      }));
+    const notes = (): MenuEntry[] => {
+      const counts = new Map<string, number>();
+      for (const task of this.scopedTasks()) counts.set(task.filePath, (counts.get(task.filePath) ?? 0) + 1);
+      // A note that is filtered on stays listed even if the scope no longer has it.
+      for (const path of this.prefs.notes ?? []) if (!counts.has(path)) counts.set(path, 0);
+      return Array.from(counts, ([path, count]) => ({ path, count }))
+        .sort((a, b) => a.path.localeCompare(b.path))
+        .map(({ path, count }) => ({
+          label: path.split('/').pop()!.replace(/\.md$/i, ''),
+          icon: 'file-text',
+          hint: String(count),
+          keywords: path,
+          checked: !!this.prefs.notes?.includes(path),
+          keepOpen: true,
+          onSelect: () => flip({ notes: toggle(this.prefs.notes ?? [], path) }),
+        }));
+    };
+    const bucketNames = (chosen: DeadlineBucket[] | undefined, names: Record<DeadlineBucket, string>) =>
+      (chosen ?? []).map((bucket) => names[bucket]);
 
-      menu.addSeparator();
-      menu.addItem((item) => item.setTitle(labels.filterTags).setIsLabel(true));
-      for (const tag of [...this.settings.tags, { key: '', name: labels.noTag, color: 'gray' }]) {
-        menu.addItem((item) =>
-          item
-            .setTitle(tag.name)
-            .setIcon(tag.key ? 'tag' : 'minus')
-            .setChecked(this.prefs.tags.includes(tag.key))
-            .onClick(() => void this.updatePrefs({ tags: toggle(this.prefs.tags, tag.key) }))
-        );
-      }
-
-      if (count) {
-        menu.addSeparator();
-        menu.addItem((item) =>
-          item
-            .setTitle(labels.clearFilters)
-            .setIcon('x')
-            .onClick(() => void this.updatePrefs({ statuses: [], priorities: [], tags: [] }))
-        );
-      }
-      menu.showAtMouseEvent(event);
-    });
+    // The three that open a list of their own come first: short, and the ones asked for most.
+    const sections: MenuSection[] = [
+      {
+        entries: [
+          {
+            label: labels.filterDeadline,
+            icon: 'calendar',
+            hint: summary(bucketNames(this.prefs.deadlines, labels.buckets)),
+            submenu: () => [{ entries: buckets(labels.buckets, 'deadlines') }],
+          },
+          {
+            label: labels.filterPlan,
+            icon: 'clock',
+            hint: summary(bucketNames(this.prefs.plans, labels.planBuckets)),
+            submenu: () => [{ entries: buckets(labels.planBuckets, 'plans') }],
+          },
+          {
+            label: labels.filterNote,
+            icon: 'file-text',
+            hint: summary((this.prefs.notes ?? []).map((path) => path.split('/').pop()!.replace(/\.md$/i, ''))),
+            submenu: () => [{ entries: notes() }],
+          },
+        ],
+      },
+      {
+        title: labels.filterStatus,
+        entries: BOARD_STATUS_ORDER.map((status) => ({
+          label: STATUS_LABELS[this.language][status],
+          icon: STATUS_ICON_NAMES[status],
+          checked: this.prefs.statuses.includes(status),
+          keepOpen: true,
+          onSelect: () => flip({ statuses: toggle(this.prefs.statuses, status) }),
+        })),
+      },
+      {
+        title: labels.filterPriority,
+        entries: priorities.map((priority) => ({
+          label: priority === 'none' ? labels.noPriority : PRIORITY_LABELS[this.language][priority],
+          icon: priority === 'none' ? 'minus' : PRIORITY_ICON_NAMES[priority],
+          checked: this.prefs.priorities.includes(priority),
+          keepOpen: true,
+          onSelect: () => flip({ priorities: toggle(this.prefs.priorities, priority) }),
+        })),
+      },
+      {
+        title: labels.filterTags,
+        entries: [...this.settings.tags, { key: '', name: labels.noTag, color: 'gray' }].map((tag) => ({
+          label: tag.name,
+          swatch: tag.key ? resolveTagColor(tag.color) : undefined,
+          icon: tag.key ? undefined : 'minus',
+          checked: this.prefs.tags.includes(tag.key),
+          keepOpen: true,
+          onSelect: () => flip({ tags: toggle(this.prefs.tags, tag.key) }),
+        })),
+      },
+    ];
+    if (this.activeFilterCount()) {
+      sections.push({
+        entries: [{ label: labels.clearFilters, icon: 'x', keepOpen: true, onSelect: () => flip(this.clearedFilters()) }],
+      });
+    }
+    return sections;
   }
 
   /** Active filters as removable pills under the toolbar. */
@@ -1342,6 +1366,38 @@ export class TaskBoard {
       });
     }
 
+    for (const bucket of this.prefs.deadlines ?? []) {
+      pills.push({
+        build: (pill) => {
+          pill.addClass('taskpro-deadline-badge');
+          pill.dataset.state = DEADLINE_BUCKET_STATE[bucket];
+          pill.title = `${labels.filterDeadline}: ${labels.buckets[bucket]}`;
+          this.chipContent(pill, CHIP_ICON_NAMES.deadline, labels.buckets[bucket]);
+        },
+        remove: () => void this.updatePrefs({ deadlines: (this.prefs.deadlines ?? []).filter((b) => b !== bucket) }),
+      });
+    }
+    for (const bucket of this.prefs.plans ?? []) {
+      pills.push({
+        build: (pill) => {
+          pill.addClass('taskpro-schedule-badge');
+          if (bucket === 'overdue') pill.dataset.state = 'past';
+          pill.title = `${labels.filterPlan}: ${labels.planBuckets[bucket]}`;
+          this.chipContent(pill, CHIP_ICON_NAMES.scheduleDay, labels.planBuckets[bucket]);
+        },
+        remove: () => void this.updatePrefs({ plans: (this.prefs.plans ?? []).filter((b) => b !== bucket) }),
+      });
+    }
+    for (const path of this.prefs.notes ?? []) {
+      pills.push({
+        build: (pill) => {
+          pill.title = path;
+          this.chipContent(pill, 'file-text', path.split('/').pop()!.replace(/\.md$/i, ''));
+        },
+        remove: () => void this.updatePrefs({ notes: (this.prefs.notes ?? []).filter((p) => p !== path) }),
+      });
+    }
+
     el.toggleClass('is-empty', pills.length === 0);
     for (const entry of pills) {
       const pill = el.createEl('button', { cls: 'taskpro-chip taskpro-board__filter-pill' });
@@ -1354,7 +1410,7 @@ export class TaskBoard {
     if (pills.length > 1) {
       const clear = el.createEl('button', { cls: 'taskpro-board__clear', text: labels.clearFilters });
       clear.type = 'button';
-      clear.addEventListener('click', () => void this.updatePrefs({ statuses: [], priorities: [], tags: [] }));
+      clear.addEventListener('click', () => void this.updatePrefs(this.clearedFilters()));
     }
   }
 
@@ -1560,7 +1616,7 @@ export class TaskBoard {
               label: labels.emptyClear,
               run: () => {
                 this.search = '';
-                void this.updatePrefs({ statuses: [], priorities: [], tags: [] });
+                void this.updatePrefs(this.clearedFilters());
               },
             }
           : undefined
@@ -2150,6 +2206,14 @@ export class TaskBoard {
         const chip = parent.createSpan({ cls: 'taskpro-chip taskpro-deadline-badge taskpro-board__group-chip' });
         chip.dataset.state = DEADLINE_BUCKET_STATE[bucket];
         this.chipContent(chip, CHIP_ICON_NAMES.deadline, labels.buckets[bucket]);
+        return;
+      }
+      case 'plan': {
+        const bucket = value as DeadlineBucket;
+        if (bucket === 'none') return muted(labels.planBuckets.none, 'calendar-x');
+        const chip = parent.createSpan({ cls: 'taskpro-chip taskpro-schedule-badge taskpro-board__group-chip' });
+        if (bucket === 'overdue') chip.dataset.state = 'past';
+        this.chipContent(chip, CHIP_ICON_NAMES.scheduleDay, labels.planBuckets[bucket]);
         return;
       }
       case 'note': {
@@ -2835,7 +2899,7 @@ export class TaskBoard {
         });
       }
 
-      if (groupBy !== 'deadline' && groupBy !== 'note') this.renderColumnAdd(column, groupBy, group.value);
+      if (groupBy !== 'deadline' && groupBy !== 'plan' && groupBy !== 'note') this.renderColumnAdd(column, groupBy, group.value);
 
       if (droppable) {
         column.addEventListener('dragover', (event) => {

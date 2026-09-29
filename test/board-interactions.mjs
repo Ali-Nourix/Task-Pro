@@ -125,8 +125,11 @@ try {
 
   // Filter by a tag through the menu, then remove it from its pill.
   await page.locator('.taskpro-board__control', { hasText: 'Filter' }).click();
-  await page.locator('.menu .menu-item', { hasText: 'Client' }).click();
+  await page.locator('.taskpro-menu__item', { hasText: 'Client' }).click();
   eq((await titles(page)).sort(), ['Chase the missing invoice', 'Send the quote to Acme'], 'tag filter');
+  eq(await page.locator('.taskpro-menu').count(), 1, 'the filter menu stays open for the next switch');
+  await page.keyboard.press('Escape');
+  eq(await page.locator('.taskpro-menu').count(), 0, 'and Escape closes it');
   eq(await page.locator('.taskpro-board__filter-pill').count(), 1, 'active filter shown as a pill');
 
   // Quick add inherits the tag filter, so the new task stays visible.
@@ -461,6 +464,53 @@ try {
   await page.locator('.taskpro-menu__item', { hasText: 'Reset column order' }).click();
   eq(await groups(), ['[ ]', '[/]', '[!]', '[x]'], 'the order reset');
   eq(page.errors, [], 'no page errors with the board columns');
+  await page.close();
+
+  // ── Filters by deadline, plan and note; grouping by plan ─────────────────
+  page = await open('?scope=vault');
+  const pickFilter = async (row, choice) => {
+    await page.locator('.taskpro-board__control', { hasText: 'Filter' }).click();
+    await page.locator('.taskpro-menu__item', { hasText: row }).first().click();
+    await page.locator('.taskpro-menu.is-submenu .taskpro-menu__item', { hasText: choice }).first().click();
+    await page.keyboard.press('Escape');
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(60);
+  };
+  await pickFilter('Deadline', 'Overdue');
+  eq(await titles(page), ['Chase the missing invoice'], 'a deadline filter keeps what is overdue');
+  eq(await page.locator('.taskpro-board__filter-pill').count(), 1, 'as one pill');
+  await page.locator('.taskpro-board__filter-pill').click();
+  eq((await titles(page)).length, 12, 'and the pill takes it off');
+
+  await pickFilter('Plan', 'Today');
+  eq(await titles(page), ['Send the quote to Acme'], 'a plan filter keeps what is planned for today');
+  await page.locator('.taskpro-board__filter-pill').click();
+
+  await pickFilter('Plan', 'Not planned');
+  const unplanned = await titles(page);
+  ok(unplanned.length > 5 && !unplanned.includes('Send the quote to Acme'), 'and what is not planned at all');
+  await page.locator('.taskpro-board__filter-pill').click();
+
+  await pickFilter('Note', 'Home');
+  const inHome = (await note(page, 'Life/Home.md')).split('\n').filter((line) => /^\s*- \[.\]/.test(line)).length;
+  eq((await titles(page)).length, inHome, 'a note filter keeps that note\'s tasks');
+  eq((await page.locator('.taskpro-board__filter-pill').textContent()).trim(), 'Home', 'named on its pill');
+  eq(await page.locator('.taskpro-board__control.has-value, .taskpro-board__control.is-active').count() > 0, true, 'the filter button counts it');
+
+  // Filters together narrow further; Clear filters takes all of them off.
+  await pickFilter('Deadline', 'Later');
+  eq(await page.locator('.taskpro-board__filter-pill').count(), 2, 'two filters, two pills');
+  await page.locator('.taskpro-board__clear').click();
+  eq(await page.locator('.taskpro-board__filter-pill').count(), 0, 'Clear filters takes them all off');
+  eq((await titles(page)).length, 12, 'and the list is whole again');
+
+  // Grouped by plan, the table has a group for each day range, and one for what is not planned.
+  await page.locator('.taskpro-board__control', { hasText: 'Group' }).click();
+  await page.locator('.menu .menu-item', { hasText: 'Plan' }).click();
+  await page.waitForTimeout(60);
+  const planGroups = await page.$$eval('.taskpro-table__group', (els) => els.map((el) => el.textContent.trim().replace(/\d+$/, '').trim()));
+  ok(planGroups.includes('Today') && planGroups.includes('Not planned'), `groups by plan (${planGroups.join(', ')})`);
+  eq(page.errors, [], 'no page errors with the new filters');
   await page.close();
 
   // ── The marks of Notion's own views ──────────────────────────────────────
