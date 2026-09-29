@@ -97,6 +97,7 @@ import { scheduleDayText } from './schedule-text';
 import { MenuEntry, MenuSection, closeContextMenu, openContextMenu } from '../ui/context-menu';
 import { emptyPanel } from '../ui/sheet';
 import { autoDirection } from '../ui/fields';
+import type { Entrance } from '../ui/motion';
 import { contentHeight } from '../ui/space';
 import { holdToDrag, onContextPress } from '../ui/touch';
 import {
@@ -176,6 +177,8 @@ export interface CalendarContext {
   refresh(): void;
   /** Repaints the calendar only. */
   rerender(): void;
+  /** What the next repaint plays: the view coming in, or a page turning forward or back. */
+  enter(kind: Entrance): void;
   showSummary(tasks: readonly BoardTask[]): void;
   /** What every task waits on, for the hourglass on a task that cannot start yet. */
   relations(): RelationIndex;
@@ -366,6 +369,7 @@ export class TaskCalendar {
   }
 
   goToday(): void {
+    this.ctx.enter('view');
     this.anchor = todayKey();
     this.savedScroll = null;
     this.savedScrollX = null;
@@ -373,6 +377,7 @@ export class TaskCalendar {
   }
 
   step(delta: number): void {
+    this.ctx.enter(delta > 0 ? 'next' : 'prev');
     switch (this.view) {
       case 'month':
         this.anchor = addMonths(this.anchor, this.system, delta);
@@ -1204,6 +1209,7 @@ export class TaskCalendar {
   private decorate(el: HTMLElement, item: CalendarItem): void {
     el.addClass('taskpro-cal__item');
     el.dataset.itemId = item.id;
+    el.dataset.taskId = item.task.id;
     el.dataset.kind = item.kind;
     el.dataset.status = item.task.status;
     el.style.setProperty('--taskpro-cal-accent', this.accent(item));

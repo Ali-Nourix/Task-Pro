@@ -361,6 +361,10 @@ body {
   --taskpro-fast: 110ms;
   --taskpro-base: 170ms;
   --taskpro-slow: 260ms;
+  /* A small overshoot, for things that land: a check that has just been ticked. */
+  --taskpro-ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
+  /* How much later each of a run of things arrives than the one before. */
+  --taskpro-stagger: 26ms;
 
   /* Focus. The same ring wherever keyboard focus lands, drawn outside the
      element with a gap of the page colour so it never merges into a tint. */
@@ -7221,6 +7225,147 @@ body.is-mobile .taskpro-board.taskpro-board button.taskpro-tl__undated-toggle {
   white-space: nowrap;
 }
 
+/* ── Motion ─────────────────────────────────────────────────────────────────
+   Nothing here moves for its own sake. Each animation says what just
+   happened: a view came in, a page turned, a task arrived, a task was ticked
+   off. They use only opacity and transform (and, for a flash, a background
+   that fades out), and the classes that start them are put on for a moment by
+   the board (ui/motion.ts) rather than left on, so a redraw for any other
+   reason plays nothing. The reduced-motion block at the end of the file turns
+   all of it off. */
+.taskpro-board {
+  /* +1 reading left to right, -1 right to left: what "forward" means on screen. */
+  --taskpro-dir: 1;
+  --taskpro-start-edge: left;
+}
+.taskpro-board[dir="rtl"] {
+  --taskpro-dir: -1;
+  --taskpro-start-edge: right;
+}
+
+@keyframes taskpro-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+@keyframes taskpro-fade {
+  from {
+    opacity: 0;
+  }
+}
+/* A page turning: it comes from the side the reader is heading toward. */
+@keyframes taskpro-turn {
+  from {
+    opacity: 0;
+    transform: translateX(calc(var(--turn, 1) * var(--taskpro-dir) * 22px));
+  }
+}
+@keyframes taskpro-grow {
+  from {
+    opacity: 0;
+    transform: scaleX(0.3);
+  }
+}
+@keyframes taskpro-pop {
+  0% {
+    transform: scale(0.78);
+  }
+  55% {
+    transform: scale(1.16);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+@keyframes taskpro-arrive {
+  from {
+    background-color: color-mix(in srgb, var(--interactive-accent) 22%, transparent);
+  }
+}
+@keyframes taskpro-bar {
+  from {
+    transform: translateX(var(--taskpro-bar-shift, 0px)) scaleX(var(--taskpro-bar-stretch, 1));
+  }
+}
+
+/* A view coming in: a new layout, a new grouping, a filter. */
+.taskpro-board .taskpro-board__body.is-entering-view > *:not(.taskpro-kanban) {
+  animation: taskpro-rise var(--taskpro-slow) var(--taskpro-ease) backwards;
+}
+.taskpro-board .taskpro-board__body.is-entering-view > .taskpro-kanban > .taskpro-kanban__column {
+  animation: taskpro-rise var(--taskpro-slow) var(--taskpro-ease) backwards;
+  animation-delay: calc(var(--i, 0) * var(--taskpro-stagger));
+}
+/* A page turning: the next week, the previous month. */
+.taskpro-board .taskpro-board__body.is-entering-next > *,
+.taskpro-board .taskpro-board__body.is-entering-prev > * {
+  animation: taskpro-turn var(--taskpro-slow) var(--taskpro-ease) backwards;
+}
+.taskpro-board .taskpro-board__body.is-entering-prev > * {
+  --turn: -1;
+}
+
+/* The timeline: rows follow one another in, and each bar grows from where it starts. */
+.taskpro-board .taskpro-board__body.is-entering .taskpro-tl__row {
+  animation: taskpro-fade var(--taskpro-slow) var(--taskpro-ease) backwards;
+  animation-delay: calc(var(--i, 0) * var(--taskpro-stagger));
+}
+.taskpro-board .taskpro-board__body.is-entering .taskpro-tl__bar {
+  transform-origin: var(--taskpro-start-edge) center;
+  animation: taskpro-grow var(--taskpro-slow) var(--taskpro-ease) backwards;
+  animation-delay: calc(var(--i, 0) * var(--taskpro-stagger) + 60ms);
+}
+.taskpro-board .taskpro-board__body.is-entering-view .taskpro-board__progress-fill {
+  transform-origin: var(--taskpro-start-edge) center;
+  animation: taskpro-grow var(--taskpro-slow) var(--taskpro-ease) backwards;
+  animation-delay: 80ms;
+}
+
+/* A group that has just been opened: its rows follow one another in. */
+.taskpro-board .taskpro-table__row.is-expanding td,
+.taskpro-board .taskpro-list__row.is-expanding {
+  animation: taskpro-fade var(--taskpro-base) var(--taskpro-ease) backwards;
+  animation-delay: calc(var(--i, 0) * 18ms);
+}
+
+/* A task that has just arrived, or changed status, flashes where it lands;
+   a card also rises into its column. */
+.taskpro-board .taskpro-table__row.is-arriving td,
+.taskpro-board .taskpro-list__row.is-arriving,
+.taskpro-board .taskpro-tl__row.is-arriving .taskpro-tl__cell,
+.taskpro-board .taskpro-cal__item.is-arriving {
+  animation: taskpro-arrive 1.4s var(--taskpro-ease) backwards;
+}
+.taskpro-board .taskpro-card.is-arriving {
+  animation: taskpro-rise var(--taskpro-base) var(--taskpro-ease) backwards, taskpro-arrive 1.4s var(--taskpro-ease) backwards;
+}
+/* A tick that has just landed. */
+.taskpro-board button.taskpro-board__check.is-popping,
+.taskpro-board .taskpro-interactive-badge.is-popping {
+  animation: taskpro-pop var(--taskpro-slow) var(--taskpro-ease-pop) backwards;
+}
+
+/* The bar under the tabs travels to the tab that was chosen. */
+.taskpro-board .taskpro-board__layout button.taskpro-segmented__item.is-active.is-sliding::after {
+  transform-origin: var(--taskpro-start-edge) center;
+  animation: taskpro-bar var(--taskpro-base) var(--taskpro-ease) backwards;
+}
+
+/* What a hover or a ring does eases in and out, so a lit family fades up
+   instead of blinking on. */
+.taskpro-board .taskpro-cal__chip,
+.taskpro-board .taskpro-cal__block,
+.taskpro-board .taskpro-cal__agenda-item,
+.taskpro-board .taskpro-cal__free {
+  transition: background-color var(--taskpro-fast) var(--taskpro-ease), box-shadow var(--taskpro-base) var(--taskpro-ease);
+}
+.taskpro-board .taskpro-table td,
+.taskpro-board .taskpro-tl__row,
+.taskpro-board .taskpro-tl__cell {
+  transition: background-color var(--taskpro-fast) var(--taskpro-ease);
+}
+
 /* ── Reduced motion ─────────────────────────────────────────────────────────
    A person who asks their system for less motion gets none from TaskPro:
    panels appear where they are going, hover and press changes are instant,
@@ -7240,8 +7385,10 @@ body.is-mobile .taskpro-board.taskpro-board button.taskpro-tl__undated-toggle {
   .taskpro-reminder-overlay *,
   .notice [class*="taskpro-"] {
     animation-duration: 0.01ms !important;
+    animation-delay: 0s !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+    transition-delay: 0s !important;
     scroll-behavior: auto !important;
   }
 }

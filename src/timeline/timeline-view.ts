@@ -41,6 +41,7 @@ import { getCalendarLabels } from '../calendar/calendar-localization';
 import { TimelineRow, buildTimeline, finishesAfterStart } from './timeline-model';
 import { TimelineLabels, TimelineZoom, getTimelineLabels } from './timeline-localization';
 import { holdToDrag } from '../ui/touch';
+import { stagger, type Entrance } from '../ui/motion';
 
 export type { TimelineZoom };
 
@@ -79,6 +80,8 @@ export interface TimelineContext {
   progress(task: BoardTask): number | null;
   showSummary(tasks: readonly BoardTask[]): void;
   rerender(): void;
+  /** What the next repaint plays: the view coming in, or a page turning forward or back. */
+  enter(kind: Entrance): void;
   segmented(
     parent: HTMLElement,
     cls: string,
@@ -244,12 +247,14 @@ export class TaskTimeline {
   }
 
   private goToday(): void {
+    this.ctx.enter('view');
     this.anchor = null;
     this.scroll = null;
     this.refresh();
   }
 
   private step(direction: -1 | 1): void {
+    this.ctx.enter(direction > 0 ? 'next' : 'prev');
     this.anchor = addDays(this.from(), direction * this.scale.step);
     this.scroll = { left: 0, top: this.scroller?.scrollTop ?? 0 };
     this.refresh();
@@ -323,7 +328,7 @@ export class TaskTimeline {
 
     const positions = new Map<string, TimelinePosition>();
     model.rows.forEach((row, index) => {
-      this.renderRow(rowsEl, row, from, to);
+      this.renderRow(rowsEl, row, from, to, index);
       const span = row.span;
       if (span) {
         positions.set(row.task.id, {
@@ -441,9 +446,10 @@ export class TaskTimeline {
     return STATUS_ACCENT[task.status] ?? STATUS_ACCENT['[ ]'];
   }
 
-  private renderRow(rowsEl: HTMLElement, row: TimelineRow, from: DayKey, to: DayKey): void {
+  private renderRow(rowsEl: HTMLElement, row: TimelineRow, from: DayKey, to: DayKey, index: number): void {
     const { task } = row;
     const el = rowsEl.createDiv({ cls: 'taskpro-tl__row' });
+    stagger(el, index);
     el.dataset.taskId = task.id;
     el.dataset.status = task.status;
     el.style.setProperty('--tl-accent', this.accent(task));

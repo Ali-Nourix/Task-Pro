@@ -23,6 +23,7 @@ const eq = (actual, expected, label) => {
   if (a !== e) throw new Error(`${label}:\n  got      ${a}\n  expected ${e}`);
   checked++;
 };
+const ok = (value, label) => eq(!!value, true, label);
 
 /**
  * Every page in these tests believes it is 15:00 today. The calendar opens on
@@ -36,8 +37,13 @@ async function atThreeInTheAfternoon(page) {
   await page.clock.setFixedTime(now);
 }
 
-async function open(query = '', width = 1280) {
-  const page = await browser.newPage({ viewport: { width, height: 900 } });
+/**
+ * Pages open with reduced motion asked for, so that nothing is mid-flight when a
+ * test takes its coordinates from the screen. The motion tests open one that
+ * moves (`live`).
+ */
+async function open(query = '', width = 1280, live = false) {
+  const page = await browser.newPage({ viewport: { width, height: 900 }, reducedMotion: live ? 'no-preference' : 'reduce' });
   await atThreeInTheAfternoon(page);
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
@@ -527,6 +533,53 @@ try {
   await calm.waitForSelector('body[data-ready="true"]');
   eq(await calm.$eval('.taskpro-board__layout button', (el) => parseFloat(getComputedStyle(el).transitionDuration) < 0.001), true, 'transitions are gone under reduced motion');
   await calm.close();
+
+  // ── Motion: what moves says what happened ────────────────────────────────
+  page = await open('?scope=vault', 1280, true);
+  const moving = () =>
+    page.evaluate(() => [...new Set(document.getAnimations().map((a) => a.animationName).filter((name) => name?.startsWith('taskpro-')))].sort());
+  // Opening is an entrance in itself; then the board is still.
+  ok((await moving()).includes('taskpro-rise'), 'a board opening comes in');
+  await page.waitForTimeout(1000);
+  eq(await moving(), [], 'a board at rest plays nothing');
+  eq(await page.locator('.is-arriving').count(), 0, 'and nothing on it has just arrived');
+
+  // A new layout comes in, and the bar under the tabs travels to the tab it was moved to.
+  await page.locator('.taskpro-board__layout button', { hasText: 'Board' }).click();
+  await page.waitForTimeout(40);
+  ok((await moving()).includes('taskpro-rise'), 'a layout comes in');
+  ok((await moving()).includes('taskpro-bar'), 'the bar slides to its tab');
+  eq(await page.locator('.taskpro-board__body').evaluate((el) => el.classList.contains('is-entering-view')), true, 'the entrance is marked while it plays');
+  await page.waitForTimeout(1000);
+  eq(await moving(), [], 'and it is over within a second');
+  eq(await page.locator('.taskpro-board__body').evaluate((el) => el.classList.contains('is-entering')), false, 'leaving nothing marked');
+
+  // A task ticked off pops its check where the card lands, and the card flashes.
+  await page.locator('.taskpro-card', { hasText: 'Dentist appointment' }).locator('.taskpro-board__check').click();
+  await page.waitForTimeout(60);
+  const played = await moving();
+  ok(played.includes('taskpro-pop') && played.includes('taskpro-arrive'), 'a ticked task pops and flashes');
+  eq(await page.locator('.taskpro-kanban__column[data-group="[x]"] .taskpro-card.is-arriving').count(), 1, 'in the column it moved to');
+  await page.waitForTimeout(1700);
+
+  // Any other redraw plays nothing: typing in the search redraws the board.
+  await page.locator('.taskpro-board__search input').fill('den');
+  await page.waitForTimeout(300);
+  eq(await moving(), [], 'a search redraws without animating');
+  eq(page.errors, [], 'no page errors with the motion');
+  await page.close();
+
+  // A person who asks for less motion gets none: whatever starts runs out at once.
+  const still = await browser.newPage({ viewport: { width: 1280, height: 900 }, reducedMotion: 'reduce' });
+  await still.goto(`file://${path.join(here, 'board-preview.html')}?scope=vault`);
+  await still.waitForSelector('body[data-ready="true"]');
+  await still.locator('.taskpro-board__layout button', { hasText: 'Board' }).click();
+  await still.waitForTimeout(40);
+  const longest = await still.evaluate(() =>
+    Math.max(0, ...document.getAnimations().filter((a) => a.animationName?.startsWith('taskpro-')).map((a) => Number(a.effect.getComputedTiming().endTime)))
+  );
+  ok(longest < 5, `animations are over at once under reduced motion (${longest}ms)`);
+  await still.close();
 
   // Beside a target folder the scope switch is there; without one it is not.
   page = await open('');

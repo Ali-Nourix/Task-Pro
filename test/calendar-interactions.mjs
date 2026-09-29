@@ -48,8 +48,8 @@ async function atThreeInTheAfternoon(page) {
   await page.clock.setFixedTime(now);
 }
 
-async function open(query, width = 1400) {
-  const page = await browser.newPage({ viewport: { width, height: 900 } });
+async function open(query, width = 1400, live = false) {
+  const page = await browser.newPage({ viewport: { width, height: 900 }, reducedMotion: live ? 'no-preference' : 'reduce' });
   await atThreeInTheAfternoon(page);
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
@@ -406,6 +406,31 @@ try {
   );
   ok(shown.every(Boolean), 'no month chip is left standing in the halo');
   eq(page.errors, [], 'no page errors in the month');
+  await page.close();
+
+  // A page turns toward the one it is heading to, and a jump to today only comes in.
+  page = await open('cal=week', 1400, true);
+  await page.waitForTimeout(900);
+  const turning = () =>
+    page.evaluate(() => ({
+      classes: document.querySelector('.taskpro-board__body').className,
+      names: [...new Set(document.getAnimations().map((a) => a.animationName).filter((n) => n?.startsWith('taskpro-')))],
+    }));
+  await page.getByRole('button', { name: 'Next' }).click();
+  await page.waitForTimeout(40);
+  let seen = await turning();
+  ok(seen.classes.includes('is-entering-next') && seen.names.includes('taskpro-turn'), 'the next week turns in');
+  await page.waitForTimeout(900);
+  await page.getByRole('button', { name: 'Previous' }).click();
+  await page.waitForTimeout(40);
+  seen = await turning();
+  ok(seen.classes.includes('is-entering-prev') && seen.names.includes('taskpro-turn'), 'and the previous one turns the other way');
+  await page.waitForTimeout(900);
+  await page.getByRole('button', { name: 'Today' }).click();
+  await page.waitForTimeout(40);
+  seen = await turning();
+  ok(seen.classes.includes('is-entering-view'), 'Today comes in without turning');
+  eq(page.errors, [], 'no page errors turning pages');
   await page.close();
 } finally {
   await browser.close();
