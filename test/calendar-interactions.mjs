@@ -166,31 +166,46 @@ try {
   eq(await page.locator('.taskpro-cal-picker').count(), 0, 'Escape closes the picker');
   eq(await lineWith(page, 'Not this one'), null, 'and writes nothing');
 
-  // A click on an empty slot only offers a +; the + opens the picker.
+  // A click on an empty slot only offers the block a task there would be; clicking that opens the picker.
   box = await column(page, day, 18);
-  await page.mouse.click(box.x + box.width / 2, yAt(box, 20 * 60) + 5);
-  eq([await page.locator('.taskpro-cal__quick-add').count(), await page.locator('.taskpro-cal-picker').count()], [1, 0], 'a click shows the + and not the picker');
-  const geometry = await page.evaluate(() => {
-    const button = document.querySelector('.taskpro-cal__quick-add').getBoundingClientRect();
-    const line = document.querySelector('.taskpro-cal__quick').getBoundingClientRect();
-    const icon = document.querySelector('.taskpro-cal__quick-add svg').getBoundingClientRect();
-    const mid = (r) => [r.left + r.width / 2, r.top + r.height / 2];
-    const [bx, by] = mid(button);
-    const [ix, iy] = mid(icon);
-    return {
-      square: Math.abs(button.width - button.height) < 0.5,
-      onLine: Math.abs(by - (line.top + line.height / 2)) <= 1,
-      iconCentred: Math.abs(bx - ix) <= 0.75 && Math.abs(by - iy) <= 0.75,
-    };
-  });
-  eq(geometry, { square: true, onLine: true, iconCentred: true }, 'the + is a square, centred on the slot line, with the plus centred in it');
-  await page.locator('.taskpro-cal__quick-add').click();
-  eq(await page.locator('.taskpro-cal-picker').count(), 1, 'the + opens the picker for that slot');
+  const ghost = () =>
+    page.evaluate(() => {
+      const el = document.querySelector('.taskpro-cal__quick');
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      const col = el.parentElement.getBoundingClientRect();
+      const icon = el.querySelector('svg').getBoundingClientRect();
+      return {
+        left: Math.round(r.left - col.left),
+        width: Math.round(r.width),
+        top: Math.round(r.top - col.top),
+        height: Math.round(r.height),
+        iconMid: Math.round(icon.top + icon.height / 2 - (r.top + r.height / 2)),
+        time: el.querySelector('.taskpro-cal__quick-time').textContent,
+      };
+    });
+  await page.mouse.click(box.x + box.width * 0.25, yAt(box, 20 * 60) + 5);
+  eq([await page.locator('.taskpro-cal__quick').count(), await page.locator('.taskpro-cal-picker').count()], [1, 0], 'a click shows the slot and not the picker');
+  const near = await ghost();
+  eq(near.time, '20:00', 'it names the time of the slot');
+  eq(near.iconMid, 0, 'with its plus centred on the line of text');
+  eq(near.height >= 20, true, 'and is as tall as a block is at the least');
+  // It stands in the same place wherever in the lane the click was.
+  await page.keyboard.press('Escape');
+  await page.mouse.click(box.x + box.width * 0.8, yAt(box, 20 * 60) + 5);
+  eq(await ghost(), near, 'the same place and size when the click is elsewhere along the lane');
+  const block20 = await page.locator('.taskpro-cal__quick').boundingBox();
+  await page.mouse.click(block20.x + block20.width * 0.7, block20.y + block20.height / 2);
+  eq(await page.locator('.taskpro-cal-picker').count(), 1, 'a click anywhere on it opens the picker for that slot');
   eq(await page.locator('.taskpro-cal-picker .taskpro-cal-times__input').first().inputValue(), '20:00', 'at the slot that was clicked');
   await page.keyboard.press('Escape');
   await page.mouse.click(box.x + box.width / 2, yAt(box, 21 * 60) + 5);
   await page.keyboard.press('Escape');
-  eq(await page.locator('.taskpro-cal__quick-add').count(), 0, 'Escape puts the + away');
+  eq(await page.locator('.taskpro-cal__quick').count(), 0, 'Escape puts it away');
+  await page.mouse.click(box.x + box.width / 2, yAt(box, 21 * 60) + 5);
+  await page.mouse.click(box.x + box.width / 2, yAt(box, 11 * 60) + 5);
+  eq(await page.locator('.taskpro-cal__quick').count(), 1, 'a click on another slot moves it there');
+  await page.keyboard.press('Escape');
 
   // Moving a block by two hours.
   box = await column(page, day, 12);

@@ -96,7 +96,19 @@ interface Panel {
 const GAP = 4;
 const SUBMENU_DELAY = 120;
 /** Clicks here do not close the menu: what one of its actions opened. */
-const KEEP_OPEN = '.taskpro-menu, .menu, .taskpro-panel-overlay, .modal-container, .notice-container, .tooltip, .suggestion-container';
+const KEEP_OPEN = '.taskpro-menu, .menu, .taskpro-panel-overlay, .notice-container, .tooltip, .suggestion-container';
+
+/**
+ * Whether a press is on something the menu's own actions opened, which
+ * leaves the menu alone. Another modal counts (a picker an action raised);
+ * the modal the board itself floats in does not, or nothing pressed in the
+ * floating board would ever put a menu away.
+ */
+function isOtherSurface(target: HTMLElement, board: HTMLElement): boolean {
+  if (target.closest(KEEP_OPEN)) return true;
+  const modal = target.closest('.modal-container');
+  return !!modal && modal !== board.closest('.modal-container');
+}
 
 let current: ContextMenuHandle | null = null;
 
@@ -495,7 +507,7 @@ export function openContextMenu(options: ContextMenuOptions): ContextMenuHandle 
 
   const onPointerDown = (event: PointerEvent) => {
     const target = event.target as HTMLElement | null;
-    if (!target || target.closest(KEEP_OPEN)) return;
+    if (!target || isOtherSurface(target, container)) return;
     handle.close();
   };
 
