@@ -17,7 +17,9 @@ import {
   CalendarSettings,
   CalendarSystem,
   CHIP_ICON_NAMES,
+  DEFAULT_BOARD_PREFERENCES,
   Language,
+  SavedView,
   PRIORITY_ICON_NAMES,
   PRIORITY_LABELS,
   STATUS_ICON_NAMES,
@@ -51,6 +53,8 @@ import { CursorAt, moveCursor, moveFor } from './board-keys';
 import { Nesting, foldKey, hiddenByFold, nestTasks } from './board-nesting';
 import { BulkContext, renderBulkBar } from './bulk-actions';
 import { openShortcuts } from './board-shortcuts';
+import { newViewId, sameView, snapshotView, uniqueViewName, viewPatch } from './board-views';
+import { addPanelButtonRow, addPanelField, openTaskProPanel } from '../ui/panel';
 import { BoardTask, TaskStore } from './task-store';
 import { TaskCalendar } from '../calendar/calendar-view';
 import { openCalendarPopover } from '../calendar/calendar-popover';
@@ -359,6 +363,8 @@ export class TaskBoard {
   private expanding: string | null = null;
   /** The last drawing was the loading state, so the tasks coming in are an entrance. */
   private wasLoading = false;
+  /** The toolbar's Views button, which says when the board has been changed since the view was applied. */
+  private viewsButtonEl: HTMLButtonElement | null = null;
   /** The task the keyboard is on: its id, and where it is among the columns, for when the id is gone. */
   private cursor: { id: string; at: CursorAt } | null = null;
   /** The tasks picked for a bulk change: each id with the key that tells the task again once the notes have moved under it. */
@@ -635,6 +641,7 @@ export class TaskBoard {
     // A different view of the tasks comes in; resizing a column or folding a group does not.
     if (Object.keys(patch).some((key) => ENTERING_PREFS.has(key))) this.pendingEntrance = 'view';
     if (rebuildChrome) this.renderChrome();
+    this.markViewsButton();
     this.renderBody();
     await this.host.savePreferences();
   }
@@ -711,6 +718,7 @@ export class TaskBoard {
     });
 
     const controls = this.toolbarEl.createDiv({ cls: 'taskpro-board__controls' });
+    this.renderViewsControl(controls);
     // Days are the calendar's grouping and time its order; the timeline's rows follow the dates.
     if (!this.isCalendar && !this.isTimeline) {
       this.renderGroupControl(controls);
@@ -1021,6 +1029,9 @@ export class TaskBoard {
           ],
         },
       ];
+      sections.unshift({
+        entries: [{ label: labels.views, icon: 'bookmark', hint: this.activeView()?.name, submenu: () => this.viewSections() }],
+      });
       if (this.isCalendar || this.isTimeline) return sections;
 
       const board = this.prefs.layout === 'board';
@@ -1607,6 +1618,176 @@ export class TaskBoard {
     this.restoreCursor();
     this.reconcileSelection();
     this.refreshSelection();
+  }
+
+  // ── Saved views ──────────────────────────────────────────────────────────
+
+  private activeView(): SavedView | undefined {
+    return (this.prefs.views ?? []).find((view) => view.id === this.prefs.activeView);
+  }
+
+  /** Whether the board has been changed since the view last applied. */
+  private viewChanged(): boolean {
+    const view = this.activeView();
+    return !!view && !sameView(this.prefs, view, DEFAULT_BOARD_PREFERENCES);
+  }
+
+  private markViewsButton(): void {
+    this.viewsButtonEl?.toggleClass('is-modified', this.viewChanged());
+  }
+
+  /** The toolbar's Views button: the view in use by name, marked when it has been changed since. */
+  private renderViewsControl(parent: HTMLElement): void {
+    const button = this.controlButton(parent, 'bookmark', this.labels.views, this.activeView()?.name);
+    button.addClass('taskpro-board__views');
+    this.viewsButtonEl = button;
+    this.markViewsButton();
+    button.addEventListener('click', () => {
+      this.hold(true);
+      openContextMenu({
+        container: this.el,
+        at: button.getBoundingClientRect(),
+        rtl: this.language === 'fa',
+        header: this.labels.views,
+        sections: () => this.viewSections(),
+        onClose: () => this.hold(false),
+      });
+    });
+  }
+
+  /** The saved views to apply, saving this one, managing them, and back to the default. */
+  private viewSections(): MenuSection[] {
+    const labels = this.labels;
+    const views = this.prefs.views ?? [];
+    const active = this.activeView();
+    const changed = this.viewChanged();
+    const sections: MenuSection[] = [];
+    if (views.length) {
+      sections.push({
+        entries: views.map((view) => ({
+          label: view.name,
+          icon: 'bookmark',
+          checked: view.id === active?.id,
+          hint: view.id === active?.id && changed ? labels.viewModified : undefined,
+          keywords: 'view saved',
+          onSelect: () => void this.applyView(view),
+        })),
+      });
+    }
+    const actions: MenuEntry[] = [
+      {
+        label: labels.viewSave,
+        icon: 'bookmark-plus',
+        onSelect: () => this.askViewName(labels.viewSaveTitle, uniqueViewName(views, labels.viewNewName), (name) => void this.saveView(name)),
+      },
+    ];
+    if (active && changed) {
+      actions.push({ label: labels.viewUpdate(active.name), icon: 'save', onSelect: () => void this.updateView(active) });
+    }
+    sections.push({ entries: actions });
+    if (views.length) {
+      sections.push({
+        entries: [
+          {
+            label: labels.viewsManage,
+            icon: 'settings-2',
+            submenu: () => [
+              {
+                entries: views.map((view) => ({
+                  label: view.name,
+                  icon: 'bookmark',
+                  submenu: () => [
+                    {
+                      entries: [
+                        {
+                          label: labels.viewRename,
+                          icon: 'pencil',
+                          onSelect: () => this.askViewName(labels.viewRenameTitle, view.name, (name) => void this.renameView(view, name)),
+                        },
+                        { label: labels.viewDuplicate, icon: 'copy', onSelect: () => void this.duplicateView(view) },
+                      ],
+                    },
+                    { entries: [{ label: labels.viewDelete, icon: 'trash-2', warning: true, onSelect: () => void this.deleteView(view) }] },
+                  ],
+                })),
+              },
+            ],
+          },
+        ],
+      });
+    }
+    sections.push({ entries: [{ label: labels.viewReset, icon: 'rotate-ccw', onSelect: () => void this.resetView() }] });
+    return sections;
+  }
+
+  /** Asks for a view's name in a small panel. */
+  private askViewName(title: string, initial: string, onDone: (name: string) => void): void {
+    const labels = this.labels;
+    const { body, footer, close } = openTaskProPanel(title);
+    const input = addPanelField(body, labels.viewNamePlaceholder);
+    input.value = initial;
+    input.setAttribute('dir', 'auto');
+    const save = () => {
+      const name = input.value.trim();
+      if (!name) return;
+      close();
+      onDone(name);
+    };
+    addPanelButtonRow(footer, { cancelLabel: getActionLabels(this.language).cancel, saveLabel: labels.save, onCancel: close, onSave: save });
+    input.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' && !event.isComposing) {
+        event.preventDefault();
+        save();
+      }
+    });
+    input.focus();
+    input.select();
+  }
+
+  /** Saves the board as it is now, and makes it the view in use. */
+  private async saveView(name: string): Promise<void> {
+    const views = this.prefs.views ?? [];
+    const view: SavedView = { id: newViewId(views), name: uniqueViewName(views, name), prefs: snapshotView(this.prefs) };
+    await this.updatePrefs({ views: [...views, view], activeView: view.id });
+  }
+
+  /** Puts the board as it is now into a view that was changed on the way. */
+  private async updateView(view: SavedView): Promise<void> {
+    const views = (this.prefs.views ?? []).map((other) => (other.id === view.id ? { ...other, prefs: snapshotView(this.prefs) } : other));
+    await this.updatePrefs({ views });
+  }
+
+  private async renameView(view: SavedView, name: string): Promise<void> {
+    const others = (this.prefs.views ?? []).filter((other) => other.id !== view.id);
+    const named = uniqueViewName(others, name);
+    await this.updatePrefs({ views: (this.prefs.views ?? []).map((other) => (other.id === view.id ? { ...other, name: named } : other)) });
+  }
+
+  private async duplicateView(view: SavedView): Promise<void> {
+    const views = this.prefs.views ?? [];
+    const copy: SavedView = {
+      id: newViewId(views),
+      name: uniqueViewName(views, this.labels.viewCopy(view.name)),
+      prefs: JSON.parse(JSON.stringify(view.prefs)) as SavedView['prefs'],
+    };
+    await this.updatePrefs({ views: [...views, copy] }, false);
+  }
+
+  private async deleteView(view: SavedView): Promise<void> {
+    await this.updatePrefs({
+      views: (this.prefs.views ?? []).filter((other) => other.id !== view.id),
+      activeView: this.prefs.activeView === view.id ? undefined : this.prefs.activeView,
+    });
+  }
+
+  /** Sets the board up as a view was: layout, grouping, sorting, filters and options. */
+  private async applyView(view: SavedView): Promise<void> {
+    await this.updatePrefs(viewPatch(view, DEFAULT_BOARD_PREFERENCES));
+  }
+
+  /** Back to the board as it starts: the default layout, no filters, no view in use. */
+  private async resetView(): Promise<void> {
+    await this.updatePrefs({ ...viewPatch({ id: '', name: '', prefs: {} }, DEFAULT_BOARD_PREFERENCES), activeView: undefined });
   }
 
   // ── Selecting several ────────────────────────────────────────────────────

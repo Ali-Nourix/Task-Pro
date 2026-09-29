@@ -104,6 +104,21 @@ export interface BoardLabels {
   selectedCount: (count: number) => string;
   clearSelection: string;
   selectTask: string;
+  views: string;
+  viewSave: string;
+  viewSaveTitle: string;
+  viewRenameTitle: string;
+  viewUpdate: (name: string) => string;
+  viewsManage: string;
+  viewRename: string;
+  viewDuplicate: string;
+  viewDelete: string;
+  viewReset: string;
+  viewNamePlaceholder: string;
+  viewNewName: string;
+  viewModified: string;
+  viewCopy: (name: string) => string;
+  save: string;
   showSubtasks: (count: number) => string;
   hideSubtasks: (count: number) => string;
   more: string;
@@ -252,6 +267,21 @@ const EN: BoardLabels = {
   selectedCount: (count) => `${count} selected`,
   clearSelection: 'Clear the selection',
   selectTask: 'Select',
+  views: 'Views',
+  viewSave: 'Save this view…',
+  viewSaveTitle: 'Save this view',
+  viewRenameTitle: 'Rename the view',
+  viewUpdate: (name) => `Update “${name}”`,
+  viewsManage: 'Manage views',
+  viewRename: 'Rename…',
+  viewDuplicate: 'Duplicate',
+  viewDelete: 'Delete',
+  viewReset: 'Default view',
+  viewNamePlaceholder: 'For example, This week',
+  viewNewName: 'New view',
+  viewModified: 'Changed',
+  viewCopy: (name) => `${name} copy`,
+  save: 'Save',
   showSubtasks: (count) => (count === 1 ? 'Show the subtask' : `Show ${count} subtasks`),
   hideSubtasks: (count) => (count === 1 ? 'Hide the subtask' : `Hide ${count} subtasks`),
   more: 'More options',
@@ -398,6 +428,21 @@ const FA: BoardLabels = {
   selectedCount: (count) => `${count} انتخاب شده`,
   clearSelection: 'لغو انتخاب',
   selectTask: 'انتخاب',
+  views: 'نماها',
+  viewSave: 'ذخیرهٔ این نما…',
+  viewSaveTitle: 'ذخیرهٔ این نما',
+  viewRenameTitle: 'تغییر نام نما',
+  viewUpdate: (name) => `به‌روزرسانی «${name}»`,
+  viewsManage: 'مدیریت نماها',
+  viewRename: 'تغییر نام…',
+  viewDuplicate: 'تکثیر',
+  viewDelete: 'حذف',
+  viewReset: 'نمای پیش‌فرض',
+  viewNamePlaceholder: 'مثلاً این هفته',
+  viewNewName: 'نمای جدید',
+  viewModified: 'تغییر کرده',
+  viewCopy: (name) => `کپی ${name}`,
+  save: 'ذخیره',
   showSubtasks: (count) => `نمایش ${count} زیرتسک`,
   hideSubtasks: (count) => `پنهان کردن ${count} زیرتسک`,
   more: 'گزینه‌های بیشتر',

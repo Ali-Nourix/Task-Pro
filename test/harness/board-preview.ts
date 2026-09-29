@@ -275,6 +275,8 @@ const settings = {
   planReminder: { enabled: true, leadMinutes: 10 },
 };
 
+(window as unknown as { __prefs: typeof settings.board }).__prefs = settings.board;
+
 const changed = () => {
   reparse();
   listeners.forEach((fn) => fn());

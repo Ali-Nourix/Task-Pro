@@ -528,6 +528,100 @@ try {
   ok(second < first, 'right to left: the left arrow goes to the next column, which is on the left');
   await page.close();
 
+  // ── Saved views ──────────────────────────────────────────────────────────
+  page = await open('?layout=board&scope=vault&group=priority&density=compact', 1500);
+  const prefsNow = () => page.evaluate(() => ({ layout: window.__prefs.layout, groupBy: window.__prefs.groupBy, density: window.__prefs.density, active: window.__prefs.activeView, views: (window.__prefs.views ?? []).map((v) => v.name) }));
+  const viewsButton = () => page.locator('.taskpro-board__views');
+  const viewItem = (name) => page.locator('.taskpro-menu__item', { hasText: name });
+  eq((await viewsButton().textContent()).trim(), 'Views', 'a Views button in the toolbar');
+  await viewsButton().click();
+  eq(await page.locator('.taskpro-menu__item').allTextContents().then((all) => all.map((t) => t.trim())), ['Save this view…', 'Default view'], 'with nothing saved: save this one, or the default');
+  await viewItem('Save this view').click();
+  eq(await page.locator('.taskpro-panel__title').textContent(), 'Save this view', 'saving asks for a name');
+  eq(await page.locator('.taskpro-panel input').inputValue(), 'New view', 'suggesting one');
+  await page.locator('.taskpro-panel input').fill('Board by priority');
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(120);
+  const firstView = await page.evaluate(() => window.__prefs.views[0]);
+  eq(await prefsNow(), { layout: 'board', groupBy: 'priority', density: 'compact', active: firstView.id, views: ['Board by priority'] }, 'the view is saved and in use');
+  eq([firstView.prefs.layout, firstView.prefs.groupBy, firstView.prefs.density, 'inboxPath' in firstView.prefs], ['board', 'priority', 'compact', false], 'holding how the board was set up');
+  eq((await viewsButton().textContent()).trim(), 'ViewsBoard by priority', 'the button names it');
+  eq(await viewsButton().evaluate((el) => el.classList.contains('is-modified')), false, 'and does not say it is changed');
+
+  // Change the board; the button says so, and the menu can put the view back or take the change in.
+  await page.locator('.taskpro-layout-tab, .taskpro-board__layout button', { hasText: 'Table' }).first().click();
+  await page.waitForTimeout(120);
+  eq((await prefsNow()).layout, 'table', 'the layout is changed');
+  eq(await viewsButton().evaluate((el) => el.classList.contains('is-modified')), true, 'a dot says the view has been changed');
+  await viewsButton().click();
+  eq(await viewItem('Board by priority').locator('.taskpro-menu__hint').textContent(), 'Changed', 'and so does the menu');
+  ok(await viewItem('Update “Board by priority”').count(), 'which offers to take the change in');
+  await viewItem('Board by priority').first().click();
+  await page.waitForTimeout(150);
+  eq(await prefsNow().then((p) => [p.layout, p.groupBy, p.density]), ['board', 'priority', 'compact'], 'choosing the view puts the board back as it was saved');
+  eq(await viewsButton().evaluate((el) => el.classList.contains('is-modified')), false, 'unchanged again');
+
+  // A second view, from a changed board; Update takes a change into a view.
+  await page.locator('.taskpro-layout-tab, .taskpro-board__layout button', { hasText: 'Table' }).first().click();
+  await page.waitForTimeout(100);
+  await viewsButton().click();
+  await viewItem('Save this view').click();
+  await page.locator('.taskpro-panel input').fill('Board by priority');
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(120);
+  eq((await prefsNow()).views, ['Board by priority', 'Board by priority 2'], 'a name is made different from the others');
+  await page.locator('.taskpro-board__properties').click();
+  await viewItem('Density').click();
+  await page.locator('.taskpro-menu.is-submenu .taskpro-menu__item', { hasText: 'Spacious' }).click();
+  await page.waitForTimeout(100);
+  eq(await viewsButton().evaluate((el) => el.classList.contains('is-modified')), true, 'a change made without redrawing the toolbar is noticed too');
+  await viewsButton().click();
+  await viewItem('Update “Board by priority 2”').click();
+  await page.waitForTimeout(100);
+  eq(await viewsButton().evaluate((el) => el.classList.contains('is-modified')), false, 'Update takes it in');
+  eq(await page.evaluate(() => window.__prefs.views[1].prefs.density), 'spacious', 'into the view');
+
+  // Renaming, duplicating and deleting are under Manage views.
+  await viewsButton().click();
+  await viewItem('Manage views').click();
+  await page.locator('.taskpro-menu.is-submenu .taskpro-menu__item', { hasText: 'Board by priority 2' }).hover();
+  await page.waitForTimeout(300);
+  await page.locator('.taskpro-menu.is-submenu').last().locator('.taskpro-menu__item', { hasText: 'Rename' }).click();
+  await page.locator('.taskpro-panel input').fill('Roomy');
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(120);
+  eq((await prefsNow()).views, ['Board by priority', 'Roomy'], 'a view is renamed');
+  await viewsButton().click();
+  await viewItem('Manage views').click();
+  await page.locator('.taskpro-menu.is-submenu .taskpro-menu__item', { hasText: 'Roomy' }).hover();
+  await page.waitForTimeout(300);
+  await page.locator('.taskpro-menu.is-submenu').last().locator('.taskpro-menu__item', { hasText: 'Duplicate' }).click();
+  await page.waitForTimeout(120);
+  eq((await prefsNow()).views, ['Board by priority', 'Roomy', 'Roomy copy'], 'and duplicated');
+  await viewsButton().click();
+  await viewItem('Manage views').click();
+  await page.locator('.taskpro-menu.is-submenu .taskpro-menu__item', { hasText: 'Roomy' }).first().hover();
+  await page.waitForTimeout(300);
+  await page.locator('.taskpro-menu.is-submenu').last().locator('.taskpro-menu__item', { hasText: 'Delete' }).click();
+  await page.waitForTimeout(120);
+  const afterDelete = await prefsNow();
+  eq([afterDelete.views, afterDelete.active], [['Board by priority', 'Roomy copy'], undefined], 'and deleted, which leaves none in use when it was the one');
+
+  // Back to the default view.
+  await viewsButton().click();
+  await viewItem('Default view').click();
+  await page.waitForTimeout(150);
+  eq(await prefsNow().then((p) => [p.layout, p.groupBy, p.density]), ['table', 'status', undefined], 'the default view: the table, grouped by status, nothing changed');
+  eq(page.errors, [], 'no page errors with saved views');
+  await page.close();
+
+  page = await open('?scope=vault&lang=fa', 1500);
+  await page.locator('.taskpro-board__views').click();
+  eq(await page.locator('.taskpro-menu__header').textContent(), 'نماها', 'in Persian');
+  eq((await page.locator('.taskpro-menu__item').first().textContent()).trim(), 'ذخیرهٔ این نما…', 'and its entries');
+  await page.keyboard.press('Escape');
+  await page.close();
+
   // ── Selecting several tasks and changing them together ────────────────────
   page = await open('?scope=vault&group=none', 1700);
   const bar = () => page.locator('.taskpro-selection');

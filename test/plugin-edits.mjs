@@ -73,7 +73,11 @@ app.data = {
     { key: 'work', name: 'Duplicate', color: 'red' },
     { key: 'home', name: 'Home', color: 'green' },
   ],
-  board: { layout: 'board' },
+  board: {
+    layout: 'board',
+    views: [{ id: 'a', name: 'Doing', prefs: { statuses: ['[/]'], inboxPath: 'x.md' } }, { id: '', name: 'no id' }, 'junk'],
+    activeView: 'gone',
+  },
   taskMappings: [
     {
       linked: true,
@@ -95,6 +99,8 @@ const note = (p) => app.vault.files.get(p).split('\n');
 // ── settings on load ───────────────────────────────────────────────────────
 eq(plugin.settings.tags, [{ key: 'work', name: 'Work', color: 'gray' }, { key: 'home', name: 'Home', color: 'green' }], 'saved tags are cleaned');
 eq([plugin.settings.board.layout, plugin.settings.board.groupBy, plugin.settings.board.scope], ['board', 'status', 'target'], 'board prefs merge with defaults');
+eq(plugin.settings.board.views, [{ id: 'a', name: 'Doing', prefs: { statuses: ['[/]'] } }], 'saved views are cleaned of broken entries and stray keys');
+eq(plugin.settings.board.activeView, undefined, 'and a view in use that is gone is forgotten');
 eq(!!app.views['taskpro-task-board'], true, 'board view registered');
 eq(['open-task-board', 'set-task-tags', 'manage-task-tags'].every((id) => app.commands.some((c) => c.id === id)), true, 'new commands registered');
 

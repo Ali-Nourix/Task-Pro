@@ -452,6 +452,17 @@ export interface BoardPreferences {
   hideEmptyGroups?: boolean;
   /** Parents in the table whose subtasks are folded away: a note and an ID or title, see foldKey. */
   foldedTasks?: string[];
+  /** Views the user saved: a name and how the board was set up. */
+  views?: SavedView[];
+  /** The view last applied. The board says when it has been changed since. */
+  activeView?: string;
+}
+
+/** A named way of looking at the tasks: a layout, its grouping and sorting, its filters and its options. */
+export interface SavedView {
+  id: string;
+  name: string;
+  prefs: Partial<BoardPreferences>;
 }
 
 export const DEFAULT_BOARD_PREFERENCES: BoardPreferences = {
