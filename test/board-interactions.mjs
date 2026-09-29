@@ -422,6 +422,54 @@ try {
   await page.keyboard.press('Escape');
   await page.close();
 
+  // ── View options: density, wrapping, empty columns ───────────────────────
+  page = await open('?scope=vault&group=none', 1700);
+  const rowHeight = () => page.locator('.taskpro-table__row').first().evaluate((el) => Math.round(el.getBoundingClientRect().height));
+  const comfortable = await rowHeight();
+  await page.locator('.taskpro-board__properties').click();
+  eq(await page.locator('.taskpro-menu__heading').last().textContent(), 'View', 'the properties menu ends with the view options');
+  const density = page.locator('.taskpro-menu__item', { hasText: 'Density' });
+  eq((await density.locator('.taskpro-menu__hint').textContent()).trim(), 'Comfortable', 'density starts as drawn');
+  await density.click();
+  await page.locator('.taskpro-menu.is-submenu .taskpro-menu__item', { hasText: 'Compact' }).click();
+  await page.waitForTimeout(100);
+  eq(await page.locator('.taskpro-board').getAttribute('data-density'), 'compact', 'the board carries the choice');
+  ok((await rowHeight()) < comfortable, 'compact rows are shorter');
+  await page.locator('.taskpro-board__properties').click();
+  await page.locator('.taskpro-menu__item', { hasText: 'Density' }).click();
+  await page.locator('.taskpro-menu.is-submenu .taskpro-menu__item', { hasText: 'Spacious' }).click();
+  await page.waitForTimeout(100);
+  ok((await rowHeight()) > comfortable, 'spacious rows are taller');
+  eq(await page.locator('.taskpro-menu').count(), 0, 'choosing a density closes the menu');
+  // Wrapping is a switch; the menu stays for the next one.
+  await page.locator('.taskpro-board__properties').click();
+  const longTitle = page.locator('.taskpro-table__row', { hasText: 'Chapter 4 of' }).locator('.taskpro-board__title');
+  const oneLine = (await longTitle.boundingBox()).height;
+  await page.locator('.taskpro-menu__item', { hasText: 'Wrap titles' }).click();
+  await page.waitForTimeout(100);
+  eq(await page.locator('.taskpro-menu__item', { hasText: 'Wrap titles' }).getAttribute('aria-checked'), 'true', 'the switch is on');
+  ok((await longTitle.boundingBox()).height > oneLine * 1.8, 'a long title runs over several lines');
+  await page.keyboard.press('Escape');
+  eq(page.errors, [], 'no page errors with view options');
+  await page.close();
+
+  // A board leaves out the columns with nothing in them, when asked.
+  page = await open('?layout=board&scope=vault&group=priority', 1500);
+  const columns = () => page.locator('.taskpro-kanban__column').count();
+  const withEmpty = await columns();
+  await page.locator('.taskpro-board__properties').click();
+  await page.locator('.taskpro-menu__item', { hasText: 'Hide empty columns' }).click();
+  await page.waitForTimeout(100);
+  const withoutEmpty = await columns();
+  ok(withoutEmpty < withEmpty, 'empty columns are left out');
+  eq(await page.locator('.taskpro-kanban__column .taskpro-kanban__cards').evaluateAll((els) => els.filter((el) => !el.querySelector('.taskpro-card')).length), 0, 'and every column left has a task');
+  eq(await page.locator('.taskpro-kanban__hidden').count(), 0, 'they are not listed as hidden ones');
+  await page.locator('.taskpro-menu__item', { hasText: 'Hide empty columns' }).click();
+  await page.waitForTimeout(100);
+  eq(await columns(), withEmpty, 'and come back when it is switched off');
+  await page.keyboard.press('Escape');
+  await page.close();
+
   // ── Waiting on another task, and a parent's subtasks ─────────────────────
   page = await open('?scope=vault&group=none', 1700);
   const waitingCell = () => row(page, 'Send the quote to Acme').locator('.taskpro-table__waiting');

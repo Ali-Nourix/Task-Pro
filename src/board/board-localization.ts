@@ -1,7 +1,7 @@
 // ── board/board-localization.ts ───────────────────────────────────────────
 // Text for the task board.
 
-import { BoardGroupBy, BoardSortKey, DeadlineBucket, Language } from '../types';
+import { BoardDensity, BoardGroupBy, BoardSortKey, DeadlineBucket, Language } from '../types';
 import { isolate } from '../bidi';
 
 export interface BoardLabels {
@@ -51,6 +51,12 @@ export interface BoardLabels {
   /** The heading over the list of properties in the properties menu. */
   propertiesIn: { tableColumns: string; cardProperties: string };
   resetColumns: string;
+  /** The view options at the foot of the properties menu. */
+  viewSection: string;
+  density: string;
+  densities: Record<BoardDensity, string>;
+  wrapTitles: string;
+  hideEmptyColumns: string;
   /** The board's columns: move one, hide one, show the hidden ones again. */
   columnMenu: string;
   resetColumnWidth: string;
@@ -177,6 +183,11 @@ const EN: BoardLabels = {
   properties: 'Properties',
   propertiesIn: { tableColumns: 'Shown in the table', cardProperties: 'Shown on cards' },
   resetColumns: 'Reset to default',
+  viewSection: 'View',
+  density: 'Density',
+  densities: { compact: 'Compact', comfortable: 'Comfortable', spacious: 'Spacious' },
+  wrapTitles: 'Wrap titles',
+  hideEmptyColumns: 'Hide empty columns',
   columnMenu: 'Column options',
   resetColumnWidth: 'Reset column width',
   newTagColumn: 'New tag',
@@ -312,6 +323,11 @@ const FA: BoardLabels = {
   properties: 'ویژگی‌ها',
   propertiesIn: { tableColumns: 'نمایش در جدول', cardProperties: 'نمایش روی کارت‌ها' },
   resetColumns: 'بازگشت به پیش‌فرض',
+  viewSection: 'نما',
+  density: 'تراکم',
+  densities: { compact: 'فشرده', comfortable: 'معمولی', spacious: 'راحت' },
+  wrapTitles: 'شکستن عنوان‌ها',
+  hideEmptyColumns: 'پنهان کردن ستون‌های خالی',
   columnMenu: 'گزینه‌های ستون',
   resetColumnWidth: 'بازگشت به عرض پیش‌فرض ستون‌ها',
   newTagColumn: 'برچسب تازه',

@@ -259,6 +259,13 @@ try {
     await page.locator('.taskpro-menu__item', { hasText: 'Move to note' }).click();
     await page.waitForTimeout(250);
     await scan(page, 'note picker');
+    await page.keyboard.press('Escape');
+    await page.locator('.taskpro-board__properties').click();
+    await page.waitForTimeout(250);
+    await scan(page, 'properties menu');
+    await page.locator('.taskpro-menu__item', { hasText: 'Density' }).hover();
+    await page.waitForTimeout(350);
+    await scan(page, 'properties menu (density)');
     await page.close();
   }
   {
