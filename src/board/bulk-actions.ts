@@ -160,7 +160,8 @@ export function renderBulkBar(bar: HTMLElement, tasks: readonly BoardTask[], ctx
   };
 
   button('x', board.clearSelection, () => ctx.clear(), 'is-clear');
-  bar.createSpan({ cls: 'taskpro-selection__count', text: board.selectedCount(tasks.length) });
+  // On a phone the number alone: the bar has no room for the words, and says them to a screen reader.
+  bar.createSpan({ cls: 'taskpro-selection__count', text: ctx.compact ? String(tasks.length) : board.selectedCount(tasks.length) });
   bar.createSpan({ cls: 'taskpro-selection__sep', attr: { 'aria-hidden': 'true' } });
 
   button('circle-dot', actions.status, (a) => menu(a, statusSections(options(a))));
