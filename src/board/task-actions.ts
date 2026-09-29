@@ -75,6 +75,12 @@ interface ActionLabels {
   addSubtask: string;
   subtaskTitle: string;
   duplicate: string;
+  copyLink: string;
+  linkCopied: string;
+  moveTo: string;
+  findNote: string;
+  moved: (title: string, note: string) => string;
+  moveFailed: string;
   deleteTask: string;
   deleteWithSubtasks: (count: number) => string;
   deleted: (title: string, subtasks: number) => string;
@@ -129,6 +135,12 @@ const EN: ActionLabels = {
   addSubtask: 'Add a subtask…',
   subtaskTitle: 'New subtask',
   duplicate: 'Duplicate',
+  copyLink: 'Copy link',
+  linkCopied: 'Link copied',
+  moveTo: 'Move to note…',
+  findNote: 'Find a note…',
+  moved: (title, note) => `Moved “${isolate(title)}” to ${isolate(note)}`,
+  moveFailed: 'The task could not be moved',
   deleteTask: 'Delete',
   deleteWithSubtasks: (count) => (count === 1 ? 'Delete with its subtask' : `Delete with its ${count} subtasks`),
   deleted: (title, subtasks) => `Deleted “${isolate(title)}”${subtasks ? (subtasks === 1 ? ' and its subtask' : ` and its ${subtasks} subtasks`) : ''}`,
@@ -183,6 +195,12 @@ const FA: ActionLabels = {
   addSubtask: 'افزودن زیرتسک…',
   subtaskTitle: 'زیرتسک جدید',
   duplicate: 'تکثیر',
+  copyLink: 'کپی پیوند',
+  linkCopied: 'پیوند کپی شد',
+  moveTo: 'انتقال به یادداشت…',
+  findNote: 'جستجوی یادداشت…',
+  moved: (title, note) => `«${isolate(title)}» به ${isolate(note)} منتقل شد`,
+  moveFailed: 'انتقال تسک انجام نشد',
   deleteTask: 'حذف',
   deleteWithSubtasks: (count) => `حذف همراه با ${count} زیرتسک`,
   deleted: (title, subtasks) => `«${isolate(title)}»${subtasks ? ` و ${subtasks} زیرتسکش` : ''} حذف شد`,
@@ -651,6 +669,86 @@ function addSubtask(o: TaskActionOptions): void {
   input.focus();
 }
 
+// ── Copy a link, move to another note ─────────────────────────────────────
+
+/** The link to a task on the clipboard, `[[Note#^id]]`, the block ID written into the note if it had none. */
+async function copyLink(o: TaskActionOptions): Promise<void> {
+  const link = await o.host.blockLink?.(o.task);
+  if (!link) return;
+  try {
+    await navigator.clipboard.writeText(link);
+    o.host.notify(getActionLabels(o.language).linkCopied);
+  } catch {
+    // A clipboard that refuses (a browser without permission): show the link to copy by hand.
+    o.host.notify(link);
+  }
+}
+
+const NOTE_ORDER = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+const NEAR_NOTES = 12;
+
+function folderOf(path: string): string {
+  return path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
+}
+
+/**
+ * A searchable list of the notes a task could move to. Before anything is
+ * typed it shows the inbox, then the notes beside the task's own, then the
+ * ones that hold tasks; typing finds any note in the vault by its name or its
+ * folder. A host that cannot list its notes offers the notes that have tasks.
+ */
+export function openNotePicker(o: TaskActionOptions, onPick: (path: string) => void): void {
+  const { host, task } = o;
+  const labels = getActionLabels(o.language);
+
+  const withTasks = new Map<string, string>();
+  for (const other of host.store.all()) withTasks.set(other.filePath, other.fileName);
+  const notes = new Map<string, string>();
+  for (const note of host.notes?.() ?? Array.from(withTasks, ([path, name]) => ({ path, name }))) notes.set(note.path, note.name);
+  notes.delete(task.filePath);
+
+  const byName = (a: string, b: string) => NOTE_ORDER.compare(notes.get(a)!, notes.get(b)!);
+  const entry = (path: string): MenuEntry => ({
+    label: notes.get(path)!,
+    icon: 'file-text',
+    hint: folderOf(path) || undefined,
+    keywords: path,
+    onSelect: () => onPick(path),
+  });
+
+  const inbox = host.getSettings().board.inboxPath;
+  const first = inbox && notes.has(inbox) ? [inbox] : [];
+  const beside = [...notes.keys()].filter((path) => path !== inbox && folderOf(path) === folderOf(task.filePath)).sort(byName);
+  const busy = [...notes.keys()].filter((path) => path !== inbox && withTasks.has(path) && !beside.includes(path)).sort(byName);
+  const near = [...first, ...beside, ...busy].slice(0, NEAR_NOTES);
+
+  const container = (o.anchor.closest('.taskpro-board') as HTMLElement | null) ?? o.anchor.ownerDocument.body;
+  openContextMenu({
+    container,
+    at: o.anchor.getBoundingClientRect(),
+    rtl: o.language === 'fa',
+    header: labels.moveTo.replace(/…$/, ''),
+    searchPlaceholder: labels.findNote,
+    sections: [{ entries: [...notes.keys()].sort(byName).map(entry) }],
+    idleSections: () => [{ entries: near.map(entry) }],
+  });
+}
+
+/** Asks where to, and moves the task with what is nested under it. */
+function moveTask(o: TaskActionOptions): void {
+  const labels = getActionLabels(o.language);
+  const move = async (path: string) => {
+    const moved = await o.host.moveTask!(o.task, path);
+    o.host.notify(moved ? labels.moved(displayTitle(o.task.text) || o.task.text, noteName(path)) : labels.moveFailed);
+  };
+  if (o.host.notes) openNotePicker(o, (path) => void move(path));
+  else o.host.chooseNote((path) => void move(path));
+}
+
+function noteName(path: string): string {
+  return (path.split('/').pop() ?? path).replace(/\.md$/i, '');
+}
+
 // ── The whole menu ───────────────────────────────────────────────────────
 
 export function taskActionSections(o: TaskActionOptions): MenuSection[] {
@@ -745,6 +843,12 @@ export function taskActionSections(o: TaskActionOptions): MenuSection[] {
         EN.duplicate
       )
     );
+  }
+  if (host.blockLink) {
+    create.push(withKeywords({ label: labels.copyLink, icon: 'link', onSelect: () => void copyLink(o) }, `${EN.copyLink} block reference url`));
+  }
+  if (host.moveTask) {
+    create.push(withKeywords({ label: labels.moveTo, icon: 'folder-input', onSelect: () => moveTask(o) }, `${EN.moveTo} transfer note file`));
   }
 
   return [

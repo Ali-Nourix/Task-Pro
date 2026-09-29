@@ -10,6 +10,7 @@ const build = await esbuild.build({
     contents: `
       export { parseBoardTasks } from "../src/board/task-store";
       export * from "../src/board/task-relations";
+      export * from "../src/board/task-move";
       export { extractWaiting, setWaiting, extractRemind, setRemind, stripTaskMetadata, replaceTaskText, setSchedule } from "../src/task-metadata";
       export { dueReminders, planStartsAt, reminderKey } from "../src/reminders/plan-reminders";
       export { taskSpan, buildTimeline, finishesAfterStart } from "../src/timeline/timeline-model";
@@ -55,6 +56,12 @@ const {
   taskSpan,
   buildTimeline,
   finishesAfterStart,
+  blockIdOf,
+  blockIdsIn,
+  dedentBlock,
+  prepareBlock,
+  relinkWaiting,
+  linkAfterMove,
 } = mod;
 
 let checked = 0;
@@ -133,6 +140,60 @@ eq(index.wouldCycle(quote, quote), true, 'nor on itself');
 eq(index.wouldCycle(quote, venue), false, 'an unrelated task is fine');
 let n = 0;
 eq(newBlockId((id) => id === 'tp-aaaa', () => (n++ < 4 ? 10 / 36 : 11 / 36)), 'tp-bbbb', 'a free ID, trying again when taken');
+
+// ── Moving a task to another note ──────────────────────────────────────────
+eq([blockIdOf('- [ ] a ^tp-1'), blockIdOf('- [ ] a ^tp-1  '), blockIdOf('- [ ] x^2'), blockIdOf('- [ ] plain')], ['tp-1', 'tp-1', undefined, undefined], 'a block ID is a caret after a space, at the end');
+eq([...blockIdsIn('- [ ] a ^one\ntext\n- [ ] b ^two-2\n')].sort(), ['one', 'two-2'], 'every ID a note uses');
+
+eq(
+  dedentBlock(['    - [ ] Auto layout', '        - a note under it', '', '        - [ ] deeper', '    - [ ] next']),
+  ['- [ ] Auto layout', '    - a note under it', '', '    - [ ] deeper', '- [ ] next'],
+  'a nested block comes out at the left edge, its own nesting kept'
+);
+eq(dedentBlock(['\t- [ ] a', '    - b', '\t\t- [ ] c']), ['- [ ] a', '- b', '\t- [ ] c'], 'tabs and spaces mixed: what width there is comes off');
+eq(dedentBlock(['- [ ] top', '\t- [ ] sub']), ['- [ ] top', '\t- [ ] sub'], 'already at the edge: unchanged');
+
+let seed = 0;
+const rolls = () => [0, 1, 2, 3][seed++ % 4] / 36 + 0.001;
+const kept = prepareBlock(['\t- [ ] Parent ^tp-aaaa', '\t\t- [ ] Child ^tp-bbbb', '\t\t- note x^2'], (id) => id === 'other', rolls);
+eq([kept.lines, kept.renamed.size], [['- [ ] Parent ^tp-aaaa', '\t- [ ] Child ^tp-bbbb', '\t- note x^2'], 0], 'IDs the other note does not use are kept');
+const swapped = prepareBlock(['- [ ] Parent ^tp-aaaa', '\t- [ ] Child ^tp-bbbb', '\t- note x^2'], (id) => id === 'tp-aaaa' || id === '2', () => 0.5);
+const fresh = swapped.renamed.get('tp-aaaa');
+eq([!!fresh, fresh !== 'tp-aaaa', /^tp-[0-9a-z]{4,}$/.test(fresh), swapped.renamed.size], [true, true, true, 1], 'an ID the other note uses is swapped for a fresh one');
+eq(swapped.lines, [`- [ ] Parent ^${fresh}`, '\t- [ ] Child ^tp-bbbb', '\t- note x^2'], 'only that line changes, and a caret inside a word is no ID');
+
+eq(
+  relinkWaiting('- [ ] a @waiting([[Old/Note#^x]], [[Keep#^y]]) ^a', (l) => (l.blockId === 'x' ? { path: 'New', blockId: 'x2' } : l)),
+  '- [ ] a @waiting([[New#^x2]], [[Keep#^y]]) ^a',
+  'a link is rewritten in place'
+);
+const untouched = '- [ ] a @waiting([[Keep#^y|the y]]) ^a';
+eq(relinkWaiting(untouched, (l) => l) === untouched, true, 'no change, the line is exactly as it was');
+eq(relinkWaiting('- [ ] a ^a', () => ({ path: 'X', blockId: 'x' })), '- [ ] a ^a', 'a line that waits on nothing is left alone');
+eq(
+  relinkWaiting('- [ ] a @waiting([[A#^x]], [[B#^x]])', () => ({ path: 'C', blockId: 'x' })),
+  '- [ ] a @waiting([[C#^x]])',
+  'two links that become one are written once'
+);
+
+// The parent and its subtask move from A to B; a task in a third note, and ones left in A, wait on them.
+const noteA = ['- [ ] Parent ^p1', '\t- [ ] Child @waiting([[#^p1]], [[#^e1]])', '- [ ] Other @waiting([[Planner/A#^p1]])', '- [ ] Elsewhere ^e1', '- [ ] Stays @waiting([[#^e1]])'].join('\n');
+const noteC = '- [ ] Depends @waiting([[A#^p1]])\n- [ ] Unrelated @waiting([[Z#^z]])';
+const world = [...parseBoardTasks('Planner/A.md', noteA), ...parseBoardTasks('Planner/C.md', noteC)];
+const byText = (text) => world.find((t) => t.text === text);
+const moving = new Set([byText('Parent').id, byText('Child').id]);
+const ctx = { index: new RelationIndex(world), moved: moving, from: 'Planner/A.md', to: 'Planner/B.md', renamed: new Map([['p1', 'p9']]) };
+const toB = (line, note, moves) => relinkWaiting(line, (link) => linkAfterMove(link, note, ctx, moves));
+eq(
+  toB(byText('Child').line, 'Planner/A.md', true),
+  '\t- [ ] Child @waiting([[Planner/B#^p9]], [[Planner/A#^e1]])',
+  'a subtask that moves: its parent is in the new note, and a same-note link now names the old note'
+);
+eq(toB(byText('Other').line, 'Planner/A.md', false), '- [ ] Other @waiting([[Planner/B#^p9]])', 'a task left behind follows what it waited on');
+eq(toB(byText('Depends').line, 'Planner/C.md', false), '- [ ] Depends @waiting([[Planner/B#^p9]])', 'so does one in another note, found by the short name');
+eq(toB(byText('Stays').line, 'Planner/A.md', false) === byText('Stays').line, true, 'a link to a task that stays put, in a line that stays, is not touched');
+eq(toB(byText('Unrelated').line, 'Planner/C.md', false) === byText('Unrelated').line, true, 'nor is one to a task that does not exist');
+eq(new RelationIndex(world).dependentsOf(byText('Parent')).map((t) => t.text).sort(), ['Child', 'Depends', 'Other'], 'the tasks whose links need finding');
 
 // ── Plan reminders ─────────────────────────────────────────────────────────
 const day = '2026-09-28';

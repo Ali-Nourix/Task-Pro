@@ -80,6 +80,7 @@ import { getActionLabels } from './src/board/task-actions';
 import { displayTitle } from './src/board/board-text';
 import { descendantsOf, indexFamilies } from './src/calendar/calendar-items';
 import { RelationIndex, linkPathOf, newBlockId } from './src/board/task-relations';
+import { MoveContext, PreparedBlock, blockIdOf, blockIdsIn, linkAfterMove, prepareBlock, relinkWaiting } from './src/board/task-move';
 
 /**
  * A task as the editing API addresses it. `lineNumber` is a hint: it is used
@@ -1415,6 +1416,9 @@ export default class TaskProPlugin extends Plugin {
         const nested = descendantsOf(task, indexFamilies(this.taskStore.inFile(task.filePath))).length;
         return this.deleteTaskFor(this.boardTaskRef(task), displayTitle(task.text) || task.text, nested);
       },
+      blockLink: (task) => this.blockLinkFor(task),
+      notes: () => this.app.vault.getMarkdownFiles().map((file) => ({ path: file.path, name: file.basename })),
+      moveTask: (task, targetPath) => this.moveTaskTo(task, targetPath),
       setWaiting: (task, blockers) => this.setTaskWaiting(task, blockers),
       setDates: (task, patch) => this.setTaskDatesFor(this.boardTaskRef(task), patch),
       setRemind: (task, minutes) => this.setTaskRemindFor(this.boardTaskRef(task), minutes),
@@ -1629,13 +1633,136 @@ export default class TaskProPlugin extends Plugin {
       undo.addEventListener('click', (event) => {
         event.stopPropagation();
         notice.hide();
-        void this.app.vault.process(file, (content) => {
-          const lines = content.split('\n');
-          lines.splice(Math.min(removed.at, lines.length), 0, ...removed.removed);
-          return lines.join('\n');
-        }).then(() => this.refreshDecorations());
+        void this.putBack(file, removed);
       });
     }
+    return true;
+  }
+
+  /** Puts a removed block back where it was, exactly. */
+  private async putBack(file: TFile, removed: RemovedBlock): Promise<void> {
+    await this.app.vault.process(file, (content) => {
+      const lines = content.split('\n');
+      lines.splice(Math.min(removed.at, lines.length), 0, ...removed.removed);
+      return lines.join('\n');
+    });
+    this.refreshDecorations();
+  }
+
+  /**
+   * The link that points at a task, `[[Note#^id]]`, the way Obsidian's own
+   * "copy block link" writes it. A task without a block ID is given the kind
+   * the dependencies use, so the link has something to point at.
+   */
+  private async blockLinkFor(task: BoardTask): Promise<string | null> {
+    const id = await this.ensureInlineBlockId(task);
+    return id ? `[[${linkPathOf(task.filePath)}#^${id}]]` : null;
+  }
+
+  /**
+   * Moves a task, with everything nested under it, to the end of another
+   * note. What is kept about a task outside its line goes with it: its
+   * progress, its timer, the link between a copy and its source. The links
+   * that say a task waits on another are pointed at the note it is in now,
+   * whether they are written on the moved tasks or on tasks elsewhere.
+   * Resolves whether the task moved.
+   */
+  private async moveTaskTo(task: BoardTask, targetPath: string): Promise<boolean> {
+    const from = task.filePath;
+    const source = this.app.vault.getFileByPath(from);
+    const target = this.app.vault.getFileByPath(targetPath);
+    if (!source || !target || from === targetPath) return false;
+
+    // How the tasks relate now, before anything moves: who moves, who waits on them.
+    const family = [task, ...descendantsOf(task, indexFamilies(this.taskStore.inFile(from)))];
+    const index = new RelationIndex(this.taskStore.all());
+    const ref = this.boardTaskRef(task);
+
+    let cut: RemovedBlock | null = null;
+    await this.app.vault.process(source, (content) => {
+      const lines = content.split('\n');
+      const at =
+        ref.lineNumber !== undefined && lines[ref.lineNumber] === ref.lineContent
+          ? ref.lineNumber
+          : this.findTaskLineIndex(lines, ref.lineContent, ref.blockId);
+      if (at === -1) return content;
+      cut = removeBlock(lines, at);
+      return cut.lines.join('\n');
+    });
+    const taken = cut as RemovedBlock | null;
+    if (!taken) return false;
+    // The blank line that went with it to keep the note's spacing is not part of the task.
+    const block = [...taken.removed];
+    while (block.length && !block[block.length - 1].trim()) block.pop();
+
+    let prepared: PreparedBlock | null = null;
+    let context: MoveContext | null = null;
+    try {
+      await this.app.vault.process(target, (content) => {
+        const used = blockIdsIn(content);
+        prepared = prepareBlock(block, (id) => used.has(id));
+        context = { index, moved: new Set(family.map((t) => t.id)), from, to: targetPath, renamed: prepared.renamed };
+        const lines = prepared.lines.map((text) => relinkWaiting(text, (link) => linkAfterMove(link, from, context!, true)));
+        return appendTaskLine(content, lines.join('\n'));
+      });
+    } catch (error) {
+      // The other note could not be written: the task goes back where it was.
+      console.error('TaskPro: could not move the task', error);
+      await this.putBack(source, taken);
+      return false;
+    }
+    const landed = prepared as PreparedBlock | null;
+    const linking = context as MoveContext | null;
+    if (!landed || !linking) return false;
+
+    // Everything kept by note and block ID follows the block.
+    const ids = new Map<string, string>();
+    const relocated: Array<{ line: string; blockId?: string; nextBlockId?: string }> = [];
+    for (const text of block) {
+      const inline = blockIdOf(text);
+      if (inline) ids.set(inline, landed.renamed.get(inline) ?? inline);
+      if (!TASK_LINE_WITH_CONTENT_REGEX.test(text)) continue;
+      // A copy imported from another note keeps its ID with the mapping, out of the line.
+      const stored = inline ? undefined : this.getStoredBlockId(from, text);
+      relocated.push({ line: text, blockId: inline ?? stored, nextBlockId: inline ? landed.renamed.get(inline) : undefined });
+      if (stored) {
+        this.removeStoredBlockId(from, text);
+        this.storeBlockId(targetPath, text, stored);
+      }
+    }
+    let saved = false;
+    for (const entry of this.settings.taskProgress) {
+      const next = entry.filePath === from ? ids.get(entry.blockId) : undefined;
+      if (next === undefined) continue;
+      entry.filePath = targetPath;
+      entry.blockId = next;
+      saved = true;
+    }
+    if (saved) {
+      this.rebuildProgressCache();
+      await this.saveData(this.settings);
+    }
+    await this.syncManager.relocate(from, targetPath, relocated);
+    await this.timerService.move(from, targetPath, ids);
+
+    // Tasks elsewhere that wait on a moved task: their links follow it.
+    const seen = new Set(linking.moved);
+    for (const moving of family) {
+      for (const dependent of index.dependentsOf(moving)) {
+        if (seen.has(dependent.id)) continue;
+        seen.add(dependent.id);
+        const file = this.app.vault.getFileByPath(dependent.filePath);
+        if (!file) continue;
+        await this.updateTaskLineInFile(
+          file,
+          dependent.line,
+          dependent.blockId,
+          (line) => relinkWaiting(line, (link) => linkAfterMove(link, dependent.filePath, linking, false)),
+          dependent.lineNumber
+        );
+      }
+    }
+    this.refreshDecorations();
     return true;
   }
 

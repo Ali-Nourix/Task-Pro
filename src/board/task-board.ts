@@ -211,6 +211,19 @@ export interface TaskBoardHost {
    */
   deleteTask?(task: BoardTask): Promise<boolean>;
   /**
+   * The link that points at a task, `[[Note#^id]]`. A task without a block ID
+   * is given one, so the link has something to point at. Null when it cannot.
+   */
+  blockLink?(task: BoardTask): Promise<string | null>;
+  /** Every note there is, for choosing where to move a task. Without it the choice is the notes that have tasks. */
+  notes?(): Array<{ path: string; name: string }>;
+  /**
+   * Moves a task, with everything nested under it, to the end of another
+   * note, taking what is kept about it (progress, timer, its link to a
+   * source, the tasks waiting on it) along. Resolves whether it moved.
+   */
+  moveTask?(task: BoardTask, targetPath: string): Promise<boolean>;
+  /**
    * Makes the task wait on exactly these tasks; an empty list stops it
    * waiting. A task waited on that has no block ID is given one.
    */

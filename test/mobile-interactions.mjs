@@ -104,6 +104,18 @@ try {
   eq((await note(page, 'Projects/Website redesign.md')).split('\n').find((l) => l.includes('Accessibility pass')).includes('@priority(high)'), true, 'chosen from the page');
   eq(await page.locator('.taskpro-menu').count(), 0, 'and the sheet closes');
 
+  // Moving a task: the notes to move to come as a sheet of their own, with a search field.
+  await page.tap('.taskpro-list__row:has-text("Accessibility pass") .taskpro-list__title');
+  await page.tap('.taskpro-menu__item:has-text("Move to note")');
+  eq(await page.locator('.taskpro-menu.is-sheet .taskpro-menu__header').textContent(), 'Move to note', 'the notes to move to, as a sheet');
+  const noteRow = await page.locator('.taskpro-menu__item', { hasText: 'Inbox' }).boundingBox();
+  eq(noteRow.height >= 44, true, 'note rows are at least 44 high');
+  await page.locator('.taskpro-menu__search').fill('some');
+  await page.tap('.taskpro-menu__item:has-text("Someday")');
+  await page.waitForTimeout(120);
+  eq((await note(page, 'Projects/Someday.md')).includes('Accessibility pass'), true, 'a tap on a note moves the task there');
+  eq(await page.locator('.taskpro-menu').count(), 0, 'and the sheet closes');
+
   // Dragging the handle down puts a sheet away.
   await page.tap('.taskpro-list__row:has-text("Groceries") .taskpro-list__title');
   const grabber = await center(page.locator('.taskpro-sheet-grabber'));
