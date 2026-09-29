@@ -119,15 +119,20 @@ function findCuts() {
     if (!extent.left && !extent.right && !extent.top && !extent.bottom) continue;
     const box = el.getBoundingClientRect();
     if (!box.width || !box.height) continue;
+    // From the nearest clip outward. A scroller inside another that could still
+    // scroll the element away from their shared edge gives the outer one room too.
+    const carry = { left: 0, right: 0, top: 0, bottom: 0 };
     for (const clip of clipsOf(el)) {
+      const slack = { ...carry };
+      for (const side of Object.keys(carry)) carry[side] += clip.more[side];
       // An element the scroller has already cut is cut by scrolling, not by its ring.
       const inside = box.left >= clip.left - 0.5 && box.right <= clip.right + 0.5 && box.top >= clip.top - 0.5 && box.bottom <= clip.bottom + 0.5;
       if (!inside) continue;
       const room = {
-        left: box.left - clip.left + clip.more.left,
-        right: clip.right - box.right + clip.more.right,
-        top: box.top - clip.top + clip.more.top,
-        bottom: clip.bottom - box.bottom + clip.more.bottom,
+        left: box.left - clip.left + clip.more.left + slack.left,
+        right: clip.right - box.right + clip.more.right + slack.right,
+        top: box.top - clip.top + clip.more.top + slack.top,
+        bottom: clip.bottom - box.bottom + clip.more.bottom + slack.bottom,
       };
       const sides = Object.entries(room)
         .filter(([side, gap]) => Number.isFinite(gap) && gap < extent[side] - EDGE)
@@ -152,7 +157,8 @@ async function scan(page, label) {
 }
 
 async function open(query, width = 1280, height = 900, touch = false) {
-  const context = await browser.newContext({ viewport: { width, height }, hasTouch: touch });
+  // Reduced motion, so a ring is there the moment it is asked for and no entrance is mid-flight.
+  const context = await browser.newContext({ viewport: { width, height }, hasTouch: touch, reducedMotion: 'reduce' });
   const page = await context.newPage();
   const now = new Date();
   now.setHours(15, 0, 0, 0);

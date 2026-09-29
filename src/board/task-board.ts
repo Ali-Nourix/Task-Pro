@@ -49,6 +49,7 @@ import { BoardTask, TaskStore } from './task-store';
 import { TaskCalendar } from '../calendar/calendar-view';
 import { openCalendarPopover } from '../calendar/calendar-popover';
 import { autoDirection } from '../ui/fields';
+import { ChangeTracker, enter, stagger, type Entrance } from '../ui/motion';
 import { holdToDrag, onContextPress, readyToCarry } from '../ui/touch';
 import { TaskTimeline } from '../timeline/timeline-view';
 import { getTimelineLabels } from '../timeline/timeline-localization';
@@ -84,6 +85,33 @@ import {
   visibleColumns,
 } from './board-columns';
 import { isSchedulePast, scheduleDayText, scheduleText, scheduleTimeText } from '../calendar/schedule-text';
+
+/** The preferences that change what the board shows, and so bring the new view in. */
+const ENTERING_PREFS = new Set<string>([
+  'layout',
+  'groupBy',
+  'scope',
+  'sortKey',
+  'sortDir',
+  'statuses',
+  'priorities',
+  'tags',
+  'calendarView',
+  'calendarSystem',
+  'calendarSidebar',
+  'calendarShowDeadlines',
+  'calendarShowDailyNotes',
+  'calendarShowDone',
+  'timelineZoom',
+  'timelineUndated',
+  'compactTable',
+]);
+/**
+ * How long a task that has just arrived stays marked, in milliseconds. It is
+ * only the time a second drawing straight after the first can still find it;
+ * the flash itself is CSS and runs its own course.
+ */
+const ARRIVAL_MS = 700;
 
 /** Rows drawn per group before a "Show more" row; keeps a huge vault responsive. */
 const ROWS_PER_PAGE = 150;
@@ -283,6 +311,16 @@ export class TaskBoard {
   private searchOpen = false;
   /** A sheet changed a preference the bar shows; the bar is drawn again when it closes. */
   private chromeDirty = false;
+  /** Tells which tasks arrived, or changed status, since the board was last drawn. */
+  private readonly tracker = new ChangeTracker();
+  /** Those tasks, kept for a moment so a second drawing does not lose them. */
+  private arrivals = { added: new Set<string>(), changed: new Set<string>(), until: 0 };
+  /** What the next drawing of the body plays: a view coming in, or a page turning. */
+  private pendingEntrance: Entrance | null = null;
+  /** A group that has just been opened, whose rows follow one another in. */
+  private expanding: string | null = null;
+  /** The last drawing was the loading state, so the tasks coming in are an entrance. */
+  private wasLoading = false;
 
   constructor(
     container: HTMLElement,
@@ -303,6 +341,7 @@ export class TaskBoard {
     this.el.toggleClass('is-compact', this.compact);
     this.observeSize();
     this.renderChrome();
+    this.pendingEntrance = 'view';
     this.renderBody();
     this.unsubscribe = this.host.store.subscribe(() => this.requestRender());
     await this.host.store.ensureLoaded();
@@ -413,6 +452,7 @@ export class TaskBoard {
         this.summaryEl.setText(this.labels.summary(counts.total, counts.done, counts.overdue));
       },
       rerender: () => this.renderBody(),
+      enter: (kind) => this.enterNext(kind),
       segmented: (parent, cls, items, current, onPick) => this.segmented(parent, cls, items, current, onPick),
     });
     return this.timelineView;
@@ -443,6 +483,7 @@ export class TaskBoard {
         this.renderBody();
       },
       rerender: () => this.renderBody(),
+      enter: (kind) => this.enterNext(kind),
       showSummary: (tasks) => {
         const counts = summarize(tasks, this.today());
         this.summaryEl.setText(this.labels.summary(counts.total, counts.done, counts.overdue));
@@ -524,6 +565,8 @@ export class TaskBoard {
 
   private async updatePrefs(patch: Partial<BoardPreferences>, rebuildChrome = true): Promise<void> {
     Object.assign(this.prefs, patch);
+    // A different view of the tasks comes in; resizing a column or folding a group does not.
+    if (Object.keys(patch).some((key) => ENTERING_PREFS.has(key))) this.pendingEntrance = 'view';
     if (rebuildChrome) this.renderChrome();
     this.renderBody();
     await this.host.savePreferences();
@@ -546,6 +589,8 @@ export class TaskBoard {
       return;
     }
     const labels = this.labels;
+    // Where the bar under the current tab is now, so it can slide to the next.
+    const barBefore = this.barPlace();
     // A card or ghost the calendar left open belongs to the old chrome.
     this.calendarView?.destroy();
     this.el.empty();
@@ -580,6 +625,7 @@ export class TaskBoard {
 
     this.toolbarEl = this.headerEl.createDiv({ cls: 'taskpro-board__toolbar' });
     this.renderLayoutControl(this.toolbarEl);
+    this.slideBar(barBefore);
     this.renderScopeControl(this.toolbarEl);
 
     const search = this.toolbarEl.createDiv({ cls: 'taskpro-board__search' });
@@ -694,6 +740,31 @@ export class TaskBoard {
       { value: 'calendar', label: getCalendarLabels(this.language).layout, icon: 'calendar-days' },
       { value: 'timeline', label: getTimelineLabels(this.language).layout, icon: 'gantt-chart' },
     ];
+  }
+
+  /** The current layout tab's bar: its edge on the side the interface starts from, and its width. */
+  private barPlace(): { edge: number; width: number } | null {
+    const tab = this.toolbarEl?.querySelector<HTMLElement>('.taskpro-board__layout .is-active');
+    if (!tab?.isConnected) return null;
+    const box = tab.getBoundingClientRect();
+    if (!box.width) return null;
+    return { edge: this.direction === 'rtl' ? box.right : box.left, width: box.width };
+  }
+
+  /**
+   * The bar under the tabs slides from the tab it was under to the one it is
+   * under now, rather than jumping: the new tab's bar starts where the old
+   * one was, at the old one's width, and settles (the animation is in CSS).
+   */
+  private slideBar(before: { edge: number; width: number } | null): void {
+    const after = this.barPlace();
+    const tab = this.toolbarEl?.querySelector<HTMLElement>('.taskpro-board__layout .is-active');
+    if (!before || !after || !tab) return;
+    const shift = before.edge - after.edge;
+    if (Math.abs(shift) < 1 && Math.abs(before.width - after.width) < 1) return;
+    tab.style.setProperty('--taskpro-bar-shift', `${shift}px`);
+    tab.style.setProperty('--taskpro-bar-stretch', String(before.width / after.width));
+    tab.addClass('is-sliding');
   }
 
   private renderLayoutControl(parent: HTMLElement): void {
@@ -1411,6 +1482,27 @@ export class TaskBoard {
   }
 
   renderBody(): void {
+    this.paintBody();
+    this.settleBody();
+  }
+
+  /** What has been drawn is brought in, and what has just arrived is marked. */
+  private settleBody(): void {
+    if (!this.bodyEl) return;
+    if (this.pendingEntrance) {
+      enter(this.bodyEl, this.pendingEntrance);
+      this.pendingEntrance = null;
+    }
+    this.expanding = null;
+    if (performance.now() > this.arrivals.until) return;
+    const arrived = (id: string) => this.arrivals.added.has(id) || this.arrivals.changed.has(id);
+    this.bodyEl.querySelectorAll<HTMLElement>('[data-task-id]').forEach((el) => {
+      if (arrived(el.dataset.taskId!)) el.addClass('is-arriving');
+    });
+  }
+
+  /** Draws the body from the tasks and the preferences. */
+  private paintBody(): void {
     if (!this.bodyEl) return;
     this.renderQueued = false;
     const labels = this.labels;
@@ -1423,10 +1515,17 @@ export class TaskBoard {
     if (!this.host.store.isLoaded) {
       this.summaryEl.setText('');
       this.loadingState(labels.loading);
+      this.wasLoading = true;
       return;
+    }
+    // The tasks replace the loading rows: they come in.
+    if (this.wasLoading) {
+      this.wasLoading = false;
+      this.pendingEntrance = 'view';
     }
 
     this.refreshRelations();
+    this.noteArrivals();
     this.bodyEl.toggleClass('is-calendar', this.isCalendar);
     this.bodyEl.toggleClass('is-timeline', this.isTimeline);
     if (this.isCalendar) {
@@ -1477,6 +1576,23 @@ export class TaskBoard {
 
     this.bodyEl.scrollTop = scrollTop;
     this.bodyEl.scrollLeft = scrollLeft;
+  }
+
+  /** Compares the tasks with the last drawing, and keeps the new and the changed for a moment. */
+  private noteArrivals(): void {
+    const fresh = this.tracker.update(this.host.store.all());
+    if (!fresh.added.size && !fresh.changed.size) return;
+    const live = performance.now() <= this.arrivals.until;
+    this.arrivals = {
+      added: new Set([...(live ? this.arrivals.added : []), ...fresh.added]),
+      changed: new Set([...(live ? this.arrivals.changed : []), ...fresh.changed]),
+      until: performance.now() + ARRIVAL_MS,
+    };
+  }
+
+  /** The calendar and the timeline turn a page, or come in, from their own controls. */
+  enterNext(kind: Entrance): void {
+    this.pendingEntrance = kind;
   }
 
   private refreshRelations(): void {
@@ -1592,7 +1708,13 @@ export class TaskBoard {
         if (this.prefs.collapsedGroups.includes(group.id)) continue;
       }
       const limit = this.rowLimits.get(group.id) ?? ROWS_PER_PAGE;
-      for (const task of group.tasks.slice(0, limit)) this.renderRow(body, task, columns);
+      group.tasks.slice(0, limit).forEach((task, index) => {
+        const row = this.renderRow(body, task, columns);
+        if (this.expanding === group.id) {
+          row.addClass('is-expanding');
+          stagger(row, index);
+        }
+      });
       if (group.tasks.length > limit) {
         const more = body.createEl('tr', { cls: 'taskpro-table__more-row' });
         const cell = more.createEl('td', { attr: { colspan: span } });
@@ -1984,6 +2106,7 @@ export class TaskBoard {
       const next = collapsed
         ? this.prefs.collapsedGroups.filter((id) => id !== group.id)
         : [...this.prefs.collapsedGroups, group.id];
+      if (collapsed) this.expanding = group.id;
       void this.updatePrefs({ collapsedGroups: next }, false);
     });
   }
@@ -2061,7 +2184,7 @@ export class TaskBoard {
     return folder.split('/').pop() ?? '';
   }
 
-  private renderRow(body: HTMLElement, task: BoardTask, columns: readonly BoardColumnPref[]): void {
+  private renderRow(body: HTMLElement, task: BoardTask, columns: readonly BoardColumnPref[]): HTMLElement {
     const labels = this.labels;
     const row = body.createEl('tr', { cls: 'taskpro-table__row' });
     row.dataset.status = task.status;
@@ -2080,6 +2203,7 @@ export class TaskBoard {
       this.openTaskActions(task, more.getBoundingClientRect(), more)
     );
     this.withTaskActions(row, task);
+    return row;
   }
 
   private renderCell(row: HTMLElement, task: BoardTask, id: BoardPropertyId): void {
@@ -2146,12 +2270,19 @@ export class TaskBoard {
           const next = collapsed
             ? this.prefs.collapsedGroups.filter((id) => id !== group.id)
             : [...this.prefs.collapsedGroups, group.id];
+          if (collapsed) this.expanding = group.id;
           void this.updatePrefs({ collapsedGroups: next }, false);
         });
         if (collapsed) continue;
       }
       const limit = this.rowLimits.get(group.id) ?? ROWS_PER_PAGE;
-      for (const task of group.tasks.slice(0, limit)) this.renderListRow(list, task, columns);
+      group.tasks.slice(0, limit).forEach((task, index) => {
+        const row = this.renderListRow(list, task, columns);
+        if (this.expanding === group.id) {
+          row.addClass('is-expanding');
+          stagger(row, index);
+        }
+      });
       if (group.tasks.length > limit) {
         const more = list.createEl('button', {
           cls: 'taskpro-kanban__more taskpro-list__more',
@@ -2165,7 +2296,7 @@ export class TaskBoard {
     }
   }
 
-  private renderListRow(list: HTMLElement, task: BoardTask, columns: readonly BoardColumnPref[]): void {
+  private renderListRow(list: HTMLElement, task: BoardTask, columns: readonly BoardColumnPref[]): HTMLElement {
     const labels = this.labels;
     const row = list.createDiv({ cls: 'taskpro-list__row' });
     row.dataset.status = task.status;
@@ -2217,6 +2348,7 @@ export class TaskBoard {
     button.addClass('taskpro-list__more-btn');
     this.withTaskActions(row, task);
     this.swipeRow(row, content, task);
+    return row;
   }
 
   /** One property under a row's title, when it has a value; each opens its own choices. */
@@ -2339,6 +2471,8 @@ export class TaskBoard {
     button.setAttribute('role', 'checkbox');
     button.setAttribute('aria-checked', task.status === '[/]' ? 'mixed' : String(done));
     button.setAttribute('aria-label', done ? labels.markOpen : labels.markDone);
+    // A status that has just changed pops: the tick lands where the row now is.
+    if (this.arrivals.changed.has(task.id) && performance.now() <= this.arrivals.until) button.addClass('is-popping');
     // No icon inside: the tick and the cross are CSS masks. A theme's rules
     // for icon buttons key on an <svg> in a <button> and would resize it.
     button.addEventListener('click', (event) => {
@@ -2445,6 +2579,7 @@ export class TaskBoard {
   private statusChip(parent: HTMLElement, task: BoardTask): void {
     const chip = buildChip('taskpro-interactive-badge', STATUS_ICON_NAMES[task.status], STATUS_LABELS[this.language][task.status]);
     chip.dataset.status = task.status;
+    if (this.arrivals.changed.has(task.id) && performance.now() <= this.arrivals.until) chip.addClass('is-popping');
     chip.setAttribute('role', 'button');
     chip.tabIndex = 0;
     parent.appendChild(chip);
@@ -2665,8 +2800,9 @@ export class TaskBoard {
     if (this.prefs.kanbanColumnWidth) board.style.setProperty('--taskpro-kanban-width', `${clampKanbanWidth(this.prefs.kanbanColumnWidth)}px`);
     const droppable = this.canDropInto(groupBy);
 
-    for (const group of groups) {
+    groups.forEach((group, index) => {
       const column = board.createDiv({ cls: 'taskpro-kanban__column' });
+      stagger(column, index);
       column.dataset.group = group.value;
       const accent = this.columnAccent(groupBy, group.value);
       if (accent) column.style.setProperty('--taskpro-column-accent', accent);
@@ -2721,7 +2857,7 @@ export class TaskBoard {
           if (task && from !== null && from !== group.value) void this.moveTask(task, groupBy, from, group.value);
         });
       }
-    }
+    });
 
     const aside = all.filter((group) => hidden.has(group.id));
     if (aside.length || groupBy === 'tag') {

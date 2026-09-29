@@ -33,7 +33,7 @@ async function setClock(page, hour) {
 }
 
 async function open(query = '', hour = 15) {
-  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, deviceScaleFactor: 1 });
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, deviceScaleFactor: 1, reducedMotion: 'reduce' });
   const page = await context.newPage();
   await setClock(page, hour);
   page.errors = [];
