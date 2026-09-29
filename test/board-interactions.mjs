@@ -528,6 +528,59 @@ try {
   ok(second < first, 'right to left: the left arrow goes to the next column, which is on the left');
   await page.close();
 
+  // ── Sub-items: nested under their parent, and folded away ────────────────
+  page = await open('?scope=vault&group=none', 1700);
+  const parentRow = () => row(page, 'Design the new home page');
+  eq(await parentRow().locator('.taskpro-board__fold .taskpro-board__fold-count').textContent(), '2', 'a parent says how many subtasks it has');
+  eq(await parentRow().locator('.taskpro-board__fold').getAttribute('aria-expanded'), 'true', 'and that they are shown');
+  eq(await row(page, 'Pick the display typeface').locator('.taskpro-board__title-wrap.is-subtask').count(), 1, 'a subtask is one step in');
+  eq(await row(page, 'Groceries').locator('.taskpro-board__fold').count(), 0, 'a task with none has no fold');
+  const allRows = (await titles(page)).length;
+  await parentRow().locator('.taskpro-board__fold').click();
+  await page.waitForTimeout(80);
+  eq((await titles(page)).length, allRows - 2, 'folding takes its subtasks out of the table');
+  eq(await parentRow().locator('.taskpro-board__fold').getAttribute('aria-expanded'), 'false', 'and says so');
+  eq(await parentRow().locator('.taskpro-board__fold').getAttribute('aria-label'), 'Show 2 subtasks', 'in words');
+  // A change to the notes draws the table again; the fold stays.
+  await row(page, 'Groceries').locator('.taskpro-board__check').click();
+  await page.waitForTimeout(80);
+  eq((await titles(page)).length, allRows - 2, 'it stays folded as the table is drawn again');
+  await parentRow().locator('.taskpro-board__fold').click();
+  await page.waitForTimeout(40);
+  eq((await titles(page)).length, allRows, 'unfolding brings them back');
+  eq(await page.locator('.taskpro-table__row.is-expanding').count(), 2, 'and they follow one another in');
+
+  // The keyboard walks the tree: Left folds, Right unfolds, Left again steps up from a subtask.
+  await parentRow().locator('td.taskpro-table__more').click({ position: { x: 2, y: 2 } });
+  await page.keyboard.press('ArrowLeft');
+  await page.waitForTimeout(60);
+  eq((await titles(page)).length, allRows - 2, 'Left folds the parent under the cursor');
+  await page.keyboard.press('ArrowRight');
+  await page.waitForTimeout(60);
+  eq((await titles(page)).length, allRows, 'Right unfolds it');
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('ArrowLeft');
+  eq(await page.evaluate(() => document.querySelector('.has-cursor .taskpro-board__title')?.textContent), 'Design the new home page', 'Left from a subtask goes up to its parent');
+
+  // Grouped, a subtask whose parent is in another group stands on its own; sorted otherwise, nothing nests.
+  await page.close();
+  page = await open('?scope=vault&group=status', 1700);
+  eq(await page.locator('.taskpro-board__fold').count(), 0, 'grouped by status the parent and its subtasks are apart: no fold');
+  eq(await row(page, 'Pick the display typeface').locator('.taskpro-board__title-wrap.is-subtask').count(), 0, 'and the subtask is not indented under nothing');
+  await page.close();
+  page = await open('?scope=vault&group=none', 1700);
+  await page.locator('.taskpro-table th.taskpro-table__task').click();
+  await page.waitForTimeout(80);
+  eq(await page.locator('.taskpro-board__fold').count(), 0, 'sorted by title the table does not nest');
+  eq(page.errors, [], 'no page errors with sub-items');
+  await page.close();
+
+  page = await open('?scope=vault&group=none&lang=fa', 1700);
+  await page.locator('.taskpro-board__fold').first().click();
+  await page.waitForTimeout(80);
+  eq(await page.locator('.taskpro-board__fold.is-folded').getAttribute('aria-label'), 'نمایش 2 زیرتسک', 'in Persian');
+  await page.close();
+
   // ── View options: density, wrapping, empty columns ───────────────────────
   page = await open('?scope=vault&group=none', 1700);
   const rowHeight = () => page.locator('.taskpro-table__row').first().evaluate((el) => Math.round(el.getBoundingClientRect().height));

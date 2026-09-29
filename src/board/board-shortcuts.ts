@@ -30,6 +30,7 @@ function shortcutGroups(language: Language): ShortcutGroup[] {
         items: [
           { keys: ['Enter'], label: 'باز کردن کارت' },
           { keys: ['Space'], label: 'انجام شد، یا دوباره باز' },
+          { keys: ['←', '→'], label: 'بستن یا باز کردن زیرتسک‌ها (جدول)' },
           { keys: ['E'], label: 'تغییر نام' },
           { keys: ['M'], label: 'باز کردن منو' },
           { keys: ['Del'], label: 'حذف' },
@@ -60,6 +61,7 @@ function shortcutGroups(language: Language): ShortcutGroup[] {
       items: [
         { keys: ['Enter'], label: 'Open the card' },
         { keys: ['Space'], label: 'Mark done, or open again' },
+        { keys: ['←', '→'], label: 'Fold or unfold subtasks (table)' },
         { keys: ['E'], label: 'Rename' },
         { keys: ['M'], label: 'Open the menu' },
         { keys: ['Del'], label: 'Delete' },

@@ -2786,7 +2786,51 @@ button.taskpro-chip:focus-visible {
   min-width: 0;
 }
 .taskpro-board .taskpro-table.is-document-order .taskpro-board__title-wrap.is-subtask {
-  padding-inline-start: calc(var(--taskpro-depth, 0) * 18px);
+  padding-inline-start: calc(var(--taskpro-depth, 0) * 22px);
+}
+/* The fold: how many subtasks a parent has, and a way to put them away. It
+   stays after the title, so titles keep their line whether or not a task has
+   subtasks; folded, it reads as a chip that says something is tucked in. */
+.taskpro-board button.taskpro-board__fold {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 1px;
+  height: 20px;
+  min-width: 0;
+  margin: 0;
+  padding: 0 var(--taskpro-space-2) 0 var(--taskpro-space-1);
+  border: 0;
+  border-radius: var(--taskpro-radius-inner);
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color var(--taskpro-fast) var(--taskpro-ease), color var(--taskpro-fast) var(--taskpro-ease);
+}
+.taskpro-board[dir="rtl"] button.taskpro-board__fold {
+  padding: 0 var(--taskpro-space-1) 0 var(--taskpro-space-2);
+}
+.taskpro-board button.taskpro-board__fold:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+.taskpro-board button.taskpro-board__fold.is-folded {
+  background: color-mix(in srgb, var(--text-normal) 7%, transparent);
+  color: var(--text-muted);
+}
+.taskpro-board button.taskpro-board__fold:focus-visible {
+  box-shadow: var(--taskpro-focus-ring);
+}
+.taskpro-board .taskpro-board__fold-caret {
+  display: inline-flex;
+}
+.taskpro-board .taskpro-board__fold .svg-icon {
+  width: 14px;
+  height: 14px;
 }
 .taskpro-board .taskpro-board__title {
   min-width: 0;

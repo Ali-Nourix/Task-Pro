@@ -13,6 +13,7 @@ const build = await esbuild.build({
       export { displayTitle } from "../src/board/task-board";
       export * as columns from "../src/board/board-columns";
       export { moveCursor, moveFor } from "../src/board/board-keys";
+      export { nestTasks, hiddenByFold, foldKey } from "../src/board/board-nesting";
     `,
     resolveDir: new URL('.', import.meta.url).pathname,
     loader: 'ts',
@@ -38,7 +39,7 @@ const build = await esbuild.build({
 const mod = await import(
   'data:text/javascript;base64,' + Buffer.from(build.outputFiles[0].text).toString('base64')
 );
-const { parseBoardTasks, filterTasks, sortTasks, groupTasks, deadlineBucket, summarize, daysUntil, displayTitle, columns, moveCursor, moveFor } = mod;
+const { parseBoardTasks, filterTasks, sortTasks, groupTasks, deadlineBucket, summarize, daysUntil, displayTitle, columns, moveCursor, moveFor, nestTasks, hiddenByFold, foldKey } = mod;
 
 let checked = 0;
 const eq = (actual, expected, label) => {
@@ -218,6 +219,34 @@ eq(displayTitle('See [the spec](https://example.com) **now**'), 'See the spec no
   eq([moveFor({ key: 'ArrowRight', code: '' }, false), moveFor({ key: 'ArrowLeft', code: '' }, false)], ['next', 'previous'], 'left to right: right goes on');
   eq([moveFor({ key: 'ArrowRight', code: '' }, true), moveFor({ key: 'ArrowLeft', code: '' }, true)], ['previous', 'next'], 'right to left: left goes on');
   eq([moveFor({ key: 'ج', code: 'KeyJ' }, false), moveFor({ key: 'ل', code: 'KeyK' }, true), moveFor({ key: 'x', code: 'KeyX' }, false)], ['down', 'up', null], 'J and K by the physical key, in any layout');
+}
+
+// ── sub-items in the table ────────────────────────────────────────────────
+{
+  const all = parseBoardTasks(
+    'Projects/Launch.md',
+    ['- [ ] Launch', '    - [ ] Write', '        - [ ] Draft', '    - [ ] Design', '- [ ] Ship', '    - [ ] Package'].join('\n')
+  );
+  const byId = new Map(all.map((task) => [task.id, task]));
+  const lookup = (id) => byId.get(id);
+  const named = (nesting) => Object.fromEntries(all.filter((t) => nesting.has(t.id)).map((t) => [t.text, [nesting.get(t.id).depth, nesting.get(t.id).children]]));
+
+  eq(named(nestTasks(all, lookup)), { Launch: [0, 2], Write: [1, 1], Draft: [2, 0], Design: [1, 0], Ship: [0, 1], Package: [1, 0] }, 'every task under its parent, one step in each');
+  eq(named(nestTasks(all.filter((t) => t.text !== 'Write'), lookup)), { Launch: [0, 2], Draft: [1, 0], Design: [1, 0], Ship: [0, 1], Package: [1, 0] }, 'a parent that is not shown is passed over: the subtask hangs from its grandparent');
+  eq(named(nestTasks(all.filter((t) => t.text !== 'Launch'), lookup)), { Write: [0, 1], Draft: [1, 0], Design: [0, 0], Ship: [0, 1], Package: [1, 0] }, 'with no ancestor shown a task stands at the edge');
+  eq(named(nestTasks(all.filter((t) => ['Draft', 'Package'].includes(t.text)), lookup)), { Draft: [0, 0], Package: [0, 0] }, 'as does a subtask shown alone, or in another group');
+
+  const nesting = nestTasks(all, lookup);
+  const idOf = (text) => all.find((t) => t.text === text).id;
+  const foldedSet = (...texts) => (id) => texts.includes(byId.get(id).text);
+  const hidden = (folded) => all.filter((t) => hiddenByFold(t.id, nesting, folded)).map((t) => t.text);
+  eq(hidden(foldedSet()), [], 'nothing folded, nothing hidden');
+  eq(hidden(foldedSet('Write')), ['Draft'], 'folding a subtask hides its own');
+  eq(hidden(foldedSet('Launch')), ['Write', 'Draft', 'Design'], 'folding a parent hides everything under it');
+  eq(hidden(foldedSet('Launch', 'Write')), ['Write', 'Draft', 'Design'], 'a fold inside a fold changes nothing');
+  eq(hidden(foldedSet('Design')), [], 'a fold on a task with no subtasks hides nothing');
+  eq(foldKey(all[0]), 'Projects/Launch.md\nLaunch', 'a fold is remembered by note and title');
+  eq(foldKey({ filePath: 'A.md', text: 'x', blockId: 'id1' }), 'A.md\nid1', 'or by block ID when it has one');
 }
 
 console.log(`BOARD_OK (${checked} checks)`);
