@@ -298,6 +298,25 @@ try {
     await page.close();
   }
 
+  // The keyboard's cursor, on a table and on a board, at each edge.
+  for (const [query, tag, keys] of [
+    ['?scope=vault&group=none', 'table cursor', ['ArrowDown', 'ArrowDown', 'End', 'Home']],
+    ['?layout=board&scope=vault', 'board cursor', ['ArrowDown', 'ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowDown', 'End', 'ArrowLeft', 'Home']],
+    ['?layout=board&scope=vault&lang=fa', 'board cursor fa', ['ArrowDown', 'ArrowLeft', 'ArrowLeft', 'ArrowLeft', 'End', 'ArrowRight', 'Home']],
+  ]) {
+    const page = await open(query, 1400, 1000);
+    await page.locator('.taskpro-board__body').focus();
+    await scan(page, tag);
+    for (const key of keys) {
+      await page.keyboard.press(key);
+      await scan(page, `${tag} · ${key}`);
+    }
+    await page.keyboard.press('Shift+Slash');
+    await page.waitForTimeout(200);
+    await scan(page, `${tag} · shortcuts`);
+    await page.close();
+  }
+
   // The phone: a narrower pane, and a finger.
   for (const [query, tag] of [
     ['?mobile=1&scope=vault', 'phone list'],

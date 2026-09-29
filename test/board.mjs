@@ -12,6 +12,7 @@ const build = await esbuild.build({
       export { filterTasks, sortTasks, groupTasks, deadlineBucket, summarize, daysUntil } from "../src/board/board-query";
       export { displayTitle } from "../src/board/task-board";
       export * as columns from "../src/board/board-columns";
+      export { moveCursor, moveFor } from "../src/board/board-keys";
     `,
     resolveDir: new URL('.', import.meta.url).pathname,
     loader: 'ts',
@@ -37,7 +38,7 @@ const build = await esbuild.build({
 const mod = await import(
   'data:text/javascript;base64,' + Buffer.from(build.outputFiles[0].text).toString('base64')
 );
-const { parseBoardTasks, filterTasks, sortTasks, groupTasks, deadlineBucket, summarize, daysUntil, displayTitle, columns } = mod;
+const { parseBoardTasks, filterTasks, sortTasks, groupTasks, deadlineBucket, summarize, daysUntil, displayTitle, columns, moveCursor, moveFor } = mod;
 
 let checked = 0;
 const eq = (actual, expected, label) => {
@@ -189,6 +190,34 @@ eq(displayTitle('See [the spec](https://example.com) **now**'), 'See the spec no
   );
   const order = sortTasks(planned, 'plan', 'asc', { getProgress: () => undefined, today }).map((task) => task.text.split(' ')[0]);
   eq(order, ['c', 'a', 'b', 'none'], 'by day then start, a day plan before timed ones, unplanned last');
+}
+
+// ── the keyboard's cursor ─────────────────────────────────────────────────
+{
+  const table = [5];
+  eq(moveCursor(table, null, 'down'), { column: 0, row: 0 }, 'no cursor yet: the first task');
+  eq(moveCursor(table, null, 'last'), { column: 0, row: 4 }, 'End with no cursor: the last');
+  eq(moveCursor(table, { column: 0, row: 2 }, 'down'), { column: 0, row: 3 }, 'down');
+  eq(moveCursor(table, { column: 0, row: 4 }, 'down'), { column: 0, row: 4 }, 'stops at the last');
+  eq(moveCursor(table, { column: 0, row: 0 }, 'up'), { column: 0, row: 0 }, 'and at the first');
+  eq(moveCursor(table, { column: 0, row: 3 }, 'first'), { column: 0, row: 0 }, 'Home');
+  eq(moveCursor(table, { column: 0, row: 1 }, 'next'), { column: 0, row: 1 }, 'a table has no other column');
+  eq(moveCursor([], null, 'down'), null, 'nothing to move through');
+  eq(moveCursor([0, 0], { column: 0, row: 0 }, 'down'), null, 'or only empty columns');
+
+  const board = [3, 0, 5, 1];
+  eq(moveCursor(board, { column: 0, row: 2 }, 'next'), { column: 2, row: 2 }, 'across, passing over an empty column, keeping the row');
+  eq(moveCursor(board, { column: 2, row: 4 }, 'next'), { column: 3, row: 0 }, 'a shorter column: as far down as it goes');
+  eq(moveCursor(board, { column: 3, row: 0 }, 'next'), { column: 3, row: 0 }, 'the last column stays');
+  eq(moveCursor(board, { column: 2, row: 3 }, 'previous'), { column: 0, row: 2 }, 'and back');
+  eq(moveCursor(board, null, 'next'), { column: 0, row: 0 }, 'across with no cursor starts at the first');
+  eq(moveCursor(board, { column: 1, row: 0 }, 'down'), { column: 0, row: 0 }, 'a cursor left in a column that emptied starts again');
+  eq(moveCursor(board, { column: 0, row: 9 }, 'up'), { column: 0, row: 1 }, 'a row that is gone counts from the end');
+
+  eq(['ArrowUp', 'ArrowDown', 'Home', 'End'].map((key) => moveFor({ key, code: '' }, false)), ['up', 'down', 'first', 'last'], 'the keys');
+  eq([moveFor({ key: 'ArrowRight', code: '' }, false), moveFor({ key: 'ArrowLeft', code: '' }, false)], ['next', 'previous'], 'left to right: right goes on');
+  eq([moveFor({ key: 'ArrowRight', code: '' }, true), moveFor({ key: 'ArrowLeft', code: '' }, true)], ['previous', 'next'], 'right to left: left goes on');
+  eq([moveFor({ key: 'ج', code: 'KeyJ' }, false), moveFor({ key: 'ل', code: 'KeyK' }, true), moveFor({ key: 'x', code: 'KeyX' }, false)], ['down', 'up', null], 'J and K by the physical key, in any layout');
 }
 
 console.log(`BOARD_OK (${checked} checks)`);

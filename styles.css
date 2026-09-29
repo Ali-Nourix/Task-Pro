@@ -7158,6 +7158,78 @@ body.is-mobile .taskpro-board.taskpro-board button.taskpro-tl__undated-toggle {
   overflow: visible;
 }
 
+/* ── The keyboard ──────────────────────────────────────────────────────── */
+/* The cursor: the task the keys act on, shown while the body holds the focus.
+   The body has no ring of its own; the cursor is what says where it is. */
+.taskpro-board .taskpro-board__body:focus {
+  outline: none;
+}
+.taskpro-board .taskpro-board__body:focus-within .taskpro-table__row.has-cursor,
+.taskpro-board .taskpro-board__body:focus-within .taskpro-list__row.has-cursor {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: -2px;
+}
+.taskpro-board .taskpro-board__body:focus-within .taskpro-table__row.has-cursor td {
+  background-color: var(--background-modifier-hover);
+}
+.taskpro-board .taskpro-board__body:focus-within .taskpro-card.has-cursor {
+  box-shadow: var(--taskpro-lift-1), var(--taskpro-focus-ring);
+}
+/* Kept clear of the sticky header and the edges when the cursor moves under them. */
+.taskpro-board .taskpro-table__row,
+.taskpro-board .taskpro-card {
+  scroll-margin-block: 48px 12px;
+}
+
+/* The sheet "?" opens. */
+.taskpro-panel.taskpro-shortcuts {
+  width: min(460px, 92vw);
+}
+.taskpro-shortcuts .taskpro-panel__body {
+  gap: var(--taskpro-space-7);
+}
+.taskpro-shortcuts__heading {
+  margin-bottom: var(--taskpro-space-2);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-semibold);
+}
+.taskpro-shortcuts__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--taskpro-space-7);
+  padding: var(--taskpro-space-2) 0;
+  border-bottom: 1px solid var(--background-modifier-border);
+  font-size: var(--font-ui-small);
+}
+.taskpro-shortcuts__row:last-child {
+  border-bottom: 0;
+}
+.taskpro-shortcuts__keys {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: var(--taskpro-space-2);
+}
+kbd.taskpro-shortcuts__key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 var(--taskpro-space-3);
+  border: 1px solid var(--background-modifier-border);
+  border-bottom-width: 2px;
+  border-radius: var(--taskpro-radius-inner);
+  background: var(--background-secondary);
+  box-shadow: none;
+  color: var(--text-muted);
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-medium);
+  line-height: 1;
+}
+
 /* ── Touch: nothing waits for a hover, and targets fit a finger ────────── */
 .taskpro-board.is-touch {
   -webkit-tap-highlight-color: transparent;

@@ -100,6 +100,7 @@ export interface BoardLabels {
   addFailed: string;
   openNote: string;
   openCard: string;
+  shortcuts: string;
   more: string;
   refresh: string;
   manageTags: string;
@@ -242,6 +243,7 @@ const EN: BoardLabels = {
   addFailed: 'Choose a note for new tasks first',
   openNote: 'Open in note',
   openCard: 'Open card',
+  shortcuts: 'Keyboard shortcuts',
   more: 'More options',
   refresh: 'Rescan notes',
   manageTags: 'Manage tags',
@@ -382,6 +384,7 @@ const FA: BoardLabels = {
   addFailed: 'اول یادداشت مقصد تسک‌های جدید را انتخاب کنید',
   openNote: 'باز کردن در یادداشت',
   openCard: 'باز کردن کارت',
+  shortcuts: 'میانبرهای صفحه‌کلید',
   more: 'گزینه‌های بیشتر',
   refresh: 'خواندن دوباره یادداشت‌ها',
   manageTags: 'مدیریت برچسب‌ها',

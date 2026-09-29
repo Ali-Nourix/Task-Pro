@@ -116,6 +116,8 @@ export function openContextMenu(options: ContextMenuOptions): ContextMenuHandle 
   let open = true;
   let hoverTimer: number | null = null;
   const panels: Panel[] = [];
+  // Where the focus was, so closing the menu gives it back and the keys carry on there.
+  const returnFocus = doc.activeElement instanceof HTMLElement ? doc.activeElement : null;
 
   const rootEl = container.createDiv({ cls: 'taskpro-menu' });
   rootEl.setAttribute('role', 'menu');
@@ -518,6 +520,7 @@ export function openContextMenu(options: ContextMenuOptions): ContextMenuHandle 
       undoSheet?.();
       rootEl.remove();
       if (current === handle) current = null;
+      if (returnFocus?.isConnected && (!doc.activeElement || doc.activeElement === doc.body)) returnFocus.focus({ preventScroll: true });
       options.onClose?.();
     },
   };
