@@ -648,6 +648,16 @@ try {
   await page.locator('.taskpro-selection__btn.is-clear').click();
   eq(await bar().count(), 0, 'the ✕ drops the selection and the bar goes');
 
+  // With nothing picked yet, a Shift click starts from the cursor; and the browser is not left with a text selection over the rows between.
+  await row(page, 'Groceries').locator('td.taskpro-table__more').click({ position: { x: 2, y: 2 } });
+  await row(page, 'Chapter 4 of Designing Data-Intensive Applications')
+    .locator('td.taskpro-table__more')
+    .click({ position: { x: 2, y: 2 }, modifiers: ['Shift'] });
+  eq(await picked(), ['Groceries', 'Dentist appointment', 'Chapter 4 of Designing Data-Intensive Applications'], 'a click and then a Shift click picks the run between them');
+  eq(await page.evaluate(() => getSelection().isCollapsed), true, 'with no text left selected across it');
+  eq(await page.locator('.taskpro-table__row.has-cursor .taskpro-board__title').textContent(), 'Chapter 4 of Designing Data-Intensive Applications', 'and the cursor on the last');
+  await page.locator('.taskpro-selection__btn.is-clear').click();
+
   // The keyboard picks too: X, Shift with the arrows, Ctrl or ⌘ with A; Escape drops them.
   await page.locator('.taskpro-board__body').focus();
   await page.keyboard.press('Home');

@@ -1807,17 +1807,27 @@ export class TaskBoard {
     });
   }
 
-  /** Picks a task, or drops it; with `range`, every task between the last one picked and this one. */
+  /**
+   * Picks a task, or drops it. With `range`, every task between this one and
+   * the last one picked is picked; before any has been, the cursor is where a
+   * range starts, as a click on a row and then a Shift click on another would
+   * expect.
+   */
   private toggleSelected(task: BoardTask, range = false): void {
-    const flat = this.navigable().flat().map((el) => el.dataset.taskId!);
-    const from = this.selectAnchor ? flat.indexOf(this.selectAnchor) : -1;
+    const els = this.navigable().flat();
+    const flat = els.map((el) => el.dataset.taskId!);
+    const anchor = this.selectAnchor && flat.includes(this.selectAnchor) ? this.selectAnchor : (this.cursor?.id ?? null);
+    const from = anchor ? flat.indexOf(anchor) : -1;
     const to = flat.indexOf(task.id);
     if (range && from !== -1 && to !== -1) {
       for (const id of flat.slice(Math.min(from, to), Math.max(from, to) + 1)) this.setSelected(id, true);
+      this.selectAnchor = anchor;
     } else {
       this.setSelected(task.id, !this.selected.has(task.id));
       this.selectAnchor = task.id;
     }
+    // The cursor goes where the last pick was, as a click would put it (a tap does not).
+    if (to !== -1 && !this.touch) this.placeCursor(els[to], false);
     this.refreshSelection();
   }
 
@@ -1924,8 +1934,22 @@ export class TaskBoard {
     body.setAttribute('aria-label', this.labels.title);
     body.addEventListener('pointerdown', (event) => {
       const item = (event.target as HTMLElement).closest<HTMLElement>('[data-task-id]');
-      if (item) this.placeCursor(item, false);
+      // A Shift click stretches a pick from where the cursor was, and moves it once it has. A finger has no keys to
+      // aim at a task, and a tapped one should not be left framed.
+      if (item && !event.shiftKey && event.pointerType !== 'touch') this.placeCursor(item, false);
     });
+    // The browser stretches a text selection across everything between two clicks
+    // when Shift is down, on the way down; the pick is all that is wanted.
+    body.addEventListener(
+      'mousedown',
+      (event) => {
+        const target = event.target as HTMLElement;
+        if (!event.shiftKey || !target.closest('[data-task-id]') || target.closest('input, textarea, [contenteditable="true"]')) return;
+        event.preventDefault();
+        body.focus({ preventScroll: true });
+      },
+      true
+    );
     // A click with Ctrl, ⌘ or Shift picks the task instead of doing what it would; so does a tap while some are picked.
     body.addEventListener(
       'click',
@@ -1942,9 +1966,10 @@ export class TaskBoard {
       },
       true
     );
-    // Reached with Tab, the body shows where it is: the cursor is on the first task.
+    // Reached with Tab, the body shows where it is: the cursor is on the first task. (Not on a touch screen, where
+    // the focus comes back to the body whenever a sheet closes, and the first task would be framed each time.)
     body.addEventListener('focus', () => {
-      if (!this.cursor && body.matches(':focus-visible')) this.placeCursor(this.navigable()[0]?.[0] ?? null, false);
+      if (!this.cursor && !this.touch && body.matches(':focus-visible')) this.placeCursor(this.navigable()[0]?.[0] ?? null, false);
     });
     return body;
   }

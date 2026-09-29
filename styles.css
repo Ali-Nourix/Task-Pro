@@ -7300,11 +7300,12 @@ body.is-mobile .taskpro-board.taskpro-board button.taskpro-tl__undated-toggle {
   background-color: var(--taskpro-selected);
   background-image: none;
 }
-.taskpro-board .taskpro-list__row.is-selected {
+/* A phone's row is drawn on its content layer, which covers the row itself: the tint and the bar go on that. */
+.taskpro-board .taskpro-list__row.is-selected > .taskpro-list__content {
   background-color: var(--taskpro-selected);
   box-shadow: inset 3px 0 0 var(--interactive-accent);
 }
-.taskpro-board[dir="rtl"] .taskpro-list__row.is-selected {
+.taskpro-board[dir="rtl"] .taskpro-list__row.is-selected > .taskpro-list__content {
   box-shadow: inset -3px 0 0 var(--interactive-accent);
 }
 .taskpro-board .taskpro-card.is-selected {
@@ -7447,7 +7448,7 @@ body.is-mobile .taskpro-board.taskpro-board button.taskpro-tl__undated-toggle {
 .taskpro-board .taskpro-board__body:focus {
   outline: none;
 }
-.taskpro-board .taskpro-board__body:focus-within .taskpro-list__row.has-cursor {
+.taskpro-board .taskpro-board__body:focus-within .taskpro-list__row.has-cursor > .taskpro-list__content {
   outline: 2px solid var(--interactive-accent);
   outline-offset: -2px;
 }
@@ -7742,7 +7743,7 @@ kbd.taskpro-shortcuts__key {
 /* A task that has just arrived, or changed status, flashes where it lands;
    a card also rises into its column. */
 .taskpro-board .taskpro-table__row.is-arriving td,
-.taskpro-board .taskpro-list__row.is-arriving,
+.taskpro-board .taskpro-list__row.is-arriving > .taskpro-list__content,
 .taskpro-board .taskpro-tl__row.is-arriving .taskpro-tl__cell,
 .taskpro-board .taskpro-cal__item.is-arriving {
   animation: taskpro-arrive 1.4s var(--taskpro-ease) backwards;
