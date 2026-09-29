@@ -382,6 +382,31 @@ try {
   eq(await page.locator('.taskpro-cal__hour.is-covered').evaluate((el) => el.style.getPropertyValue('--hour')), '15', 'the one under it');
   eq(page.errors, [], 'no page errors with the now label');
   await page.close();
+
+  // The halo leaves a month's chips where they were: flush with the cell's padding, not pushed in by the room around them.
+  page = await open('cal=month');
+  const inset = await page.evaluate(() => {
+    const chip = document.querySelector('.taskpro-cal__cell-items .taskpro-cal__chip');
+    const cell = chip.closest('.taskpro-cal__cell');
+    const c = chip.getBoundingClientRect();
+    const r = cell.getBoundingClientRect();
+    return { left: Math.round(c.left - r.left), right: Math.round(r.right - c.right) };
+  });
+  ok(inset.left === 4 && (inset.right === 4 || inset.right === 5), `chips sit 4px in from the cell's edges, less its border (got ${JSON.stringify(inset)})`);
+  // And the "more" count still follows the room the chips have.
+  const shown = await page.$$eval('.taskpro-cal__cell', (cells) =>
+    cells.map((cell) => {
+      const list = cell.querySelector('.taskpro-cal__cell-items');
+      const chips = [...list.querySelectorAll('.taskpro-cal__chip:not(.is-overflow)')];
+      const last = chips.at(-1)?.getBoundingClientRect();
+      const box = list.getBoundingClientRect();
+      const pad = parseFloat(getComputedStyle(list).paddingBottom);
+      return last ? last.bottom <= box.bottom - pad + 0.5 : true;
+    })
+  );
+  ok(shown.every(Boolean), 'no month chip is left standing in the halo');
+  eq(page.errors, [], 'no page errors in the month');
+  await page.close();
 } finally {
   await browser.close();
 }
