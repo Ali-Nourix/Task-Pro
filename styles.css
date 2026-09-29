@@ -2804,7 +2804,7 @@ button.taskpro-chip:focus-visible {
   border-radius: var(--taskpro-radius-inner);
   background: transparent;
   box-shadow: none;
-  color: var(--text-faint);
+  color: var(--text-muted);
   font-size: var(--font-ui-smaller);
   font-variant-numeric: tabular-nums;
   line-height: 1;
@@ -2819,8 +2819,8 @@ button.taskpro-chip:focus-visible {
   color: var(--text-normal);
 }
 .taskpro-board button.taskpro-board__fold.is-folded {
-  background: color-mix(in srgb, var(--text-normal) 7%, transparent);
-  color: var(--text-muted);
+  background: color-mix(in srgb, var(--text-normal) 8%, transparent);
+  color: var(--text-normal);
 }
 .taskpro-board button.taskpro-board__fold:focus-visible {
   box-shadow: var(--taskpro-focus-ring);
@@ -7312,7 +7312,7 @@ body.is-mobile .taskpro-board.taskpro-board button.taskpro-tl__undated-toggle {
   box-shadow: var(--taskpro-lift-1), 0 0 0 2px var(--interactive-accent);
 }
 .taskpro-board.has-selection .taskpro-board__body {
-  padding-bottom: 92px;
+  padding-bottom: calc(92px + var(--taskpro-bottom-inset, 0px));
 }
 
 /* The bar over the board while tasks are picked: what is done to all of them. */
@@ -7402,7 +7402,8 @@ body.is-mobile .taskpro-board.taskpro-board button.taskpro-tl__undated-toggle {
 .taskpro-board.is-compact .taskpro-selection {
   inset-inline: var(--taskpro-space-4);
   inset-inline-start: var(--taskpro-space-4);
-  inset-block-end: max(var(--taskpro-space-4), env(safe-area-inset-bottom));
+  /* Above what is at the foot of the screen: the home indicator and, in Obsidian's phone app, its floating bar. */
+  inset-block-end: calc(var(--taskpro-space-4) + var(--taskpro-bottom-inset, env(safe-area-inset-bottom, 0px)));
   max-width: none;
   transform: none;
   justify-content: space-between;
@@ -7417,6 +7418,17 @@ body.is-mobile .taskpro-board.taskpro-board button.taskpro-tl__undated-toggle {
   min-width: 40px;
   height: 40px;
   justify-content: center;
+}
+/* Seven actions, a number and a way out fit a phone's width at 38px each. */
+.taskpro-board.is-compact button.taskpro-selection__btn {
+  min-width: 38px;
+  padding: 0 var(--taskpro-space-3);
+}
+.taskpro-board.is-compact .taskpro-selection__sep {
+  margin-inline: var(--taskpro-space-1);
+}
+.taskpro-board.is-compact .taskpro-selection__count {
+  padding: 0 var(--taskpro-space-2);
 }
 @media (prefers-reduced-motion: reduce) {
   .taskpro-board .taskpro-selection {

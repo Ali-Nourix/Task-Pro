@@ -3632,6 +3632,8 @@ export class TaskBoard {
   }
 
   private kanbanScroll: (() => void) | null = null;
+  /** The timer that finishes a tab's scroll to its column, kept so a hand on the board can cancel it. */
+  private glideTimer = 0;
 
   /**
    * On a phone one column fills the screen, so a strip of tabs above says
@@ -3683,8 +3685,14 @@ export class TaskBoard {
     const target = body.scrollLeft + delta;
     const still = this.el.ownerDocument.defaultView?.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
     body.scrollTo({ left: target, behavior: still ? 'auto' : 'smooth' });
-    // Where a smooth scroll is not honoured, or stops short, it finishes there.
-    window.setTimeout(() => {
+    // Where a smooth scroll is not honoured, or stops short, it finishes there; unless a hand has taken over meanwhile.
+    window.clearTimeout(this.glideTimer);
+    const release = () => window.clearTimeout(this.glideTimer);
+    body.addEventListener('pointerdown', release, { once: true, passive: true });
+    body.addEventListener('wheel', release, { once: true, passive: true });
+    this.glideTimer = window.setTimeout(() => {
+      body.removeEventListener('pointerdown', release);
+      body.removeEventListener('wheel', release);
       if (Math.abs(body.scrollLeft - target) > 2) body.scrollLeft = target;
     }, 400);
   }

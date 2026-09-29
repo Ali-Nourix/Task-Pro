@@ -135,7 +135,10 @@ try {
   eq(await page.locator('.taskpro-selection').count(), 1, 'and a bar rises');
   eq(await page.locator('.taskpro-selection__label').count(), 0, 'with icons and no words, on a phone');
   const barButton = await page.locator('.taskpro-selection__btn').nth(1).boundingBox();
-  eq(barButton.width >= 40 && barButton.height >= 40, true, 'each at least 40 by 40');
+  eq(barButton.width >= 38 && barButton.height >= 40, true, 'each a finger wide');
+  const barBox = await page.locator('.taskpro-selection').boundingBox();
+  eq(await page.locator('.taskpro-selection').evaluate((el) => el.scrollWidth <= el.clientWidth + 1), true, 'and all of them fit the width, none behind a scroll');
+  eq(barBox.x >= 0 && barBox.x + barBox.width <= 390, true, 'inside the screen');
   eq(await page.locator('.taskpro-board__fab').isVisible(), false, 'the + steps aside for it');
   await page.tap('.taskpro-list__row:has-text("Accessibility pass") .taskpro-list__title');
   await page.waitForTimeout(100);
@@ -218,12 +221,19 @@ try {
   const card = await center(page.locator('.taskpro-card', { hasText: 'Dentist appointment' }).locator('.taskpro-card__props'));
   await page.gesture({ x: card.x, y: card.y }, { x: 372, y: card.y }, { hold: 600, steps: 16 });
   eq((await note(page, 'Life/Home.md')).split('\n')[1].startsWith('- [/] Dentist'), true, 'a card carried to the next column takes its status');
-  // A quick swipe across a card scrolls the board instead.
-  const scrolled = await page.locator('.taskpro-board__body').evaluate((el) => el.scrollLeft);
+  // A quick swipe across a card scrolls the board instead. A finger that rests 420ms is a hold, so on a
+  // machine too busy to deliver the first move in time the swipe is tried once more, from a quiet page.
   eq(await page.locator('.taskpro-menu').count(), 0, 'carrying a card does not open its menu too');
-  await page.gesture({ x: 300, y: 520 }, { x: 60, y: 520 }, { steps: 10 });
-  await page.waitForTimeout(500);
-  eq((await page.locator('.taskpro-board__body').evaluate((el) => el.scrollLeft)) !== scrolled, true, 'a swipe scrolls between columns');
+  const scrollLeft = () => page.locator('.taskpro-board__body').evaluate((el) => el.scrollLeft);
+  let swiped = false;
+  for (let attempt = 0; attempt < 2 && !swiped; attempt++) {
+    await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+    const scrolled = await scrollLeft();
+    await page.gesture({ x: 300, y: 520 }, { x: 60, y: 520 }, { steps: 10 });
+    await page.waitForTimeout(500);
+    swiped = (await scrollLeft()) !== scrolled;
+  }
+  eq(swiped, true, 'a swipe scrolls between columns');
   eq(page.errors, [], 'no page errors on the board');
   await page.context().close();
 
