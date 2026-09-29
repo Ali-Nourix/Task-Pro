@@ -5371,7 +5371,7 @@ button.taskpro-chip:focus-visible {
   box-sizing: border-box;
   width: 264px;
   max-width: calc(100% - 8px);
-  max-height: min(560px, calc(100% - 8px));
+  max-height: min(640px, calc(100% - 8px));
   padding: var(--taskpro-space-2);
   overflow: hidden;
   border-radius: var(--taskpro-radius-panel);

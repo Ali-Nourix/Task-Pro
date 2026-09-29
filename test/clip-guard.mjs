@@ -254,6 +254,11 @@ try {
     await page.waitForTimeout(350);
     await scan(page, 'task menu (submenu)');
     await page.keyboard.press('Escape');
+    await page.keyboard.press('Escape');
+    await page.locator('.taskpro-table__row').nth(2).click({ button: 'right', position: { x: 300, y: 10 } });
+    await page.locator('.taskpro-menu__item', { hasText: 'Move to note' }).click();
+    await page.waitForTimeout(250);
+    await scan(page, 'note picker');
     await page.close();
   }
   {

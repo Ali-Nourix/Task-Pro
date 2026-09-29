@@ -123,6 +123,25 @@ export class TaskTimerService {
     this.render();
   }
 
+  /**
+   * Carries the timers of tasks that moved to another note, so a running one
+   * keeps counting. `ids` maps each block ID the moved tasks had to the one
+   * they have now.
+   */
+  async move(from: string, to: string, ids: ReadonlyMap<string, string>): Promise<void> {
+    let changed = false;
+    const entries = (this.host.getEntries() ?? []).map((entry) => {
+      const blockId = entry.filePath === from ? ids.get(entry.blockId) : undefined;
+      if (blockId === undefined) return entry;
+      changed = true;
+      return { ...entry, filePath: to, blockId };
+    });
+    if (!changed) return;
+    this.host.setEntries(entries);
+    this.rebuildCache();
+    await this.host.save();
+  }
+
   // ============================================================== commands
 
   async start(filePath: string, blockId: string, timer: TaskTimer): Promise<void> {

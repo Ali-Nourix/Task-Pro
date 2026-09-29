@@ -253,6 +253,123 @@ eq(await host.deleteTask(figma()[0]), true, 'a task is deleted');
 eq(note('Projects/Figma.md'), ['- [ ] Figma @repeat(1d)', '- [ ] Next @repeat(2w) @due(2026-10-01)'], 'with its subtasks and the note under them');
 eq(notices.slice(before), ['Deleted “\u2068Figma\u2069” and its 2 subtasks'], 'and a notice says what went');
 
+// ── moving a task to another note ──────────────────────────────────────────
+await app.vault.createFolder('Move');
+await app.vault.create(
+  'Move/From.md',
+  [
+    '# Plan',
+    '- [ ] Ship it @priority(high) ^ship',
+    '\t- [ ] Write the notes ^notes',
+    '\t\t- context under the subtask',
+    '\t- [ ] Tag the release @waiting([[#^local]])',
+    '- [ ] Announce @waiting([[Move/From#^ship]], [[#^local]])',
+    '- [ ] Local one ^local',
+    '- [ ] Party',
+  ].join('\n')
+);
+// A note that already uses the ID `notes`, one that waits on both moving tasks, and a source for the linked copy.
+await app.vault.create('Move/To.md', '- [ ] Existing ^notes\n');
+await app.vault.create('Move/Other.md', '- [ ] Watcher @waiting([[From#^ship]], [[From#^notes]])');
+await app.vault.create('Move/Src.md', '- [ ] Party ^srcp');
+await app.vault.create('Move/Boom.md', 'nothing yet\n');
+plugin.settings.taskMappings.push({
+  linked: true,
+  importedFilePath: 'Move/From.md',
+  importedLineContent: '- [ ] Party',
+  sourceFilePath: 'Move/Src.md',
+  sourceLineContent: '- [ ] Party ^srcp',
+  sourceBlockId: 'srcp',
+  lastSynced: 0,
+});
+await plugin.saveTaskProgress('Move/From.md', 'ship', { enabled: true, currentSteps: 1, totalSteps: 4 });
+plugin.settings.taskTimers.push({
+  filePath: 'Move/From.md',
+  blockId: 'ship',
+  timer: { enabled: true, durationSeconds: 1500, elapsedSeconds: 300, runningSince: 0 },
+});
+plugin.timerService.rebuildCache();
+await wait(200);
+const inNote = (path, text) => plugin.taskStore.inFile(path).find((t) => t.text === text);
+
+eq(host.notes().map((n) => n.path).filter((p) => p.startsWith('Move/')).sort(), ['Move/Boom.md', 'Move/From.md', 'Move/Other.md', 'Move/Src.md', 'Move/To.md'], 'the host lists every note to move to');
+
+// Not to itself, not to a note that is not there.
+eq(await host.moveTask(inNote('Move/From.md', 'Party'), 'Move/From.md'), false, 'a task does not move to the note it is in');
+eq(await host.moveTask(inNote('Move/From.md', 'Party'), 'Move/Missing.md'), false, 'nor to a note that does not exist');
+
+// A subtask moves out of its parent, into a note that already uses its block ID.
+const beforeFrom = note('Move/From.md').slice();
+eq(await host.moveTask(inNote('Move/From.md', 'Write the notes'), 'Move/To.md'), true, 'a subtask moves');
+eq(note('Move/From.md'), beforeFrom.filter((_, i) => i !== 2 && i !== 3), 'it and the note under it leave their note');
+const landedLines = note('Move/To.md');
+const freshId = /\^(tp-[0-9a-z]+)$/.exec(landedLines[landedLines.length - 3] ?? '')?.[1];
+eq(landedLines[0], '- [ ] Existing ^notes', 'the other note keeps what it had');
+eq(
+  landedLines.slice(1).map((l) => l.replace(/\^tp-[0-9a-z]+$/, '^NEW')),
+  ['- [ ] Write the notes ^NEW', '\t- context under the subtask', ''],
+  'at the end, at the left edge, its note still nested under it'
+);
+eq(!!freshId && freshId !== 'notes', true, 'the block ID the other note used is swapped for a new one');
+await wait(200);
+eq(plugin.taskStore.all().filter((t) => t.blockId === 'notes').length, 1, 'no two blocks share an ID');
+eq(note('Move/Other.md')[0], `- [ ] Watcher @waiting([[From#^ship]], [[Move/To#^${freshId}]])`, 'a task elsewhere that waited on it follows it');
+
+// A parent moves with its remaining subtask; what is kept about it follows.
+const ship = inNote('Move/From.md', 'Ship it');
+eq(await host.moveTask(ship, 'Move/To.md'), true, 'a parent moves');
+eq(note('Move/From.md').some((l) => l.includes('Tag the release')), false, 'with its subtask');
+const shipped = note('Move/To.md');
+eq(
+  shipped.slice(-3),
+  ['- [ ] Ship it @priority(high) ^ship', '\t- [ ] Tag the release @waiting([[Move/From#^local]])', ''],
+  'nested as it was; a subtask that waited on a task "here" now names the note it left'
+);
+eq(note('Move/From.md')[1], '- [ ] Announce @waiting([[Move/To#^ship]], [[#^local]])', 'a task left behind follows what it waited on, and still means its own note by "here"');
+eq(note('Move/Other.md')[0], `- [ ] Watcher @waiting([[Move/To#^ship]], [[Move/To#^${freshId}]])`, 'so does one in another note');
+eq([plugin.getTaskProgress('Move/From.md', 'ship'), plugin.getTaskProgress('Move/To.md', 'ship')?.currentSteps], [undefined, 1], 'a progress bar goes with its task');
+eq(plugin.timerService.get('Move/From.md', 'ship') === undefined && plugin.timerService.get('Move/To.md', 'ship')?.elapsedSeconds === 300, true, 'and so does a timer');
+eq(app.data.taskProgress.map((e) => [e.filePath, e.blockId]), [['Move/To.md', 'ship']], 'the saved entry is re-keyed, not duplicated');
+
+// A copy imported from a source keeps syncing from its new note.
+await wait(200);
+eq(await host.moveTask(inNote('Move/From.md', 'Party'), 'Move/To.md'), true, 'a linked copy moves');
+await wait(200);
+const party = inNote('Move/To.md', 'Party');
+await host.setStatus(party, '[x]');
+eq(note('Move/Src.md')[0], '- [x] Party ^srcp', 'and its status still reaches the source');
+// Its source can move too, and the copy still reaches it.
+await wait(200);
+eq(await host.moveTask(inNote('Move/Src.md', 'Party'), 'Move/Boom.md'), true, 'a source moves');
+await wait(200);
+await host.setStatus(inNote('Move/To.md', 'Party'), '[/]');
+eq(note('Move/Boom.md').includes('- [/] Party ^srcp'), true, 'and the copy syncs to it there');
+
+// A block the other note cannot take goes back exactly where it was.
+await wait(200);
+const stay = note('Move/From.md').slice();
+const realProcess = app.vault.process.bind(app.vault);
+const realError = console.error;
+console.error = () => {};
+app.vault.process = async (file, fn) => {
+  if (file.path === 'Move/Boom.md') throw new Error('disk full');
+  return realProcess(file, fn);
+};
+eq(await host.moveTask(inNote('Move/From.md', 'Local one'), 'Move/Boom.md'), false, 'a failed write is reported');
+app.vault.process = realProcess;
+console.error = realError;
+eq(note('Move/From.md'), stay, 'and the task is back in its note, untouched');
+
+// Copy link: a task without a block ID is given one.
+await wait(200);
+const link = await host.blockLink(inNote('Move/From.md', 'Local one'));
+eq(link, '[[Move/From#^local]]', 'a task with an ID links to it');
+const bare = inNote('Move/To.md', 'Existing');
+const bareLink = await host.blockLink(inNote('Move/To.md', 'Party'));
+eq(/^\[\[Move\/To#\^[a-zA-Z0-9-]+\]\]$/.test(bareLink), true, 'a task without one gets one written into its line');
+eq(note('Move/To.md').find((l) => l.includes('Party')).endsWith(` ^${bareLink.replace(/^.*#\^/, '').replace(']]', '')}`), true, 'the line carries the ID the link names');
+eq(bare.blockId, 'notes', 'the others are left alone');
+
 // ── floating board ─────────────────────────────────────────────────────────
 const floatCommand = app.commands.find((c) => c.id === 'toggle-floating-task-board');
 eq(floatCommand?.hotkeys, [{ modifiers: ['Mod', 'Shift'], key: 'b' }], 'the float has a default shortcut');

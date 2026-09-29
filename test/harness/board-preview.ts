@@ -33,7 +33,8 @@ import { createScheduleChip } from '../../src/ui/chips';
 import { TaskLink, extractSchedule, setRemind, setSchedule, setWaiting } from '../../src/task-metadata';
 import { RelationIndex, newBlockId, subtaskCounts } from '../../src/board/task-relations';
 import { TaskTag } from '../../src/tags';
-import { removeBlock } from '../../src/task-lines';
+import { blockEnd, removeBlock } from '../../src/task-lines';
+import { dedentBlock } from '../../src/board/task-move';
 import { openTagPicker } from '../../src/ui/tag-picker';
 import { renderTagManager } from '../../src/ui/tag-manager';
 import {
@@ -285,6 +286,7 @@ const dayNoteTarget = (day: string, system: CalendarSystem) => {
 };
 
 const noop = async () => undefined;
+const EMPTY_NOTES = ['Inbox.md', 'Projects/Someday.md'];
 const host = {
   app: {},
   store,
@@ -318,7 +320,10 @@ const host = {
   noteExists: () => true,
   chooseNote: () => undefined,
   manageTags: () => undefined,
-  notify: (message: string) => console.log(message),
+  notify: (message: string) => {
+    ((window as unknown as { __notices?: string[] }).__notices ??= []).push(message);
+    console.log(message);
+  },
   setSchedule: (task: BoardTask, schedule: TaskSchedule | null) => edit(task, (line) => setSchedule(line, schedule)),
   dailyNotesFor: (day: string) => dailyNoteCandidates(day, CALENDAR, 'gregorian').filter((path) => path in NOTES),
   dayNoteTarget,
@@ -371,6 +376,24 @@ const host = {
   deleteTask: async (task: BoardTask) => {
     const { lines } = removeBlock(NOTES[task.filePath].split('\n'), task.lineNumber);
     NOTES[task.filePath] = lines.join('\n');
+    changed();
+    return true;
+  },
+  blockLink: async (task: BoardTask) => {
+    const id = task.blockId ?? 'tp-link';
+    if (!task.blockId) await edit(task, (line) => `${line.trimEnd()} ^${id}`);
+    return `[[${task.filePath.replace(/\.md$/, '')}#^${id}]]`;
+  },
+  // Two notes with no tasks in them yet, to move a task to.
+  notes: () =>
+    [...Object.keys(NOTES), ...EMPTY_NOTES].map((path) => ({ path, name: path.split('/').pop()!.replace(/\.md$/, '') })),
+  moveTask: async (task: BoardTask, targetPath: string) => {
+    if (targetPath === task.filePath || !(targetPath in NOTES || EMPTY_NOTES.includes(targetPath))) return false;
+    const lines = NOTES[task.filePath].split('\n');
+    const block = lines.slice(task.lineNumber, blockEnd(lines, task.lineNumber) + 1);
+    NOTES[task.filePath] = removeBlock(lines, task.lineNumber).lines.join('\n');
+    const there = NOTES[targetPath] ?? '';
+    NOTES[targetPath] = `${there}${there.trim() ? '\n' : ''}${dedentBlock(block).join('\n')}`;
     changed();
     return true;
   },

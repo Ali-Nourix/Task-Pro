@@ -304,6 +304,49 @@ try {
   eq(page.errors, [], 'no page errors with RTL columns');
   await page.close();
 
+  // ── Copy a link, move to another note ────────────────────────────────────
+  page = await open('?scope=vault&group=none', 1700);
+  await page.evaluate(() => {
+    window.__clip = '';
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText: async (text) => (window.__clip = text) }, configurable: true });
+  });
+  const bare = 'Accessibility pass';
+  await row(page, bare).click({ button: 'right', position: { x: 300, y: 10 } });
+  await page.locator('.taskpro-menu__item', { hasText: 'Copy link' }).click();
+  await page.waitForTimeout(80);
+  eq(await page.evaluate(() => window.__clip), '[[Projects/Website redesign#^tp-link]]', 'Copy link puts a block link on the clipboard');
+  ok((await note(page, 'Projects/Website redesign.md')).split('\n').some((line) => line.startsWith('- [ ] Accessibility pass') && line.endsWith(' ^tp-link')), 'and the task is given the ID it names');
+  eq((await page.evaluate(() => window.__notices)).at(-1), 'Link copied', 'a notice says so');
+
+  const total = (await titles(page)).length;
+  const family = 'Design the new home page';
+  await row(page, family).click({ button: 'right', position: { x: 300, y: 10 } });
+  await page.locator('.taskpro-menu__item', { hasText: 'Move to note' }).click();
+  eq(await page.locator('.taskpro-menu__header').textContent(), 'Move to note', 'the picker is titled');
+  eq(await page.locator('.taskpro-menu__search').getAttribute('placeholder'), 'Find a note…', 'with a search field');
+  const noteRows = () => page.$$eval('.taskpro-menu__item', (els) => els.map((el) => [el.querySelector('.taskpro-menu__label').textContent, el.querySelector('.taskpro-menu__hint')?.textContent ?? '']));
+  eq(await noteRows(), [['Inbox', ''], ['Someday', 'Projects'], ['2026-W39', 'Planner'], ['Home', 'Life']], 'the inbox first, then notes beside this one, then the others that hold tasks; not the note it is in');
+  await page.locator('.taskpro-menu__search').fill('life');
+  eq(await noteRows(), [['Home', 'Life']], 'typing finds a note by its folder');
+  await page.locator('.taskpro-menu__search').fill('som');
+  eq(await noteRows(), [['Someday', 'Projects']], 'or by its name, a note with no tasks included');
+  await page.locator('.taskpro-menu__item', { hasText: 'Someday' }).click();
+  await page.waitForTimeout(120);
+  eq((await note(page, 'Projects/Someday.md')).split('\n').map((l) => l.replace(/ @\S+/g, '')), ['- [/] Design the new home page ^home', '    - [ ] Pick the display typeface', '    - [x] Collect reference sites'], 'the task and its subtasks land in the other note');
+  ok(!(await note(page, 'Projects/Website redesign.md')).includes(family), 'and leave the one they were in');
+  eq((await titles(page)).length, total, 'the board lists every task still');
+  eq((await page.evaluate(() => window.__notices)).at(-1).replace(/[⁦-⁩]/g, ''), 'Moved “Design the new home page” to Someday', 'a notice names where it went');
+  eq(page.errors, [], 'no page errors moving a task');
+  await page.close();
+
+  page = await open('?scope=vault&group=none&lang=fa', 1700);
+  await page.locator('.taskpro-table__row').first().click({ button: 'right', position: { x: 300, y: 10 } });
+  await page.locator('.taskpro-menu__item', { hasText: 'انتقال به یادداشت' }).click();
+  eq([await page.locator('.taskpro-menu__header').textContent(), await page.locator('.taskpro-menu__search').getAttribute('placeholder')], ['انتقال به یادداشت', 'جستجوی یادداشت…'], 'the picker speaks Persian');
+  eq(await page.locator('.taskpro-menu').getAttribute('dir'), 'rtl', 'and reads right to left');
+  await page.keyboard.press('Escape');
+  await page.close();
+
   // ── Waiting on another task, and a parent's subtasks ─────────────────────
   page = await open('?scope=vault&group=none', 1700);
   const waitingCell = () => row(page, 'Send the quote to Acme').locator('.taskpro-table__waiting');
