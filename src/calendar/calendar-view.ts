@@ -1617,7 +1617,7 @@ export class TaskCalendar {
       // than opening the picker at every click on the grid. A click on an
       // item is its own click handler's.
       if (drag.kind === 'create' && drag.column && drag.day && drag.from !== undefined) {
-        this.showQuickAdd(drag.column, drag.day, drag.from, event.clientX);
+        this.showQuickAdd(drag.column, drag.day, drag.from);
       }
       return;
     }
@@ -1768,31 +1768,30 @@ export class TaskCalendar {
   }
 
   /**
-   * A boxed + beside the pointer, on the slot that was clicked, with the slot
-   * faintly marked behind it. Clicking the + opens the picker there; clicking
-   * anywhere else, scrolling or Escape puts it away.
+   * The block a task there would be, drawn faintly in the slot that was
+   * clicked: the same place and shape as the block, with a + and the time at
+   * its start. It is one button, so the pointer is already on it; clicking it
+   * opens the picker there. Clicking anywhere else, scrolling or Escape puts
+   * it away.
    */
-  private showQuickAdd(col: HTMLElement, day: DayKey, start: number, clientX: number): void {
+  private showQuickAdd(col: HTMLElement, day: DayKey, start: number): void {
     this.hideQuickAdd();
     this.closePopover();
     const end = Math.min(DAY_MINUTES, start + this.defaultDuration);
-    const el = col.createDiv({ cls: 'taskpro-cal__quick' });
+    const el = col.createEl('button', { cls: 'taskpro-cal__quick' });
+    el.type = 'button';
     el.style.setProperty('--start', String(start));
     el.style.setProperty('--duration', String(this.slot));
-    const button = el.createEl('button', { cls: 'taskpro-cal__quick-add' });
-    button.type = 'button';
     const time = formatClock(start, this.cal.timeFormat, this.language);
-    button.setAttribute('aria-label', this.labels.newTaskAt(time));
-    button.title = this.labels.newTaskAt(time);
-    this.icon(button, 'plus');
-    // Beside the pointer, inside the column.
-    const box = col.getBoundingClientRect();
-    const size = 22;
-    const x = clamp(clientX - box.left + (this.rtl ? -size - 6 : 6), 2, box.width - size - 2);
-    button.style.left = `${Math.round(x)}px`;
+    el.setAttribute('aria-label', this.labels.newTaskAt(time));
+    el.title = this.labels.newTaskAt(time);
+    this.icon(el, 'plus');
+    // Times are read left to right whatever the board's direction.
+    el.createSpan({ cls: 'taskpro-cal__quick-time', text: time, attr: { dir: 'ltr' } });
+    el.createSpan({ cls: 'taskpro-cal__quick-label', text: this.labels.newTask });
 
-    button.addEventListener('pointerdown', (event) => event.stopPropagation());
-    button.addEventListener('click', (event) => {
+    el.addEventListener('pointerdown', (event) => event.stopPropagation());
+    el.addEventListener('click', (event) => {
       event.stopPropagation();
       this.hideQuickAdd();
       if (!col.isConnected) return;

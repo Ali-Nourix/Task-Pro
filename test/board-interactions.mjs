@@ -622,6 +622,18 @@ try {
   await page.keyboard.press('Escape');
   await page.close();
 
+  // The floating board is an Obsidian modal: a press inside it, away from the menu, puts the menu away as it does in a tab.
+  page = await open('?scope=vault&group=none&float=1', 1700);
+  await row(page, 'Groceries').click({ button: 'right', position: { x: 150, y: 10 } });
+  eq(await page.locator('.taskpro-menu').count(), 1, 'a right click opens the menu in the floating board');
+  await page.waitForTimeout(60);
+  await row(page, 'Chapter 4 of Designing Data-Intensive Applications').locator('td.taskpro-table__more').click({ position: { x: 2, y: 2 } });
+  eq(await page.locator('.taskpro-menu').count(), 0, 'and a left click elsewhere puts it away');
+  await row(page, 'Groceries').click({ button: 'right', position: { x: 150, y: 10 } });
+  await page.locator('.taskpro-board__body').click({ position: { x: 5, y: 5 } });
+  eq(await page.locator('.taskpro-menu').count(), 0, 'as does a click on the empty part of the board');
+  await page.close();
+
   // ── Selecting several tasks and changing them together ────────────────────
   page = await open('?scope=vault&group=none', 1700);
   const bar = () => page.locator('.taskpro-selection');

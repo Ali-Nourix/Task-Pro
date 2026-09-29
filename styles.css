@@ -4166,78 +4166,100 @@ button.taskpro-chip:focus-visible {
   padding-block: 0;
 }
 
-/* A click on an empty slot: a hairline at the slot's start, and on it a
-   square + beside the pointer, centred on the line both ways. */
-.taskpro-board .taskpro-cal__quick {
+/* A click on an empty slot: the block a task there would be, drawn faintly in
+   its place and shape, dashed because it is not a task yet, with a + and the
+   time at its start. All of it is the button, so the pointer is already on it. */
+.taskpro-board button.taskpro-cal__quick {
   position: absolute;
   z-index: 4;
-  inset-inline: 0;
-  top: calc(var(--start) * var(--taskpro-cal-hour) / 60);
-  height: 0;
-  border-top: 1.5px solid color-mix(in srgb, var(--interactive-accent) 70%, transparent);
-  pointer-events: none;
-}
-.taskpro-board .taskpro-cal__quick button.taskpro-cal__quick-add {
-  position: absolute;
-  /* The line is 1.5px: the box's middle sits on the line's middle. */
-  top: calc(-11px - 0.75px);
+  top: calc(var(--start) * var(--taskpro-cal-hour) / 60 + 1px);
+  inset-inline: 2px 6px;
   display: flex;
-  flex: none;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
+  gap: var(--taskpro-space-3);
   box-sizing: border-box;
-  width: 22px;
-  min-width: 22px;
-  max-width: 22px;
-  height: 22px;
-  min-height: 22px;
-  max-height: 22px;
+  width: auto;
+  min-width: 0;
+  max-width: none;
+  height: max(20px, calc(var(--duration) * var(--taskpro-cal-hour) / 60 - 2px));
+  min-height: 0;
+  max-height: none;
   margin: 0;
-  padding: 0;
-  border: 1.5px solid var(--interactive-accent);
+  padding: 0 var(--taskpro-space-3) 0 7px;
+  overflow: hidden;
+  border: 1px dashed color-mix(in srgb, var(--interactive-accent) 55%, transparent);
+  border-inline-start: 3px solid var(--interactive-accent);
   border-radius: 6px;
-  background: var(--taskpro-board-surface);
-  box-shadow: var(--taskpro-shadow-2);
-  color: var(--interactive-accent);
-  line-height: 0;
+  background: color-mix(in srgb, var(--interactive-accent) 9%, var(--taskpro-board-surface));
+  box-shadow: none;
+  color: color-mix(in srgb, var(--interactive-accent) 45%, var(--text-normal));
+  font-family: inherit;
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-normal);
+  line-height: 1;
+  text-align: start;
   cursor: pointer;
-  pointer-events: auto;
-  transition: background-color var(--taskpro-base) var(--taskpro-ease), color var(--taskpro-base) var(--taskpro-ease), transform var(--taskpro-base) var(--taskpro-ease);
+  container-type: inline-size;
+  transform-origin: top;
+  transition: background-color var(--taskpro-fast) var(--taskpro-ease), border-color var(--taskpro-fast) var(--taskpro-ease);
   animation: taskpro-quick-in var(--taskpro-fast) var(--taskpro-ease);
 }
 @keyframes taskpro-quick-in {
   from {
     opacity: 0;
-    transform: scale(0.85);
+    transform: scaleY(0.6);
   }
 }
-.taskpro-board .taskpro-cal__quick button.taskpro-cal__quick-add:hover {
-  background: var(--interactive-accent);
-  color: var(--text-on-accent);
+.taskpro-board button.taskpro-cal__quick:hover {
+  border-color: color-mix(in srgb, var(--interactive-accent) 85%, transparent);
+  background: color-mix(in srgb, var(--interactive-accent) 18%, var(--taskpro-board-surface));
+  box-shadow: none;
 }
-.taskpro-board .taskpro-cal__quick button.taskpro-cal__quick-add:active {
-  transform: scale(0.92);
+.taskpro-board button.taskpro-cal__quick:active {
+  background: color-mix(in srgb, var(--interactive-accent) 24%, var(--taskpro-board-surface));
 }
-.taskpro-board .taskpro-cal__quick button.taskpro-cal__quick-add:focus {
+.taskpro-board button.taskpro-cal__quick:focus {
   outline: none;
 }
-.taskpro-board .taskpro-cal__quick button.taskpro-cal__quick-add:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--interactive-accent) 45%, transparent);
-  outline-offset: 2px;
+.taskpro-board button.taskpro-cal__quick:focus-visible {
+  box-shadow: var(--taskpro-focus-ring);
 }
-.taskpro-board .taskpro-cal__quick-add .taskpro-cal__icon {
+.taskpro-board .taskpro-cal__quick .taskpro-cal__icon {
   display: flex;
+  flex: none;
   align-items: center;
   justify-content: center;
-  width: 14px;
-  height: 14px;
+  width: 12px;
+  height: 12px;
 }
-.taskpro-board .taskpro-cal__quick-add svg {
+.taskpro-board .taskpro-cal__quick svg {
   display: block;
-  width: 14px;
-  height: 14px;
+  width: 12px;
+  height: 12px;
   margin: 0;
   stroke-width: 2.5px;
+}
+.taskpro-board .taskpro-cal__quick-time {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--font-semibold);
+}
+/* The word gives way when the lane is too narrow for all of it, rather than being cut mid-way. */
+.taskpro-board .taskpro-cal__quick-label {
+  min-width: 0;
+  overflow: hidden;
+  opacity: 0.75;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@container (max-width: 125px) {
+  .taskpro-board .taskpro-cal__quick-label {
+    display: none;
+  }
+}
+.taskpro-board.is-touch button.taskpro-cal__quick {
+  min-height: 36px;
 }
 
 /* In the card, an all-day plan shows no times, and the fields are compact. */
@@ -4719,7 +4741,7 @@ button.taskpro-chip:focus-visible {
 }
 @media (prefers-reduced-motion: reduce) {
   .taskpro-board .taskpro-cal-popover,
-  .taskpro-board .taskpro-cal__quick button.taskpro-cal__quick-add {
+  .taskpro-board button.taskpro-cal__quick {
     animation: none;
   }
 }

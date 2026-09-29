@@ -444,6 +444,8 @@ async function main(): Promise<void> {
   const view = params.get('view') ?? 'board';
 
   if (view === 'board') {
+    // `?float=1` puts the board where the floating window puts it: in an Obsidian modal.
+    if (params.get('float') === '1') root.addClass('modal-container', 'taskpro-board-float');
     root.addClass('workspace-leaf-content');
     const content = root.createDiv({ cls: 'view-content taskpro-board-view' });
     await new TaskBoard(content, host).mount();

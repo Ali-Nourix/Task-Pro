@@ -65,9 +65,11 @@
   place or from a dropdown under it, and an empty one says so.
 - **Tags** in the menu has a submenu listing every tag, ticked when the task
   has it.
-- A click on an empty slot shows a hairline at the slot's start with a square
-  **+** on it, beside the pointer, and the picker opens only from the **+**.
-  Dragging across the grid still opens it at once.
+- A click on an empty slot shows the block a task there would be, faint and
+  dashed, with a **+** and the time at its start, always at the start of the
+  lane and not where the pointer was; the picker opens when that block is
+  clicked. Dragging across the grid still opens it at once. The word beside the
+  time leaves when the lane is too narrow for it.
 - One panel at a time: opening a card closes the menu, and the menu (a right
   click, or a card's **⋯**) closes the card, so neither covers the other.
 - A design pass over the calendar:
@@ -464,6 +466,9 @@ Each animation says what just happened. Only opacity and transform move.
 - Closing a column's or a group's **New** field with `Esc` after adding a task
   raised an error in the console, because taking the field out of the page
   blurred it and asked to close it again.
+- In the floating board a right click's menu stayed open when you clicked
+  elsewhere, because every press in it counted as a press on another window
+  the menu had raised. Only another modal counts now.
 - On a phone, swiping the board within a moment of tapping a column's tab could
   be pulled back to that column. The tab's scroll now lets go once a hand is on
   the board.
