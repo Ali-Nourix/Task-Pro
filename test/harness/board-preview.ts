@@ -4,7 +4,8 @@
  * the DOM comes from the same classes the plugin runs.
  *
  * Query string: ?layout=<table|board|calendar>, ?group=<none|status|tag|priority|deadline|note>,
- * ?cal=<month|week|day|agenda>, ?system=<gregorian|jalali>,
+ * ?cal=<month|week|day|agenda>, ?system=<gregorian|jalali>, ?density=<compact|comfortable|spacious>,
+ * ?wrap=on, ?hideempty=on,
  * ?view=<board|picker|manager|note|palette>, ?lang=fa, plus the harness's ?light and
  * ?theme=<name>.
  */
@@ -13,6 +14,7 @@ import { BoardTask, parseBoardTasks } from '../../src/board/task-store';
 import {
   BoardGroupBy,
   BoardLayout,
+  BoardPreferences,
   CalendarSystem,
   CalendarView,
   DEFAULT_BOARD_PREFERENCES,
@@ -263,6 +265,9 @@ const settings = {
     inboxPath: 'Inbox.md',
     calendarView: (params.get('cal') ?? 'month') as CalendarView,
     calendarSidebar: params.get('sidebar') !== 'off',
+    density: (params.get('density') ?? undefined) as BoardPreferences['density'],
+    wrapTitles: params.get('wrap') === 'on',
+    hideEmptyGroups: params.get('hideempty') === 'on',
   },
   referenceNotePath: 'Inbox.md',
   calendar: CALENDAR,

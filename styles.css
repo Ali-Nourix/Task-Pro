@@ -2494,7 +2494,7 @@ button.taskpro-chip:focus-visible {
 
 .taskpro-board .taskpro-table td {
   overflow: hidden;
-  padding: 5px var(--taskpro-space-4);
+  padding: var(--taskpro-row-pad) var(--taskpro-space-4);
   border-bottom: 1px solid var(--taskpro-board-row-line);
   vertical-align: middle;
 }
@@ -2513,6 +2513,31 @@ button.taskpro-chip:focus-visible {
    through. */
 .taskpro-board {
   --taskpro-check-col: 34px;
+}
+
+/* Density: how much room a table row or a card takes. The board's root carries
+   the choice (Properties › View); nothing else about a row changes with it. */
+.taskpro-board {
+  --taskpro-row-pad: 5px;
+  --taskpro-card-pad: var(--taskpro-space-5);
+  --taskpro-card-gap: var(--taskpro-space-4);
+  --taskpro-stack-gap: var(--taskpro-space-3);
+}
+.taskpro-board[data-density="compact"] {
+  --taskpro-row-pad: 2px;
+  --taskpro-card-pad: var(--taskpro-space-3);
+  --taskpro-card-gap: var(--taskpro-space-2);
+  --taskpro-stack-gap: var(--taskpro-space-2);
+}
+.taskpro-board[data-density="spacious"] {
+  --taskpro-row-pad: 9px;
+  --taskpro-card-pad: var(--taskpro-space-6);
+  --taskpro-card-gap: var(--taskpro-space-5);
+  --taskpro-stack-gap: var(--taskpro-space-4);
+}
+/* A finger needs its 44px whatever the setting. */
+.taskpro-board.is-touch {
+  --taskpro-row-pad: 5px;
 }
 .taskpro-board .taskpro-table td.taskpro-table__check,
 .taskpro-board .taskpro-table th.taskpro-table__check,
@@ -2778,6 +2803,21 @@ button.taskpro-chip:focus-visible {
 }
 .taskpro-board .taskpro-board__title:hover {
   background: var(--background-modifier-hover);
+}
+/* Wrap titles (Properties › View): a title in the table runs over as many
+   lines as it needs, and the row grows with it. Cards wrap already. */
+.taskpro-board.is-wrapping .taskpro-table .taskpro-board__title {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.taskpro-board.is-wrapping .taskpro-table .taskpro-board__tags {
+  max-height: none;
+}
+.taskpro-board.is-wrapping .taskpro-card .taskpro-board__title {
+  display: block;
+  -webkit-line-clamp: unset;
 }
 .taskpro-board .taskpro-board__title:focus-visible {
   outline: 2px solid var(--interactive-accent);
@@ -3207,15 +3247,15 @@ button.taskpro-chip:focus-visible {
 .taskpro-board .taskpro-kanban__cards {
   display: flex;
   flex-direction: column;
-  gap: var(--taskpro-space-3);
+  gap: var(--taskpro-stack-gap);
   min-height: 6px;
 }
 
 .taskpro-board .taskpro-card {
   display: flex;
   flex-direction: column;
-  gap: var(--taskpro-space-4);
-  padding: var(--taskpro-space-5) var(--taskpro-space-6);
+  gap: var(--taskpro-card-gap);
+  padding: var(--taskpro-card-pad) var(--taskpro-space-6);
   border: 0;
   border-radius: var(--taskpro-radius-card);
   background: var(--background-primary);

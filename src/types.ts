@@ -391,6 +391,8 @@ export type BoardGroupBy = 'none' | 'status' | 'tag' | 'priority' | 'deadline' |
 
 /** Where a date falls against today: what the board groups and filters deadlines and plans by. */
 export type DeadlineBucket = 'overdue' | 'today' | 'week' | 'later' | 'past' | 'none';
+/** How much room the table's rows and the board's cards take. */
+export type BoardDensity = 'compact' | 'comfortable' | 'spacious';
 export type BoardSortKey = 'document' | 'title' | 'status' | 'priority' | 'deadline' | 'plan' | 'progress' | 'note';
 export type BoardSortDir = 'asc' | 'desc';
 /** A priority filter entry: a level, or tasks that have none. */
@@ -442,6 +444,12 @@ export interface BoardPreferences {
   timelineUndated?: boolean;
   /** On a phone, the table as a list of rows (the default) or as the full table. */
   compactTable?: 'list' | 'table';
+  /** Rows and cards tight, as drawn, or roomy. */
+  density?: BoardDensity;
+  /** Titles run over as many lines as they need, rather than ending in an ellipsis. */
+  wrapTitles?: boolean;
+  /** The board leaves out the columns that have no task in them. */
+  hideEmptyGroups?: boolean;
 }
 
 export const DEFAULT_BOARD_PREFERENCES: BoardPreferences = {

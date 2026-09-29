@@ -9,6 +9,7 @@
 
 import { App, Menu, Platform, setIcon } from 'obsidian';
 import {
+  BoardDensity,
   BoardGroupBy,
   BoardPreferences,
   BoardPriorityFilter,
@@ -1596,6 +1597,9 @@ export class TaskBoard {
     if (!this.bodyEl) return;
     this.renderQueued = false;
     const labels = this.labels;
+    // The view options ride on the root, where the styles read them.
+    this.el.dataset.density = this.prefs.density ?? 'comfortable';
+    this.el.toggleClass('is-wrapping', !!this.prefs.wrapTitles);
     const scrollTop = this.bodyEl.scrollTop;
     const scrollLeft = this.bodyEl.scrollLeft;
     // Read before emptying: a removed element can no longer be the focused one.
@@ -2163,7 +2167,49 @@ export class TaskBoard {
           },
         ],
       },
+      { title: labels.viewSection, entries: this.viewOptions(key) },
     ];
+  }
+
+  /** How the table or the board looks, rather than what it shows: room, wrapping, empty columns. */
+  private viewOptions(key: 'tableColumns' | 'cardProperties'): MenuEntry[] {
+    const labels = this.labels;
+    const density = this.prefs.density ?? 'comfortable';
+    const entries: MenuEntry[] = [
+      {
+        label: labels.density,
+        icon: 'rows-3',
+        hint: labels.densities[density],
+        keywords: 'compact comfortable spacious row height size',
+        submenu: () => [
+          {
+            entries: (['compact', 'comfortable', 'spacious'] as BoardDensity[]).map((value) => ({
+              label: labels.densities[value],
+              checked: value === (this.prefs.density ?? 'comfortable'),
+              onSelect: () => void this.updatePrefs({ density: value }, false),
+            })),
+          },
+        ],
+      },
+      {
+        label: labels.wrapTitles,
+        icon: 'wrap-text',
+        toggle: !!this.prefs.wrapTitles,
+        keepOpen: true,
+        keywords: 'long lines multiline ellipsis',
+        onSelect: () => void this.updatePrefs({ wrapTitles: !this.prefs.wrapTitles }, false),
+      },
+    ];
+    if (key === 'cardProperties') {
+      entries.push({
+        label: labels.hideEmptyColumns,
+        icon: 'eye-off',
+        toggle: !!this.prefs.hideEmptyGroups,
+        keepOpen: true,
+        onSelect: () => void this.updatePrefs({ hideEmptyGroups: !this.prefs.hideEmptyGroups }, false),
+      });
+    }
+    return entries;
   }
 
   /** The properties menu, under the table's + or the toolbar's Properties button. */
@@ -2895,7 +2941,8 @@ export class TaskBoard {
       this.prefs.groupOrder?.[groupBy]
     );
     const hidden = new Set(this.prefs.hiddenGroups ?? []);
-    const groups = all.filter((group) => !hidden.has(group.id));
+    // Columns nobody hid but that have nothing in them are left out on request; they are not "hidden".
+    const groups = all.filter((group) => !hidden.has(group.id) && !(this.prefs.hideEmptyGroups && !group.tasks.length));
 
     const tabs = this.compact ? this.bodyEl.createDiv({ cls: 'taskpro-kanban-tabs' }) : null;
     const board = this.bodyEl.createDiv({ cls: 'taskpro-kanban' });
