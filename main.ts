@@ -68,6 +68,7 @@ import { TaskBoardHost } from './src/board/task-board';
 import { TaskBoardView, VIEW_TYPE_TASK_BOARD } from './src/board/task-board-view';
 import { TaskBoardModal } from './src/board/task-board-modal';
 import { getBoardLabels } from './src/board/board-localization';
+import { sanitizeViews } from './src/board/board-views';
 import { DailyNoteService, appendTaskLine } from './src/calendar/daily-notes';
 import { todayKey } from './src/calendar/calendar-dates';
 import { getCalendarLabels } from './src/calendar/calendar-localization';
@@ -783,6 +784,8 @@ export default class TaskProPlugin extends Plugin {
     this.settings.board = Object.assign({}, DEFAULT_BOARD_PREFERENCES, saved?.board);
     this.settings.calendar = Object.assign({}, DEFAULT_CALENDAR_SETTINGS, saved?.calendar);
     this.settings.tags = sanitizeTags(saved?.tags);
+    this.settings.board.views = sanitizeViews(saved?.board?.views);
+    if (!this.settings.board.views.some((view) => view.id === this.settings.board.activeView)) this.settings.board.activeView = undefined;
 
     // Active-note reminders are enabled by default. Apply this once to existing
     // installs as well; after migration, the user's own toggle is respected.

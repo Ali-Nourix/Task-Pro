@@ -14,6 +14,8 @@ const build = await esbuild.build({
       export * as columns from "../src/board/board-columns";
       export { moveCursor, moveFor } from "../src/board/board-keys";
       export { nestTasks, hiddenByFold, foldKey } from "../src/board/board-nesting";
+      export { snapshotView, viewPatch, sameView, newViewId, uniqueViewName, sanitizeViews, VIEW_KEYS } from "../src/board/board-views";
+      export { DEFAULT_BOARD_PREFERENCES } from "../src/types";
     `,
     resolveDir: new URL('.', import.meta.url).pathname,
     loader: 'ts',
@@ -39,7 +41,7 @@ const build = await esbuild.build({
 const mod = await import(
   'data:text/javascript;base64,' + Buffer.from(build.outputFiles[0].text).toString('base64')
 );
-const { parseBoardTasks, filterTasks, sortTasks, groupTasks, deadlineBucket, summarize, daysUntil, displayTitle, columns, moveCursor, moveFor, nestTasks, hiddenByFold, foldKey } = mod;
+const { parseBoardTasks, filterTasks, sortTasks, groupTasks, deadlineBucket, summarize, daysUntil, displayTitle, columns, moveCursor, moveFor, nestTasks, hiddenByFold, foldKey, snapshotView, viewPatch, sameView, newViewId, uniqueViewName, sanitizeViews, VIEW_KEYS, DEFAULT_BOARD_PREFERENCES } = mod;
 
 let checked = 0;
 const eq = (actual, expected, label) => {
@@ -247,6 +249,51 @@ eq(displayTitle('See [the spec](https://example.com) **now**'), 'See the spec no
   eq(hidden(foldedSet('Design')), [], 'a fold on a task with no subtasks hides nothing');
   eq(foldKey(all[0]), 'Projects/Launch.md\nLaunch', 'a fold is remembered by note and title');
   eq(foldKey({ filePath: 'A.md', text: 'x', blockId: 'id1' }), 'A.md\nid1', 'or by block ID when it has one');
+}
+
+// ── saved views ───────────────────────────────────────────────────────────
+{
+  const defaults = DEFAULT_BOARD_PREFERENCES;
+  const board = { ...defaults, layout: 'board', groupBy: 'tag', statuses: ['[/]'], tags: ['work'], density: 'compact', collapsedGroups: ['tag:work'], foldedTasks: ['A.md\nx'], inboxPath: 'Inbox.md' };
+  const snap = snapshotView(board);
+  eq([snap.layout, snap.groupBy, snap.statuses, snap.tags, snap.density], ['board', 'tag', ['[/]'], ['work'], 'compact'], 'a view keeps how the board is set up');
+  eq(['collapsedGroups', 'foldedTasks', 'inboxPath', 'views', 'activeView'].filter((key) => key in snap), [], 'and leaves out folds, the inbox and the views themselves');
+  board.statuses.push('[x]');
+  eq(snap.statuses, ['[/]'], 'a copy: later changes do not reach into it');
+
+  const view = { id: 'v1', name: 'Doing', prefs: snap };
+  eq(sameView(board, view, defaults), false, 'a board changed since is no longer the view');
+  board.statuses.pop();
+  eq(sameView(board, view, defaults), true, 'until it is put back');
+  board.collapsedGroups.push('tag:home');
+  eq(sameView(board, view, defaults), true, 'folding a group does not change the view');
+
+  // Applied over a board that is set up differently, it comes out the same on every key.
+  const other = { ...defaults, layout: 'calendar', sortKey: 'deadline', sortDir: 'desc', deadlines: ['overdue'], wrapTitles: true };
+  Object.assign(other, viewPatch(view, defaults));
+  eq(sameView(other, view, defaults), true, 'applying a view over another board gives the view');
+  eq([other.sortKey, other.sortDir, other.deadlines, other.wrapTitles, other.activeView], [defaults.sortKey, defaults.sortDir, defaults.deadlines, defaults.wrapTitles, 'v1'], 'what the view did not hold goes back to the default');
+  eq(other.layout, 'board', 'and what it did hold is set');
+  eq(VIEW_KEYS.every((key) => key in viewPatch(view, defaults)), true, 'every key is set, so none is left over from before');
+
+  eq([newViewId([{ id: 'a' }]) !== 'a', /^v[0-9a-z]+$/.test(newViewId([]))], [true, true], 'an ID no view has');
+  eq(uniqueViewName([], '  This   week '), 'This week', 'a name is tidied');
+  eq(uniqueViewName([{ name: 'Focus' }, { name: 'focus 2' }], 'focus'), 'focus 3', 'and made different from the others');
+  eq(uniqueViewName([], '   '), 'View', 'an empty one is given a word');
+
+  eq(sanitizeViews('nope'), [], 'saved data that is not a list is nothing');
+  eq(
+    sanitizeViews([
+      { id: 'a', name: ' Ok ', prefs: { layout: 'board', inboxPath: 'x.md', bogus: 1 } },
+      { id: 'a', name: 'Dup', prefs: {} },
+      { id: '', name: 'No id' },
+      { id: 'b', name: '  ' },
+      null,
+      { id: 'c', name: 'Bare' },
+    ]),
+    [{ id: 'a', name: 'Ok', prefs: { layout: 'board' } }, { id: 'c', name: 'Bare', prefs: {} }],
+    'a hand-edited file keeps only whole views, with only the keys a view holds'
+  );
 }
 
 console.log(`BOARD_OK (${checked} checks)`);

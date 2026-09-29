@@ -7202,6 +7202,18 @@ body.is-mobile .taskpro-board.taskpro-board button.taskpro-tl__undated-toggle {
   overflow: visible;
 }
 
+/* ── Saved views ──────────────────────────────────────────────────────── */
+/* The Views button says the view in use by name; a dot says the board has been changed since. */
+.taskpro-board .taskpro-board__views.is-modified::after {
+  content: "";
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  margin-inline-start: var(--taskpro-space-1);
+  border-radius: 50%;
+  background: var(--interactive-accent);
+}
+
 /* ── Selecting several ─────────────────────────────────────────────────── */
 /* The square that picks a row or a card: in the margin beside a row, on the
    corner of a card, shown under the pointer and, once something is picked,
