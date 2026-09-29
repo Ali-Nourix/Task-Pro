@@ -97,6 +97,7 @@ import { scheduleDayText } from './schedule-text';
 import { MenuEntry, MenuSection, closeContextMenu, openContextMenu } from '../ui/context-menu';
 import { emptyPanel } from '../ui/sheet';
 import { autoDirection } from '../ui/fields';
+import { contentHeight } from '../ui/space';
 import { holdToDrag, onContextPress } from '../ui/touch';
 import {
   TaskActionOptions,
@@ -826,7 +827,7 @@ export class TaskCalendar {
 
       const gap = 2;
       const row = chips[0].offsetHeight + gap;
-      const room = list.clientHeight;
+      const room = contentHeight(list);
       if (row <= gap || room <= 0) continue;
       const capacity = Math.max(1, Math.floor((room + gap) / row));
       if (chips.length <= capacity) continue;
