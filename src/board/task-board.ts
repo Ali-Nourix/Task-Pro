@@ -47,6 +47,8 @@ import {
   summarize,
 } from './board-query';
 import { BoardLabels, getBoardLabels } from './board-localization';
+import { CursorAt, moveCursor, moveFor } from './board-keys';
+import { openShortcuts } from './board-shortcuts';
 import { BoardTask, TaskStore } from './task-store';
 import { TaskCalendar } from '../calendar/calendar-view';
 import { openCalendarPopover } from '../calendar/calendar-popover';
@@ -341,6 +343,8 @@ export class TaskBoard {
   private expanding: string | null = null;
   /** The last drawing was the loading state, so the tasks coming in are an entrance. */
   private wasLoading = false;
+  /** The task the keyboard is on: its id, and where it is among the columns, for when the id is gone. */
+  private cursor: { id: string; at: CursorAt } | null = null;
 
   constructor(
     container: HTMLElement,
@@ -352,6 +356,7 @@ export class TaskBoard {
     const view = this.el.ownerDocument.defaultView ?? window;
     this.touch = !!Platform.isMobile || !!view.matchMedia?.('(pointer: coarse)').matches;
     this.el.toggleClass('is-touch', this.touch);
+    this.el.addEventListener('keydown', (event) => this.onKeyDown(event));
   }
 
   async mount(): Promise<void> {
@@ -648,6 +653,7 @@ export class TaskBoard {
     const actions = heading.createDiv({ cls: 'taskpro-board__heading-actions' });
     this.iconButton(actions, 'tags', labels.manageTags, () => this.host.manageTags());
     this.iconButton(actions, 'refresh-cw', labels.refresh, () => void this.host.store.reload());
+    if (!this.touch) this.iconButton(actions, 'keyboard', labels.shortcuts, () => openShortcuts(this.language));
     const toggleFloating =
       this.options.onToggleFloating ?? (this.host.openFloating ? () => this.host.openFloating?.() : null);
     if (toggleFloating) {
@@ -707,7 +713,7 @@ export class TaskBoard {
       this.renderQuickAdd(this.addEl);
     }
 
-    this.bodyEl = this.el.createDiv({ cls: 'taskpro-board__body' });
+    this.bodyEl = this.createBody();
   }
 
   private iconButton(parent: HTMLElement, icon: string, label: string, onClick: (e: MouseEvent) => void): HTMLButtonElement {
@@ -930,7 +936,7 @@ export class TaskBoard {
       this.calendarNavEl = null;
     }
 
-    this.bodyEl = this.el.createDiv({ cls: 'taskpro-board__body' });
+    this.bodyEl = this.createBody();
     this.renderFab();
   }
 
@@ -1575,6 +1581,150 @@ export class TaskBoard {
     this.settleBody();
     // The calendar keeps its own card up to date as it draws; in the other layouts it is lent.
     if (!this.isCalendar) this.calendarView?.syncCard();
+    this.restoreCursor();
+  }
+
+  // ── The keyboard ─────────────────────────────────────────────────────────
+
+  /**
+   * The body, which the keyboard moves through: a stop of its own that holds
+   * the cursor. A click on a task puts the cursor there, so the keys carry on
+   * from where the pointer was.
+   */
+  private createBody(): HTMLElement {
+    const body = this.el.createDiv({ cls: 'taskpro-board__body' });
+    body.tabIndex = 0;
+    body.setAttribute('aria-label', this.labels.title);
+    body.addEventListener('pointerdown', (event) => {
+      const item = (event.target as HTMLElement).closest<HTMLElement>('[data-task-id]');
+      if (item) this.placeCursor(item, false);
+    });
+    // Reached with Tab, the body shows where it is: the cursor is on the first task.
+    body.addEventListener('focus', () => {
+      if (!this.cursor && body.matches(':focus-visible')) this.placeCursor(this.navigable()[0]?.[0] ?? null, false);
+    });
+    return body;
+  }
+
+  /** The tasks the cursor can be on, by column: a table or a list is one column, a board has many. */
+  private navigable(): HTMLElement[][] {
+    if (this.isCalendar || this.isTimeline || !this.bodyEl) return [];
+    const columns = Array.from(this.bodyEl.querySelectorAll<HTMLElement>('.taskpro-kanban__column'));
+    if (columns.length) return columns.map((column) => Array.from(column.querySelectorAll<HTMLElement>('.taskpro-card[data-task-id]')));
+    return [Array.from(this.bodyEl.querySelectorAll<HTMLElement>('.taskpro-table__row[data-task-id], .taskpro-list__row[data-task-id]'))];
+  }
+
+  /** Puts the cursor on a task's row or card, or takes it off with `null`. */
+  private placeCursor(el: HTMLElement | null, reveal = true): void {
+    this.bodyEl.querySelectorAll('.has-cursor').forEach((other) => other.removeClass('has-cursor'));
+    if (!el) {
+      this.cursor = null;
+      return;
+    }
+    const columns = this.navigable();
+    for (let column = 0; column < columns.length; column++) {
+      const row = columns[column].indexOf(el);
+      if (row === -1) continue;
+      this.cursor = { id: el.dataset.taskId!, at: { column, row } };
+      el.addClass('has-cursor');
+      if (reveal) this.reveal(el);
+      return;
+    }
+  }
+
+  /**
+   * Scrolls the cursor into view. A table row is wider than the body and would
+   * be slid sideways by the browser's own scrolling, so rows and list items only
+   * move up or down, clear of the sticky header; a card is scrolled to as it is.
+   */
+  private reveal(el: HTMLElement): void {
+    if (el.hasClass('taskpro-card')) {
+      el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      return;
+    }
+    const body = this.bodyEl;
+    const view = body.getBoundingClientRect();
+    const box = el.getBoundingClientRect();
+    const top = view.top + (body.querySelector<HTMLElement>('thead')?.getBoundingClientRect().height ?? 0) + 4;
+    const bottom = view.bottom - 4;
+    if (box.top < top) body.scrollTop -= top - box.top;
+    else if (box.bottom > bottom) body.scrollTop += box.bottom - bottom;
+  }
+
+  /** After a drawing the cursor is on the same task, or as near as its place gets. */
+  private restoreCursor(): void {
+    if (!this.cursor) return;
+    const columns = this.navigable();
+    const same = columns.flat().find((el) => el.dataset.taskId === this.cursor!.id);
+    const { column, row } = this.cursor.at;
+    const near = columns[column]?.[Math.min(row, columns[column].length - 1)] ?? columns.flat()[0] ?? null;
+    this.placeCursor(same ?? near, false);
+  }
+
+  private cursorTask(): BoardTask | null {
+    const id = this.cursor?.id;
+    return id ? this.host.store.all().find((task) => task.id === id) ?? null : null;
+  }
+
+  private onKeyDown(event: KeyboardEvent): void {
+    if (event.defaultPrevented || event.isComposing || this.isCalendar || this.isTimeline) return;
+    const target = event.target as HTMLElement;
+    // Fields keep their keys, and so do menus, cards and panels.
+    if (target.closest('input, textarea, select, [contenteditable="true"], .taskpro-menu, .taskpro-cal-popover, .taskpro-panel-overlay')) return;
+    const mod = event.ctrlKey || event.metaKey;
+    const plain = !mod && !event.altKey;
+
+    // Board-wide: from anywhere on the board.
+    if (plain && event.code === 'Slash') {
+      event.preventDefault();
+      if (event.shiftKey) openShortcuts(this.language);
+      else this.el.querySelector<HTMLInputElement>('.taskpro-board__search input')?.focus();
+      return;
+    }
+    if (plain && !event.shiftKey && event.code === 'KeyN') {
+      const add = this.el.querySelector<HTMLInputElement>('.taskpro-board__add-input');
+      if (add) {
+        event.preventDefault();
+        add.focus();
+      }
+      return;
+    }
+
+    // The cursor: only from the body itself, where the focus rests when nothing inside has it.
+    if (target !== this.bodyEl) return;
+    const move = plain ? moveFor(event, this.language === 'fa') : null;
+    if (move) {
+      const columns = this.navigable();
+      const next = moveCursor(columns.map((column) => column.length), this.cursor?.at ?? null, move);
+      if (!next) return;
+      event.preventDefault();
+      this.placeCursor(columns[next.column][next.row]);
+      return;
+    }
+
+    const task = this.cursorTask();
+    const el = this.bodyEl.querySelector<HTMLElement>('.has-cursor');
+    if (!task || !el) return;
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      if (mod) void this.host.reveal(task);
+      else this.openCard(task, el.getBoundingClientRect());
+      return;
+    }
+    if (!plain || event.shiftKey) return;
+    if (event.code === 'Space') {
+      event.preventDefault();
+      void this.host.setStatus(task, task.status === '[x]' ? '[ ]' : '[x]');
+    } else if (event.code === 'KeyE' || event.key === 'F2') {
+      event.preventDefault();
+      el.querySelector<HTMLElement>('.taskpro-board__title')?.click();
+    } else if (event.code === 'KeyM') {
+      event.preventDefault();
+      this.openTaskActions(task, el.getBoundingClientRect(), el);
+    } else if ((event.key === 'Delete' || event.key === 'Backspace') && this.host.deleteTask) {
+      event.preventDefault();
+      void this.host.deleteTask(task);
+    }
   }
 
   /** What has been drawn is brought in, and what has just arrived is marked. */
@@ -2697,10 +2847,11 @@ export class TaskBoard {
     input.select();
 
     let done = false;
-    const finish = async (save: boolean) => {
+    const finish = async (save: boolean, refocus = false) => {
       if (done) return;
       done = true;
       const value = input.value.trim();
+      const doc = input.ownerDocument;
       if (save && value && value !== task.text) {
         title.setText(displayTitle(value));
         input.replaceWith(title);
@@ -2710,16 +2861,18 @@ export class TaskBoard {
         input.replaceWith(title);
         this.editing = false;
       }
+      // Enter or Escape in the field: it held the focus and is gone, so the board's body takes it and the keys go on.
+      if (refocus && (!doc.activeElement || doc.activeElement === doc.body)) this.bodyEl.focus({ preventScroll: true });
       if (this.renderQueued) this.renderBody();
     };
     input.addEventListener('keydown', (event) => {
       if (event.key === 'Enter' && !event.isComposing) {
         event.preventDefault();
-        void finish(true);
+        void finish(true, true);
       } else if (event.key === 'Escape') {
         event.preventDefault();
         event.stopPropagation();
-        void finish(false);
+        void finish(false, true);
       }
     });
     input.addEventListener('blur', () => void finish(true));

@@ -41,6 +41,8 @@ export function openCalendarPopover(options: PopoverOptions): PopoverHandle {
   let open = true;
   const doc = container.ownerDocument;
   const win = doc.defaultView ?? window;
+  // Where the focus was, so putting the card away gives it back and the keys carry on there.
+  const returnFocus = doc.activeElement instanceof HTMLElement ? doc.activeElement : null;
   // On a phone the card is a sheet from the bottom of the board.
   const sheet = wantsSheet(container);
   let undoSheet: (() => void) | null = null;
@@ -91,6 +93,7 @@ export function openCalendarPopover(options: PopoverOptions): PopoverHandle {
       win.removeEventListener('resize', place);
       undoSheet?.();
       el.remove();
+      if (returnFocus?.isConnected && (!doc.activeElement || doc.activeElement === doc.body)) returnFocus.focus({ preventScroll: true });
       options.onClose?.();
     },
     reposition: place,

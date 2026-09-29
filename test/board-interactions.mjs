@@ -422,6 +422,112 @@ try {
   await page.keyboard.press('Escape');
   await page.close();
 
+  // ── The keyboard ─────────────────────────────────────────────────────────
+  page = await open('?scope=vault&group=none', 1700);
+  const under = () => page.evaluate(() => document.querySelector('.has-cursor .taskpro-board__title')?.textContent ?? null);
+  await page.locator('.taskpro-board__body').focus();
+  eq(await under(), 'Groceries', 'the body, reached with the keyboard, shows the cursor on the first task');
+  ok(await page.locator('.taskpro-table__row.has-cursor').evaluate((el) => getComputedStyle(el).outlineStyle === 'solid'), 'which is marked');
+  await page.keyboard.press('ArrowDown');
+  eq(await under(), 'Dentist appointment', 'down');
+  await page.keyboard.press('KeyJ');
+  eq(await under(), 'Chapter 4 of Designing Data-Intensive Applications', 'and J does the same');
+  await page.keyboard.press('KeyK');
+  eq(await under(), 'Dentist appointment', 'K goes back');
+  await page.keyboard.press('End');
+  eq(await under(), 'Accessibility pass', 'End: the last task');
+  await page.keyboard.press('Home');
+  eq(await under(), 'Groceries', 'Home: the first');
+  await page.keyboard.press('ArrowUp');
+  eq(await under(), 'Groceries', 'and no further up');
+
+  // Space ticks the task off and back; the cursor stays on it as the table is drawn again.
+  await page.keyboard.press('Space');
+  await page.waitForTimeout(80);
+  ok((await note(page, 'Life/Home.md')).startsWith('- [x] Groceries'), 'Space marks it done');
+  eq(await under(), 'Groceries', 'the cursor is still on it');
+  await page.keyboard.press('Space');
+  await page.waitForTimeout(80);
+  ok((await note(page, 'Life/Home.md')).startsWith('- [ ] Groceries'), 'and open again');
+
+  // Enter opens the card; putting it away gives the keys back.
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(150);
+  eq(await page.locator('.taskpro-cal-inspector .taskpro-cal-inspector__title').textContent(), 'Groceries', 'Enter opens the task’s card');
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('ArrowDown');
+  eq(await under(), 'Dentist appointment', 'and the keys carry on where they were');
+
+  // E renames in place; Enter ends it and the keys carry on.
+  await page.keyboard.press('KeyE');
+  await page.locator('.taskpro-board__title-input').fill('Dentist visit');
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(100);
+  ok((await note(page, 'Life/Home.md')).includes('- [ ] Dentist visit'), 'E renames the task');
+  await page.keyboard.press('ArrowDown');
+  eq(await under(), 'Chapter 4 of Designing Data-Intensive Applications', 'and the keys still work after it');
+  await page.keyboard.press('ArrowUp');
+
+  // M opens the menu, and Escape gives the keys back.
+  await page.keyboard.press('KeyM');
+  eq(await page.locator('.taskpro-menu__header').textContent(), 'Dentist visit', 'M opens the task’s menu');
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('ArrowDown');
+  eq(await under(), 'Chapter 4 of Designing Data-Intensive Applications', 'and closing it gives the keys back');
+  await page.keyboard.press('ArrowUp');
+
+  // Delete takes the task out; the cursor stays where it was, on the next one.
+  const rowsBefore = (await titles(page)).length;
+  await page.keyboard.press('Delete');
+  await page.waitForTimeout(100);
+  eq((await titles(page)).length, rowsBefore - 1, 'Delete removes the task');
+  eq(await under(), 'Chapter 4 of Designing Data-Intensive Applications', 'and the cursor is on the next');
+
+  // Board-wide keys; a field keeps the letters typed into it.
+  await page.keyboard.press('KeyN');
+  eq(await page.evaluate(() => document.activeElement?.className ?? ''), 'taskpro-board__add-input', 'N: a new task');
+  await page.keyboard.type('need a new keyboard');
+  eq(await page.locator('.taskpro-board__add-input').inputValue(), 'need a new keyboard', 'letters typed there are typed');
+  await page.locator('.taskpro-board__add-input').fill('');
+  await page.locator('.taskpro-board__body').focus();
+  await page.keyboard.press('Slash');
+  eq(await page.evaluate(() => document.activeElement?.closest('.taskpro-board__search') !== null), true, '/ goes to the search');
+  await page.locator('.taskpro-board__body').focus();
+  await page.keyboard.press('Shift+Slash');
+  eq(await page.locator('.taskpro-shortcuts').count(), 1, '? shows the keys');
+  eq(await page.locator('.taskpro-shortcuts__group').count(), 3, 'in three groups');
+  await page.keyboard.press('Escape');
+  eq(await page.locator('.taskpro-shortcuts').count(), 0, 'Escape puts the list away');
+  await page.locator('button[aria-label="Keyboard shortcuts"]').click();
+  eq(await page.locator('.taskpro-shortcuts').count(), 1, 'the header button shows it too');
+  await page.keyboard.press('Escape');
+  eq(page.errors, [], 'no page errors with the keyboard');
+  await page.close();
+
+  // The board moves between columns; in Persian the next column is on the left.
+  page = await open('?layout=board&scope=vault', 1500);
+  const cardUnder = () => page.evaluate(() => document.querySelector('.taskpro-card.has-cursor .taskpro-board__title')?.textContent ?? null);
+  await page.locator('.taskpro-board__body').focus();
+  eq(await cardUnder(), 'Groceries', 'a board: the cursor starts on the first card of the first column');
+  await page.keyboard.press('ArrowRight');
+  eq(await cardUnder(), 'Chapter 4 of Designing Data-Intensive Applications', 'right: the next column');
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('ArrowRight');
+  eq(await cardUnder(), 'Book the venue', 'to the last');
+  await page.keyboard.press('ArrowLeft');
+  eq(await cardUnder(), 'Chase the missing invoice', 'and back');
+  ok(await page.locator('.taskpro-card.has-cursor').evaluate((el) => getComputedStyle(el).boxShadow !== 'none'), 'the card wears a ring');
+  eq(page.errors, [], 'no page errors on the board');
+  await page.close();
+
+  page = await open('?layout=board&scope=vault&lang=fa', 1500);
+  await page.locator('.taskpro-board__body').focus();
+  const first = await page.evaluate(() => document.querySelector('.taskpro-card.has-cursor')?.getBoundingClientRect().left ?? 0);
+  await page.keyboard.press('ArrowLeft');
+  const second = await page.evaluate(() => document.querySelector('.taskpro-card.has-cursor')?.getBoundingClientRect().left ?? 0);
+  ok(second < first, 'right to left: the left arrow goes to the next column, which is on the left');
+  await page.close();
+
   // ── View options: density, wrapping, empty columns ───────────────────────
   page = await open('?scope=vault&group=none', 1700);
   const rowHeight = () => page.locator('.taskpro-table__row').first().evaluate((el) => Math.round(el.getBoundingClientRect().height));
