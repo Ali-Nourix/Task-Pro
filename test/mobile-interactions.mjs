@@ -132,6 +132,16 @@ try {
   await page.tap('.taskpro-menu__item:has-text("Select")');
   await page.waitForTimeout(150);
   eq(await page.locator('.taskpro-list__row.is-selected').count(), 1, 'Select picks the task');
+  // A row is drawn on its content layer, which covers the row: the pick has to be seen on that.
+  const layer = (title) =>
+    listRow(page, title)
+      .locator('.taskpro-list__content')
+      .evaluate((el) => ({ fill: getComputedStyle(el).backgroundColor, bar: getComputedStyle(el).boxShadow }));
+  const picked = await layer('Dentist appointment');
+  const other = await layer('Groceries');
+  eq(picked.fill !== other.fill, true, 'the picked row is tinted');
+  eq(picked.bar.includes('inset') && other.bar === 'none', true, 'and has a bar at its start that the others have not');
+  eq(await page.locator('.has-cursor').count(), 0, 'a tap leaves no keyboard cursor framing the task');
   eq(await page.locator('.taskpro-selection').count(), 1, 'and a bar rises');
   eq(await page.locator('.taskpro-selection__label').count(), 0, 'with icons and no words, on a phone');
   const barButton = await page.locator('.taskpro-selection__btn').nth(1).boundingBox();
