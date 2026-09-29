@@ -532,9 +532,28 @@ export class TaskBoard {
       rtl: language === 'fa',
       header: displayTitle(task.text) || '—',
       searchPlaceholder: getActionLabels(language).search,
-      sections: taskActionSections({ ...this.actionOptions(task, anchor), lead }),
+      // The calendar brings its own first row; everywhere else it is the card.
+      sections: taskActionSections({ ...this.actionOptions(task, anchor), lead: lead ?? (this.isCalendar ? undefined : [this.openCardEntry(task, anchor)]) }),
       onClose: () => this.hold(false),
     });
+  }
+
+  /**
+   * A task's card: every property in one place, its subtasks, and a row to
+   * add one. It is the calendar's card, lent to the other layouts.
+   */
+  openCard(task: BoardTask, anchor: HTMLElement | DOMRect): void {
+    this.calendar().openCard(task, anchor);
+  }
+
+  private openCardEntry(task: BoardTask, anchor: HTMLElement): MenuEntry {
+    return {
+      label: this.labels.openCard,
+      icon: 'panel-top-open',
+      keywords: 'card peek details page',
+      // Kept as a rectangle: the row it belongs to may be drawn again before the card opens.
+      onSelect: () => this.openCard(task, anchor.isConnected ? anchor.getBoundingClientRect() : this.el.getBoundingClientRect()),
+    };
   }
 
   private actionOptions(task: BoardTask, anchor: HTMLElement): TaskActionOptions {
@@ -1553,6 +1572,8 @@ export class TaskBoard {
   renderBody(): void {
     this.paintBody();
     this.settleBody();
+    // The calendar keeps its own card up to date as it draws; in the other layouts it is lent.
+    if (!this.isCalendar) this.calendarView?.syncCard();
   }
 
   /** What has been drawn is brought in, and what has just arrived is marked. */
@@ -2607,6 +2628,11 @@ export class TaskBoard {
 
     // A card already opens its note from the note link in its footer.
     if (!withOpen) return;
+    const card = this.iconButton(wrap, 'maximize-2', labels.openCard, (event) => {
+      event.stopPropagation();
+      this.openCard(task, card.getBoundingClientRect());
+    });
+    card.addClass('taskpro-board__open', 'is-card');
     const open = this.iconButton(wrap, 'arrow-up-right', labels.openNote, (event) => {
       event.stopPropagation();
       void this.host.reveal(task);
@@ -3443,18 +3469,25 @@ export class TaskBoard {
     this.checkButton(top, task);
     this.titleBlock(top, task, false, !shown.some((column) => column.id === 'repeat'), !shown.some((column) => column.id === 'waiting'));
     card.toggleClass('is-waiting', this.relations().isWaiting(task));
+    if (!this.touch) {
+      // Raised on hover like the ⋯, Notion's "Open"; a finger opens the card from the sheet's first row.
+      const expand = this.iconButton(top, 'maximize-2', labels.openCard, (event) => {
+        event.stopPropagation();
+        this.openCard(task, card.getBoundingClientRect());
+      });
+      expand.addClass('taskpro-card__more', 'taskpro-card__open');
+    }
     const more = this.iconButton(top, 'more-horizontal', labels.more, () =>
       this.openTaskActions(task, more.getBoundingClientRect(), more)
     );
     more.addClass('taskpro-card__more');
     // Holding a card picks it up, so on a touch screen a tap is what opens its sheet.
     this.withTaskActions(card, task, !draggable);
-    if (this.touch) {
-      card.addEventListener('click', (event) => {
-        if ((event.target as HTMLElement).closest('button, input, .is-editable, .taskpro-board__title')) return;
-        this.openTaskActions(task, card.getBoundingClientRect(), card);
-      });
-    }
+    card.addEventListener('click', (event) => {
+      if ((event.target as HTMLElement).closest('button, input, a, .is-editable, .taskpro-board__title')) return;
+      if (this.touch) this.openTaskActions(task, card.getBoundingClientRect(), card);
+      else this.openCard(task, card.getBoundingClientRect());
+    });
 
     const props = card.createDiv({ cls: 'taskpro-card__props' });
     let withNote = false;

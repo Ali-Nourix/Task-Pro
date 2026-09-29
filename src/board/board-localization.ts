@@ -93,6 +93,7 @@ export interface BoardLabels {
   added: (note: string) => string;
   addFailed: string;
   openNote: string;
+  openCard: string;
   more: string;
   refresh: string;
   manageTags: string;
@@ -229,6 +230,7 @@ const EN: BoardLabels = {
   added: (note) => `Task added to ${isolate(note)}`,
   addFailed: 'Choose a note for new tasks first',
   openNote: 'Open in note',
+  openCard: 'Open card',
   more: 'More options',
   refresh: 'Rescan notes',
   manageTags: 'Manage tags',
@@ -363,6 +365,7 @@ const FA: BoardLabels = {
   added: (note) => `تسک به ${isolate(note)} اضافه شد`,
   addFailed: 'اول یادداشت مقصد تسک‌های جدید را انتخاب کنید',
   openNote: 'باز کردن در یادداشت',
+  openCard: 'باز کردن کارت',
   more: 'گزینه‌های بیشتر',
   refresh: 'خواندن دوباره یادداشت‌ها',
   manageTags: 'مدیریت برچسب‌ها',

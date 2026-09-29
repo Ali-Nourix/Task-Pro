@@ -270,6 +270,27 @@ try {
     await page.close();
   }
 
+  // The card, lent to the table and the board.
+  for (const [query, tag, show] of [
+    ['?scope=vault&group=none', 'table card', async (page) => {
+      const row = page.locator('.taskpro-table__row').nth(8);
+      await row.hover({ position: { x: 100, y: 20 } });
+      await row.locator('.taskpro-board__open.is-card').click();
+    }],
+    ['?layout=board&scope=vault', 'board card', async (page) => {
+      const card = page.locator('.taskpro-card').nth(2);
+      await card.hover();
+      await card.locator('.taskpro-card__open').click();
+    }],
+  ]) {
+    const page = await open(query, 1400, 1000);
+    await show(page);
+    await page.waitForTimeout(350);
+    await scan(page, tag);
+    await tabThrough(page, tag, 30);
+    await page.close();
+  }
+
   // The phone: a narrower pane, and a finger.
   for (const [query, tag] of [
     ['?mobile=1&scope=vault', 'phone list'],

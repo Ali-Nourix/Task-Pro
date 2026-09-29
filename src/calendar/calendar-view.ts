@@ -2267,6 +2267,24 @@ export class TaskCalendar {
 
   // ── The task card ─────────────────────────────────────────────────────────
 
+  /**
+   * Opens a task's card from a layout that is not the calendar. The calendar
+   * draws nothing then; it only lends the card, which is the same one, so a
+   * task looks the same whichever layout it is opened from.
+   */
+  openCard(task: BoardTask, anchor: HTMLElement | DOMRect): void {
+    this.families = indexFamilies(this.ctx.host.store.inFile(task.filePath));
+    this.openInspector(this.itemFor(task), anchor);
+  }
+
+  /** Redraws a card lent to another layout after the notes changed; it closes with its task. */
+  syncCard(): void {
+    const inspected = this.inspected;
+    if (!this.popover?.isOpen || !inspected) return;
+    this.families = indexFamilies(this.ctx.host.store.inFile(inspected.task.filePath));
+    this.refreshInspector();
+  }
+
   private openInspector(item: CalendarItem, anchor: HTMLElement | DOMRect): void {
     const rect = anchor instanceof DOMRect ? anchor : anchor.getBoundingClientRect();
     closeContextMenu();

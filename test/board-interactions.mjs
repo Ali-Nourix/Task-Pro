@@ -347,6 +347,81 @@ try {
   await page.keyboard.press('Escape');
   await page.close();
 
+  // ── The task's card, from every layout ───────────────────────────────────
+  page = await open('?scope=vault&group=none', 1700);
+  const peek = () => page.locator('.taskpro-cal-inspector');
+  const propRow = (name) => peek().locator('.taskpro-cal-prop', { hasText: name });
+  const familyRow = row(page, 'Design the new home page');
+  await familyRow.hover({ position: { x: 120, y: 20 } });
+  eq(await familyRow.locator('.taskpro-board__open').count(), 2, 'a row offers its card and its note on hover');
+  await familyRow.locator('.taskpro-board__open.is-card').click();
+  await page.waitForTimeout(150);
+  eq(await peek().count(), 1, 'the card opens beside the row');
+  eq(await peek().locator('.taskpro-cal-inspector__title').textContent(), 'Design the new home page', 'with the task’s title');
+  eq((await peek().locator('.taskpro-cal-prop__name').allTextContents()).map((t) => t.trim()), ['When', 'Status', 'Priority', 'Deadline', 'Repeat', 'Waiting on', 'Tags', 'Note'], 'and one row for every property');
+  eq(await peek().locator('.taskpro-cal-inspector__subtask-title').allTextContents(), ['Pick the display typeface', 'Collect reference sites'], 'and its subtasks');
+  eq((await peek().locator('.taskpro-cal-inspector__subtasks-count').textContent()).trim(), '1/2', 'counted');
+  // Choosing a value in the card writes it into the note, and the card follows the note.
+  await propRow('Priority').locator('.taskpro-cal-prop__pick').click();
+  await page.locator('.taskpro-menu__item', { hasText: 'Highest' }).click();
+  await page.waitForTimeout(150);
+  ok((await note(page, 'Projects/Website redesign.md')).split('\n')[0].includes('@priority(highest)'), 'a value chosen in the card lands in the note');
+  ok((await propRow('Priority').textContent()).includes('Highest'), 'and the card shows it');
+  // A subtask is added from the card and is listed in it at once.
+  await peek().locator('.taskpro-cal-inspector__subtask-add').fill('Check the contrast');
+  await peek().locator('.taskpro-cal-inspector__subtask-add').press('Enter');
+  await page.waitForTimeout(150);
+  ok((await note(page, 'Projects/Website redesign.md')).split('\n').some((line) => /^\s+- \[ \] Check the contrast/.test(line)), 'a subtask added in the card is written under the task');
+  eq((await peek().locator('.taskpro-cal-inspector__subtask-title').allTextContents()).at(-1), 'Check the contrast', 'and listed in it');
+  eq((await peek().locator('.taskpro-cal-inspector__subtasks-count').textContent()).trim(), '1/3', 'and counted');
+  // Escape leaves a field first, then puts the card away; so does a click outside.
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  eq(await peek().count(), 0, 'Escape puts the card away');
+  await familyRow.hover({ position: { x: 120, y: 20 } });
+  await familyRow.locator('.taskpro-board__open.is-card').click();
+  await page.waitForTimeout(100);
+  await page.locator('.taskpro-board__title-text').click();
+  eq(await peek().count(), 0, 'and so does a click outside it');
+
+  // The task menu starts with the card, wherever the menu is opened.
+  await row(page, 'Groceries').click({ button: 'right', position: { x: 300, y: 10 } });
+  eq((await page.locator('.taskpro-menu__item').first().textContent()).trim(), 'Open card', 'the task menu begins with the card');
+  await page.locator('.taskpro-menu__item', { hasText: 'Open card' }).click();
+  await page.waitForTimeout(150);
+  eq(await peek().locator('.taskpro-cal-inspector__title').textContent(), 'Groceries', 'and it opens that task’s');
+  await page.keyboard.press('Escape');
+  eq(page.errors, [], 'no page errors with the card in the table');
+  await page.close();
+
+  page = await open('?layout=board&scope=vault', 1400);
+  const kanban = page.locator('.taskpro-card', { hasText: 'Design the new home page' });
+  await kanban.hover();
+  eq(await kanban.locator('.taskpro-card__open').count(), 1, 'a board card offers its card on hover');
+  await kanban.locator('.taskpro-card__open').click();
+  await page.waitForTimeout(150);
+  eq(await peek().locator('.taskpro-cal-inspector__title').textContent(), 'Design the new home page', 'and it opens');
+  await page.keyboard.press('Escape');
+  await kanban.click({ position: { x: 4, y: 4 } });
+  await page.waitForTimeout(150);
+  eq(await peek().count(), 1, 'a click on the card itself opens it too');
+  await page.keyboard.press('Escape');
+  await kanban.locator('.taskpro-card__props .is-editable').first().click();
+  await page.waitForTimeout(150);
+  eq(await peek().count(), 0, 'while a click on one of its properties edits that property');
+  await page.keyboard.press('Escape');
+  eq(page.errors, [], 'no page errors with the card on the board');
+  await page.close();
+
+  page = await open('?scope=vault&group=none&lang=fa', 1700);
+  await page.locator('.taskpro-table__row').nth(4).hover({ position: { x: 1500, y: 20 } });
+  await page.locator('.taskpro-table__row').nth(4).locator('.taskpro-board__open.is-card').click();
+  await page.waitForTimeout(150);
+  eq(await peek().evaluate((el) => getComputedStyle(el).direction), 'rtl', 'the card reads right to left in Persian');
+  eq((await peek().locator('.taskpro-cal-prop__name').first().textContent()).trim(), 'زمان', 'in Persian');
+  await page.keyboard.press('Escape');
+  await page.close();
+
   // ── Waiting on another task, and a parent's subtasks ─────────────────────
   page = await open('?scope=vault&group=none', 1700);
   const waitingCell = () => row(page, 'Send the quote to Acme').locator('.taskpro-table__waiting');
@@ -433,6 +508,10 @@ try {
   // A click opens the task menu; the drag above did not.
   await tlRow('Call the accountant').locator('.taskpro-tl__bar').click();
   eq(await page.locator('.taskpro-menu__header').textContent(), 'Call the accountant', 'a click on a bar opens its menu');
+  eq((await page.locator('.taskpro-menu__item').first().textContent()).trim(), 'Open card', 'which begins with the card');
+  await page.locator('.taskpro-menu__item', { hasText: 'Open card' }).click();
+  await page.waitForTimeout(150);
+  eq(await page.locator('.taskpro-cal-inspector .taskpro-cal-inspector__title').textContent(), 'Call the accountant', 'and the card opens over the timeline');
   await page.keyboard.press('Escape');
 
   // Tasks with no dates: folded away, then a click on a day plans one.

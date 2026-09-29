@@ -116,6 +116,17 @@ try {
   eq((await note(page, 'Projects/Someday.md')).includes('Accessibility pass'), true, 'a tap on a note moves the task there');
   eq(await page.locator('.taskpro-menu').count(), 0, 'and the sheet closes');
 
+  // The card opens from the first row of the sheet, and is a sheet of its own.
+  await page.tap('.taskpro-list__row:has-text("Weekly review and planning") .taskpro-list__title');
+  eq((await page.locator('.taskpro-menu__item').first().textContent()).trim(), 'Open card', 'the sheet begins with the card');
+  await page.tap('.taskpro-menu__item:has-text("Open card")');
+  await page.waitForTimeout(250);
+  eq(await page.locator('.taskpro-cal-inspector.is-sheet').count(), 1, 'the card rises from the bottom');
+  eq(await page.locator('.taskpro-cal-inspector__title').textContent(), 'Weekly review and planning', 'for that task');
+  await page.tap('.taskpro-sheet-backdrop', { position: { x: 20, y: 20 } });
+  await page.waitForTimeout(300);
+  eq(await page.locator('.taskpro-cal-inspector').count(), 0, 'and goes with a tap outside it');
+
   // Dragging the handle down puts a sheet away.
   await page.tap('.taskpro-list__row:has-text("Groceries") .taskpro-list__title');
   const grabber = await center(page.locator('.taskpro-sheet-grabber'));
