@@ -402,7 +402,7 @@ try {
   await page.waitForTimeout(150);
   eq(await peek().locator('.taskpro-cal-inspector__title').textContent(), 'Design the new home page', 'and it opens');
   await page.keyboard.press('Escape');
-  await kanban.click({ position: { x: 4, y: 4 } });
+  await kanban.click({ position: { x: 60, y: 3 } });
   await page.waitForTimeout(150);
   eq(await peek().count(), 1, 'a click on the card itself opens it too');
   await page.keyboard.press('Escape');
@@ -427,7 +427,7 @@ try {
   const under = () => page.evaluate(() => document.querySelector('.has-cursor .taskpro-board__title')?.textContent ?? null);
   await page.locator('.taskpro-board__body').focus();
   eq(await under(), 'Groceries', 'the body, reached with the keyboard, shows the cursor on the first task');
-  ok(await page.locator('.taskpro-table__row.has-cursor').evaluate((el) => getComputedStyle(el).outlineStyle === 'solid'), 'which is marked');
+  ok(await page.locator('.taskpro-table__row.has-cursor td.taskpro-table__check').evaluate((el) => getComputedStyle(el).boxShadow.includes('inset')), 'which is marked by a bar at its start');
   await page.keyboard.press('ArrowDown');
   eq(await under(), 'Dentist appointment', 'down');
   await page.keyboard.press('KeyJ');
@@ -495,7 +495,7 @@ try {
   await page.locator('.taskpro-board__body').focus();
   await page.keyboard.press('Shift+Slash');
   eq(await page.locator('.taskpro-shortcuts').count(), 1, '? shows the keys');
-  eq(await page.locator('.taskpro-shortcuts__group').count(), 3, 'in three groups');
+  eq(await page.locator('.taskpro-shortcuts__group').count(), 4, 'in four groups');
   await page.keyboard.press('Escape');
   eq(await page.locator('.taskpro-shortcuts').count(), 0, 'Escape puts the list away');
   await page.locator('button[aria-label="Keyboard shortcuts"]').click();
@@ -526,6 +526,119 @@ try {
   await page.keyboard.press('ArrowLeft');
   const second = await page.evaluate(() => document.querySelector('.taskpro-card.has-cursor')?.getBoundingClientRect().left ?? 0);
   ok(second < first, 'right to left: the left arrow goes to the next column, which is on the left');
+  await page.close();
+
+  // ── Selecting several tasks and changing them together ────────────────────
+  page = await open('?scope=vault&group=none', 1700);
+  const bar = () => page.locator('.taskpro-selection');
+  const picked = () => page.locator('.taskpro-table__row.is-selected .taskpro-board__title').allTextContents();
+  const squareOf = (title) => row(page, title).locator('.taskpro-board__select');
+  eq(await page.locator('.taskpro-board__select').count(), 12, 'every row has a square in its margin');
+  eq(await bar().count(), 0, 'and no bar until something is picked');
+  await row(page, 'Dentist appointment').hover({ position: { x: 150, y: 10 } });
+  await page.waitForTimeout(250);
+  eq(await squareOf('Dentist appointment').evaluate((el) => getComputedStyle(el).opacity), '1', 'the square shows under the pointer');
+  await squareOf('Dentist appointment').click();
+  eq(await picked(), ['Dentist appointment'], 'a click on it picks the row');
+  eq((await bar().locator('.taskpro-selection__count').textContent()).trim(), '1 selected', 'and a bar counts what is picked');
+  await page
+    .locator('.taskpro-table__row')
+    .filter({ has: page.locator('.taskpro-board__title', { hasText: 'Draft the launch post' }) })
+    .locator('td.taskpro-table__more')
+    .click({ position: { x: 2, y: 2 }, modifiers: ['Shift'] });
+  eq(await picked(), ['Dentist appointment', 'Chapter 4 of Designing Data-Intensive Applications', 'Draft the launch post'], 'Shift-click picks every row from the last one picked to it');
+  await row(page, 'Weekly review and planning').locator('td.taskpro-table__more').click({ position: { x: 2, y: 2 }, modifiers: ['Control'] });
+  eq((await picked()).length, 4, 'Ctrl-click picks one more, without opening anything');
+  await row(page, 'Weekly review and planning').locator('td.taskpro-table__more').click({ position: { x: 2, y: 2 }, modifiers: ['Control'] });
+  eq((await picked()).length, 3, 'and again drops it');
+  await page.locator('.taskpro-selection__btn.is-clear').click();
+  eq(await bar().count(), 0, 'the ✕ drops the selection and the bar goes');
+
+  // The keyboard picks too: X, Shift with the arrows, Ctrl or ⌘ with A; Escape drops them.
+  await page.locator('.taskpro-board__body').focus();
+  await page.keyboard.press('Home');
+  await page.keyboard.press('KeyX');
+  eq(await picked(), ['Groceries'], 'X picks the task under the cursor');
+  await page.keyboard.press('Shift+ArrowDown');
+  await page.keyboard.press('Shift+ArrowDown');
+  eq(await picked(), ['Groceries', 'Dentist appointment', 'Chapter 4 of Designing Data-Intensive Applications'], 'Shift with the arrows extends it');
+  await page.keyboard.press('Escape');
+  eq(await bar().count(), 0, 'Escape drops it');
+  await page.keyboard.press('Control+KeyA');
+  eq((await picked()).length, 12, 'Ctrl+A picks every task shown');
+  await page.keyboard.press('Escape');
+
+  // Changes to all of them at once, each written into its own note.
+  await squareOf('Groceries').click({ force: true });
+  await squareOf('Dentist appointment').click({ force: true });
+  await bar().locator('.taskpro-selection__btn', { hasText: 'Status' }).click();
+  eq(await page.locator('.taskpro-menu__header').textContent(), '2 selected', 'a menu from the bar says what it is for');
+  await page.locator('.taskpro-menu__item', { hasText: 'In Progress' }).click();
+  await page.waitForTimeout(150);
+  ok((await note(page, 'Life/Home.md')).split('\n').slice(0, 2).every((line) => line.startsWith('- [/]')), 'status is set on all of them');
+  eq((await picked()).length, 2, 'and they stay picked');
+  await bar().locator('.taskpro-selection__btn', { hasText: 'Priority' }).click();
+  await page.locator('.taskpro-menu__item', { hasText: 'Highest' }).click();
+  await page.waitForTimeout(150);
+  ok((await note(page, 'Life/Home.md')).split('\n').slice(0, 2).every((line) => line.includes('@priority(highest)')), 'so is a priority');
+  // A tag is added to each, and taken off each once they all have it.
+  await bar().locator('.taskpro-selection__btn', { hasText: 'Tags' }).click();
+  ok(!(await page.locator('.taskpro-menu__item', { hasText: 'Client' }).getAttribute('aria-checked') === 'true'), 'a tag not all have is not ticked');
+  await page.locator('.taskpro-menu__item', { hasText: 'Client' }).click();
+  await page.waitForTimeout(150);
+  ok((await note(page, 'Life/Home.md')).split('\n').slice(0, 2).every((line) => /@tag\([^)]*client/.test(line)), 'a tag chosen is added to each, keeping their own');
+  ok((await note(page, 'Life/Home.md')).split('\n')[0].includes('home'), 'and what they had');
+  await bar().locator('.taskpro-selection__btn', { hasText: 'Tags' }).click();
+  eq(await page.locator('.taskpro-menu__item', { hasText: 'Client' }).getAttribute('aria-checked'), 'true', 'once all have it, it is ticked');
+  await page.locator('.taskpro-menu__item', { hasText: 'Client' }).click();
+  await page.waitForTimeout(150);
+  ok((await note(page, 'Life/Home.md')).split('\n').slice(0, 2).every((line) => !/client/.test(line)), 'and choosing it again takes it off each');
+  await bar().locator('.taskpro-selection__btn', { hasText: 'Deadline' }).click();
+  eq(await page.locator('.taskpro-menu__item', { hasText: 'Pick a date' }).count(), 0, 'a date to pick is left out of a bulk menu: it is for one task');
+  await page.locator('.taskpro-menu__item', { hasText: 'Tomorrow' }).click();
+  await page.waitForTimeout(150);
+  eq(new Set((await note(page, 'Life/Home.md')).split('\n').slice(0, 2).map((line) => /@due\(([^)]+)\)/.exec(line)?.[1])).size, 1, 'a deadline is one date on both');
+
+  // Moving takes the parent's subtasks along once, though they are picked too.
+  await page.locator('.taskpro-selection__btn.is-clear').click();
+  await squareOf('Design the new home page').click({ force: true });
+  await squareOf('Pick the display typeface').click({ force: true });
+  await bar().locator('.taskpro-selection__btn', { hasText: 'Move to note' }).click();
+  await page.locator('.taskpro-menu__search').fill('some');
+  await page.locator('.taskpro-menu__item', { hasText: 'Someday' }).click();
+  await page.waitForTimeout(200);
+  eq((await note(page, 'Projects/Someday.md')).split('\n').length, 3, 'a parent and its two subtasks arrive once, not twice');
+  eq(await bar().count(), 0, 'and the selection is over');
+  eq((await page.evaluate(() => window.__notices)).at(-1).replace(/[⁦-⁩]/g, ''), 'Moved “Design the new home page” to Someday', 'with a notice');
+
+  // Deleting them all at once.
+  const remaining = (await titles(page)).length;
+  await squareOf('Groceries').click({ force: true });
+  await squareOf('Accessibility pass').click({ force: true });
+  await bar().locator('.taskpro-selection__btn', { hasText: 'Delete' }).click();
+  await page.waitForTimeout(150);
+  eq((await titles(page)).length, remaining - 2, 'Delete takes them out');
+  eq(await bar().count(), 0, 'and the bar goes with them');
+  eq(page.errors, [], 'no page errors selecting several');
+  await page.close();
+
+  // On a board the cards are picked the same way, and follow a status change to its new column.
+  page = await open('?layout=board&scope=vault', 1500);
+  await page.locator('.taskpro-card', { hasText: 'Groceries' }).hover();
+  await page.locator('.taskpro-card', { hasText: 'Groceries' }).locator('.taskpro-board__select').click();
+  await page.locator('.taskpro-card', { hasText: 'Dentist appointment' }).locator('.taskpro-board__select').click({ force: true });
+  eq(await page.locator('.taskpro-card.is-selected').count(), 2, 'two cards are picked');
+  await page.locator('.taskpro-selection__btn', { hasText: 'Status' }).click();
+  await page.locator('.taskpro-menu__item').filter({ hasText: /^\s*Done\s*$/ }).click();
+  await page.waitForTimeout(200);
+  eq(await page.locator('.taskpro-kanban__column').nth(3).locator('.taskpro-card.is-selected').count(), 2, 'and stay picked in the column they went to');
+  eq(page.errors, [], 'no page errors on the board');
+  await page.close();
+
+  page = await open('?scope=vault&group=none&lang=fa', 1700);
+  await page.locator('.taskpro-table__row').nth(1).locator('.taskpro-board__select').click({ force: true });
+  eq((await page.locator('.taskpro-selection__count').textContent()).trim(), '1 انتخاب شده', 'in Persian');
+  eq(await page.locator('.taskpro-selection__btn.is-warning').getAttribute('aria-label'), 'حذف', 'and the delete button');
   await page.close();
 
   // ── Sub-items: nested under their parent, and folded away ────────────────

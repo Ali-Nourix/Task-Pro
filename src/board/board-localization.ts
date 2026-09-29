@@ -101,6 +101,9 @@ export interface BoardLabels {
   openNote: string;
   openCard: string;
   shortcuts: string;
+  selectedCount: (count: number) => string;
+  clearSelection: string;
+  selectTask: string;
   showSubtasks: (count: number) => string;
   hideSubtasks: (count: number) => string;
   more: string;
@@ -246,6 +249,9 @@ const EN: BoardLabels = {
   openNote: 'Open in note',
   openCard: 'Open card',
   shortcuts: 'Keyboard shortcuts',
+  selectedCount: (count) => `${count} selected`,
+  clearSelection: 'Clear the selection',
+  selectTask: 'Select',
   showSubtasks: (count) => (count === 1 ? 'Show the subtask' : `Show ${count} subtasks`),
   hideSubtasks: (count) => (count === 1 ? 'Hide the subtask' : `Hide ${count} subtasks`),
   more: 'More options',
@@ -389,6 +395,9 @@ const FA: BoardLabels = {
   openNote: 'باز کردن در یادداشت',
   openCard: 'باز کردن کارت',
   shortcuts: 'میانبرهای صفحه‌کلید',
+  selectedCount: (count) => `${count} انتخاب شده`,
+  clearSelection: 'لغو انتخاب',
+  selectTask: 'انتخاب',
   showSubtasks: (count) => `نمایش ${count} زیرتسک`,
   hideSubtasks: (count) => `پنهان کردن ${count} زیرتسک`,
   more: 'گزینه‌های بیشتر',

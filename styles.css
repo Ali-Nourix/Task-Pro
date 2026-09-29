@@ -7202,19 +7202,245 @@ body.is-mobile .taskpro-board.taskpro-board button.taskpro-tl__undated-toggle {
   overflow: visible;
 }
 
+/* ── Selecting several ─────────────────────────────────────────────────── */
+/* The square that picks a row or a card: in the margin beside a row, on the
+   corner of a card, shown under the pointer and, once something is picked,
+   beside every task. Picked tasks are tinted and keep theirs. */
+.taskpro-board {
+  --taskpro-selected: color-mix(in srgb, var(--interactive-accent) 10%, var(--taskpro-board-surface));
+}
+.taskpro-board .taskpro-table td.taskpro-table__check {
+  overflow: visible;
+}
+.taskpro-board button.taskpro-board__select {
+  position: absolute;
+  z-index: 3;
+  inset-block-start: 50%;
+  inset-inline-start: calc(-1 * min(var(--taskpro-board-gutter), 24px) + 2px);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 15px;
+  min-width: 0;
+  height: 15px;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  transform: translateY(-50%);
+  border: 1.5px solid var(--text-faint);
+  border-radius: 4px;
+  background: var(--background-primary);
+  box-shadow: none;
+  color: var(--text-on-accent, #fff);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--taskpro-fast) var(--taskpro-ease), background-color var(--taskpro-fast) var(--taskpro-ease),
+    border-color var(--taskpro-fast) var(--taskpro-ease);
+}
+.taskpro-board .taskpro-card {
+  position: relative;
+}
+.taskpro-board .taskpro-card > button.taskpro-board__select {
+  inset-block-start: -5px;
+  inset-inline-start: -5px;
+  transform: none;
+}
+.taskpro-board .taskpro-table__row:hover button.taskpro-board__select,
+.taskpro-board .taskpro-card:hover > button.taskpro-board__select,
+.taskpro-board button.taskpro-board__select:focus-visible {
+  opacity: 1;
+}
+.taskpro-board.has-selection button.taskpro-board__select {
+  opacity: 0.75;
+}
+.taskpro-board button.taskpro-board__select:hover {
+  border-color: var(--text-muted);
+  opacity: 1;
+}
+.taskpro-board button.taskpro-board__select:focus-visible {
+  box-shadow: var(--taskpro-focus-ring);
+}
+.taskpro-board button.taskpro-board__select .taskpro-board__select-tick {
+  display: inline-flex;
+  opacity: 0;
+  transform: scale(0.6);
+  transition: opacity var(--taskpro-fast) var(--taskpro-ease), transform var(--taskpro-fast) var(--taskpro-ease-pop);
+}
+.taskpro-board button.taskpro-board__select .svg-icon {
+  width: 11px;
+  height: 11px;
+  stroke-width: 3.5;
+}
+.taskpro-board .is-selected button.taskpro-board__select,
+.taskpro-board button.taskpro-board__select[aria-checked="true"] {
+  border-color: var(--interactive-accent);
+  background: var(--interactive-accent);
+  opacity: 1;
+}
+.taskpro-board button.taskpro-board__select[aria-checked="true"] .taskpro-board__select-tick {
+  opacity: 1;
+  transform: none;
+}
+.taskpro-board .taskpro-table__row.is-selected td,
+.taskpro-board .taskpro-table__row.is-selected td.taskpro-table__check,
+.taskpro-board .taskpro-table__row.is-selected td.taskpro-table__task {
+  background-color: var(--taskpro-selected);
+  background-image: none;
+}
+.taskpro-board .taskpro-list__row.is-selected {
+  background-color: var(--taskpro-selected);
+  box-shadow: inset 3px 0 0 var(--interactive-accent);
+}
+.taskpro-board[dir="rtl"] .taskpro-list__row.is-selected {
+  box-shadow: inset -3px 0 0 var(--interactive-accent);
+}
+.taskpro-board .taskpro-card.is-selected {
+  background: color-mix(in srgb, var(--interactive-accent) 8%, var(--background-primary));
+  box-shadow: var(--taskpro-lift-1), 0 0 0 2px var(--interactive-accent);
+}
+.taskpro-board.has-selection .taskpro-board__body {
+  padding-bottom: 92px;
+}
+
+/* The bar over the board while tasks are picked: what is done to all of them. */
+.taskpro-board .taskpro-selection {
+  position: absolute;
+  z-index: calc(var(--layer-popover, 30) + 1);
+  inset-block-end: var(--taskpro-space-8);
+  inset-inline-start: 50%;
+  display: flex;
+  align-items: center;
+  gap: var(--taskpro-space-1);
+  max-width: calc(100% - 2 * var(--taskpro-space-6));
+  padding: var(--taskpro-space-2);
+  overflow-x: auto;
+  transform: translateX(-50%);
+  border-radius: var(--taskpro-radius-panel);
+  background: var(--taskpro-board-surface);
+  box-shadow: var(--taskpro-float-shadow);
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  animation: taskpro-selection-in var(--taskpro-base) var(--taskpro-ease-pop);
+}
+.taskpro-board[dir="rtl"] .taskpro-selection {
+  transform: translateX(50%);
+}
+@keyframes taskpro-selection-in {
+  from {
+    opacity: 0;
+    translate: 0 10px;
+  }
+}
+.taskpro-board .taskpro-selection__count {
+  flex: 0 0 auto;
+  padding: 0 var(--taskpro-space-3);
+  font-weight: var(--font-medium);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.taskpro-board .taskpro-selection__sep {
+  flex: 0 0 auto;
+  align-self: stretch;
+  width: 1px;
+  margin: var(--taskpro-space-2) var(--taskpro-space-2);
+  background: var(--background-modifier-border);
+}
+.taskpro-board button.taskpro-selection__btn {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--taskpro-space-2);
+  height: 30px;
+  min-height: 0;
+  margin: 0;
+  padding: 0 var(--taskpro-space-4);
+  border: 0;
+  border-radius: var(--taskpro-radius-inner);
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color var(--taskpro-fast) var(--taskpro-ease), color var(--taskpro-fast) var(--taskpro-ease);
+}
+.taskpro-board button.taskpro-selection__btn:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+.taskpro-board button.taskpro-selection__btn:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--interactive-accent);
+}
+.taskpro-board button.taskpro-selection__btn.is-warning:hover {
+  background: color-mix(in srgb, var(--text-error) 12%, transparent);
+  color: var(--text-error);
+}
+.taskpro-board button.taskpro-selection__btn.is-clear {
+  padding: 0 var(--taskpro-space-3);
+}
+.taskpro-board .taskpro-selection__icon {
+  display: inline-flex;
+}
+.taskpro-board .taskpro-selection__icon .svg-icon {
+  width: 16px;
+  height: 16px;
+}
+/* On a phone: the full width at the foot, icons alone. */
+.taskpro-board.is-compact .taskpro-selection {
+  inset-inline: var(--taskpro-space-4);
+  inset-inline-start: var(--taskpro-space-4);
+  inset-block-end: max(var(--taskpro-space-4), env(safe-area-inset-bottom));
+  max-width: none;
+  transform: none;
+  justify-content: space-between;
+}
+.taskpro-board.is-compact[dir="rtl"] .taskpro-selection {
+  transform: none;
+}
+.taskpro-board.is-compact.has-selection .taskpro-board__fab {
+  display: none;
+}
+.taskpro-board.is-touch button.taskpro-selection__btn {
+  min-width: 40px;
+  height: 40px;
+  justify-content: center;
+}
+@media (prefers-reduced-motion: reduce) {
+  .taskpro-board .taskpro-selection {
+    animation: none;
+  }
+}
+
 /* ── The keyboard ──────────────────────────────────────────────────────── */
 /* The cursor: the task the keys act on, shown while the body holds the focus.
-   The body has no ring of its own; the cursor is what says where it is. */
+   The body has no ring of its own; the cursor is what says where it is. In the
+   table it is a tint over the row and a bar at its start edge (a ring would be
+   hidden behind the frozen cells); a card wears a ring, a phone's row an outline. */
+.taskpro-board {
+  --taskpro-cursor: color-mix(in srgb, var(--interactive-accent) 8%, var(--background-modifier-hover));
+}
 .taskpro-board .taskpro-board__body:focus {
   outline: none;
 }
-.taskpro-board .taskpro-board__body:focus-within .taskpro-table__row.has-cursor,
 .taskpro-board .taskpro-board__body:focus-within .taskpro-list__row.has-cursor {
   outline: 2px solid var(--interactive-accent);
   outline-offset: -2px;
 }
-.taskpro-board .taskpro-board__body:focus-within .taskpro-table__row.has-cursor td {
-  background-color: var(--background-modifier-hover);
+.taskpro-board .taskpro-board__body:focus-within .taskpro-table__row.has-cursor:not(.is-selected) td {
+  background-color: var(--taskpro-cursor);
+}
+/* The frozen cells stay opaque: the tint is laid over their own surface, or the properties passing under them would show through. */
+.taskpro-board .taskpro-board__body:focus-within .taskpro-table__row.has-cursor:not(.is-selected) td.taskpro-table__check,
+.taskpro-board .taskpro-board__body:focus-within .taskpro-table__row.has-cursor:not(.is-selected) td.taskpro-table__task {
+  background-color: var(--taskpro-board-surface);
+  background-image: linear-gradient(var(--taskpro-cursor), var(--taskpro-cursor));
+}
+.taskpro-board .taskpro-board__body:focus-within .taskpro-table__row.has-cursor td.taskpro-table__check {
+  box-shadow: inset 3px 0 0 var(--interactive-accent), calc(-1 * var(--taskpro-board-gutter)) 0 0 0 var(--taskpro-board-surface);
+}
+.taskpro-board[dir="rtl"] .taskpro-board__body:focus-within .taskpro-table__row.has-cursor td.taskpro-table__check {
+  box-shadow: inset -3px 0 0 var(--interactive-accent), var(--taskpro-board-gutter) 0 0 0 var(--taskpro-board-surface);
 }
 .taskpro-board .taskpro-board__body:focus-within .taskpro-card.has-cursor {
   box-shadow: var(--taskpro-lift-1), var(--taskpro-focus-ring);
