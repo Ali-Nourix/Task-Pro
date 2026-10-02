@@ -901,23 +901,31 @@ Manage tasks and reminders from Telegram, even while your computer is off. It is
 optional and off by default. Your notes stay the source of truth: Supabase holds
 only a snapshot of your open tasks and a queue of what you asked for in Telegram.
 
-- **In Telegram:** write a task in plain words (*"call the bank tomorrow 10"*),
-  list today's and overdue tasks, tick one off, put it off, move it, set or clear
-  a reminder, delete it. Reminders arrive as messages, with buttons to snooze or
-  finish. The bot answers in English or Persian and understands Jalali dates.
+- **A small app inside the chat.** `/start` opens a menu (Today, All tasks, New
+  task, Overdue, Status, Settings). Lists come in sections (overdue, today,
+  tomorrow, later, unplanned) set in quotes, eight tasks to a page, with filters;
+  every step edits the same message in place, and the main buttons are coloured.
+  English and Persian, Jalali dates understood.
+- **Every setting of a task.** A task's card opens a settings panel with a button
+  for each: title, status, priority, deadline, plan, reminder, tags and repeat,
+  each showing its value. Pick a preset or reply with your own ("every 3 days",
+  "friday"). New tasks are written in plain words ("call the bank tomorrow 10").
+  Reminders arrive as a card with Done and Snooze buttons.
 - **In Obsidian:** a background sync (every 2 minutes by default, and on **Sync
   Telegram now**) uploads the snapshot, then applies what you asked for in
   Telegram to your notes: new tasks go to the board's inbox note, the rest edit
-  the task's own line. Each command is acknowledged once, so a dropped connection
-  never applies one twice.
+  the task's own line (a rename keeps the task's number in the bot). Each command
+  is acknowledged once, so a dropped connection never applies one twice.
 - **While Obsidian is closed:** reminders still fire from the last snapshot;
   changes you make in Telegram wait and are applied the next time Obsidian opens.
 
 Set it up once with [`supabase/README.md`](supabase/README.md) (Persian; about ten
 minutes: a bot token from BotFather, three secrets, `supabase db push`, deploy the
-three Edge Functions). Then open **Settings → TaskPro → Telegram**, turn it on and
-paste the function address and the sync token. The tokens live in Supabase
-secrets and in the plugin's settings file, never in your notes.
+three Edge Functions). Updating later is one double-click on `update-bot.bat` (the
+functions bring the database up to date themselves). Then open **Settings →
+TaskPro → Telegram**, turn it on and paste the function address and the sync
+token. The tokens live in Supabase secrets and in the plugin's settings file,
+never in your notes.
 
 ## Settings
 

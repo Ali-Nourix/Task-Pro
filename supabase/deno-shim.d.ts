@@ -10,3 +10,8 @@ declare module 'npm:@supabase/supabase-js@2' {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   export function createClient(url: string, key: string, options?: unknown): any;
 }
+
+declare module 'npm:postgres@3' {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  export default function postgres(url: string, options?: unknown): any;
+}

@@ -5,7 +5,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { BoardTask } from '../board/task-store';
-import type { TaskPriority, TaskStatus } from '../types';
+import type { TaskPriority, TaskRepeat, TaskStatus } from '../types';
 
 /** A task as the bot stores it. Its status is a word, not the marker between brackets. */
 export interface SnapshotTask {
@@ -18,6 +18,8 @@ export interface SnapshotTask {
   plan_start: string | null;
   plan_end: string | null;
   remind_at: string | null;
+  /** How often it comes back, as the marker writes it: 1d, 2w, 1m. */
+  repeat: string | null;
   tags: string[];
   note_path: string | null;
 }
@@ -70,6 +72,10 @@ export function reminderAt(task: BoardTask, defaults: ReminderDefaults): string 
   return new Date(localInstant(task.schedule.date, task.schedule.start) - lead * 60_000).toISOString();
 }
 
+const REPEAT_TOKEN = { day: 'd', week: 'w', month: 'm' } as const;
+
+export const repeatToken = (repeat: TaskRepeat | undefined): string | null => (repeat ? `${repeat.every}${REPEAT_TOKEN[repeat.unit]}` : null);
+
 const STATUS_WORDS: Partial<Record<TaskStatus, 'open' | 'doing'>> = { '[ ]': 'open', '[/]': 'doing' };
 
 /** The open tasks, as the bot wants them. Tasks already done are left out: the bot lists what is open. */
@@ -88,6 +94,7 @@ export function buildSnapshot(tasks: readonly BoardTask[], defaults: ReminderDef
       plan_start: task.schedule?.start ?? null,
       plan_end: task.schedule?.end && task.schedule.end !== '24:00' ? task.schedule.end : null,
       remind_at: reminderAt(task, defaults),
+      repeat: repeatToken(task.repeat),
       tags: task.tags.slice(0, 20),
       note_path: task.filePath,
     });

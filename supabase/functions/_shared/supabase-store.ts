@@ -7,6 +7,9 @@ import { sameInstant } from './types.ts';
 type Client = ReturnType<typeof createClient>;
 
 const OPEN_STATUSES = ['open', 'doing'];
+
+/** The database has not been given the `repeat` column yet (the schema is brought up to date on first use). */
+const noRepeatColumn = (error: { message: string } | null): boolean => !!error && /repeat/i.test(error.message) && /column/i.test(error.message);
 const CHUNK = 200;
 
 function fail(what: string, error: { message: string } | null): void {
@@ -48,13 +51,22 @@ export function supabaseStore(url: string, serviceKey: string): Store {
     },
 
     async insertTask(task) {
-      await one(db.from('tasks').insert(task), 'insert task');
+      const { repeat, ...rest } = task;
+      const first = await db.from('tasks').insert(task);
+      if (first.error && noRepeatColumn(first.error)) await one(db.from('tasks').insert(rest), 'insert task');
+      else fail('insert task', first.error);
+      void repeat;
       // Read back: its number is given by the database just after the insert.
       return (await one(db.from('tasks').select('*').eq('key', task.key).single(), 'read task')) as TaskRow;
     },
 
     async patchTask(key, patch) {
-      await one(db.from('tasks').update({ ...patch, updated_at: new Date().toISOString() }).eq('key', key), 'patch task');
+      const row = { ...patch, updated_at: new Date().toISOString() };
+      const first = await db.from('tasks').update(row).eq('key', key);
+      if (first.error && noRepeatColumn(first.error)) {
+        const { repeat: _repeat, ...rest } = row;
+        await one(db.from('tasks').update(rest).eq('key', key), 'patch task');
+      } else fail('patch task', first.error);
     },
 
     async removeTask(key) {
@@ -66,7 +78,10 @@ export function supabaseStore(url: string, serviceKey: string): Store {
       const written = rows.filter((row) => !keep.has(row.key));
       for (let i = 0; i < written.length; i += CHUNK) {
         const chunk = written.slice(i, i + CHUNK).map((row) => ({ ...row, origin: 'vault', pending: false, seen_run: run, updated_at: new Date().toISOString() }));
-        await one(db.from('tasks').upsert(chunk, { onConflict: 'key' }), 'upload tasks');
+        const first = await db.from('tasks').upsert(chunk, { onConflict: 'key' });
+        if (first.error && noRepeatColumn(first.error)) {
+          await one(db.from('tasks').upsert(chunk.map(({ repeat: _repeat, ...rest }) => rest), { onConflict: 'key' }), 'upload tasks');
+        } else fail('upload tasks', first.error);
       }
       // Rows left as Telegram has them still count as seen.
       const kept = [...keep];

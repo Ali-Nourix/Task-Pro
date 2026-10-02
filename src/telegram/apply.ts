@@ -1,25 +1,26 @@
 // ── telegram/apply.ts ─────────────────────────────────────────────────────
 // Makes the changes asked for in Telegram in the notes: a new task into the
-// inbox, a tick, a reminder, a plan, a deletion. Each is answered with what
+// inbox, a tick, a reminder, a plan, an edit of the task's own settings (title,
+// priority, deadline, tags, repeat), a deletion. Each is answered with what
 // happened, so the bot can tell the owner when one could not be made.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { BoardTask } from '../board/task-store';
-import { RemindAt, setDeadline, setPriority, setRemind, setSchedule, setTags } from '../task-metadata';
-import type { TaskPriority, TaskSchedule, TaskStatus } from '../types';
+import { RemindAt, normalizeTagKey, setDeadline, setPriority, setRemind, setSchedule, setTags } from '../task-metadata';
+import type { TaskPriority, TaskRepeat, TaskSchedule, TaskStatus } from '../types';
 import { keyForNewTask, keyTasks } from './snapshot';
 
 export interface Command {
   id: string;
-  kind: 'add' | 'status' | 'remind' | 'plan' | 'delete';
+  kind: 'add' | 'status' | 'remind' | 'plan' | 'edit' | 'delete';
   payload: Record<string, unknown>;
 }
 
 export interface Result {
   id: string;
-  /** For an added task: the key it has in the notes. */
+  /** For an added task, or one renamed: the key it has in the notes. */
   key?: string;
-  /** For an added task: the key Telegram gave it, which later commands may still use. */
+  /** The key the bot knew it by, which later commands may still use. */
   from?: string;
   error?: string;
 }
@@ -34,6 +35,11 @@ export interface ApplyHost {
   setStatus(task: BoardTask, status: TaskStatus): Promise<void>;
   setRemind(task: BoardTask, value: RemindAt | null | undefined): Promise<void>;
   setSchedule(task: BoardTask, schedule: TaskSchedule | null): Promise<void>;
+  setPriority(task: BoardTask, priority: TaskPriority | null): Promise<void>;
+  setDeadline(task: BoardTask, deadline: string | null): Promise<void>;
+  setTags(task: BoardTask, keys: string[]): Promise<void>;
+  setRepeat(task: BoardTask, repeat: TaskRepeat | null): Promise<void>;
+  setText(task: BoardTask, text: string): Promise<void>;
   deleteTask(task: BoardTask): Promise<void>;
   /** Resolves once the notes have been read again after an edit (or a moment has passed). */
   settled(): Promise<void>;
@@ -62,6 +68,13 @@ function plan(value: unknown): TaskSchedule | null {
     if (typeof end === 'string' && CLOCK.test(end) && end > start) out.end = end;
   }
   return out;
+}
+
+function repeatOf(value: unknown): TaskRepeat | null {
+  if (typeof value !== 'string') return null;
+  const match = /^(\d{1,3})([dwm])$/.exec(value);
+  if (!match || Number(match[1]) < 1) return null;
+  return { every: Number(match[1]), unit: { d: 'day', w: 'week', m: 'month' }[match[2]] as TaskRepeat['unit'] };
 }
 
 /** The line a task made in Telegram is written as. */
@@ -147,9 +160,63 @@ async function applyOne(command: Command, host: ApplyHost, aliases: Map<string, 
       }
       break;
     }
+    case 'edit': {
+      await applyEdit(task, key!, payload, host, result);
+      return;
+    }
     case 'delete':
       await host.deleteTask(task);
       break;
   }
   await host.settled();
+}
+
+/**
+ * Changes a task's own settings, one after the other. Each edit rewrites the
+ * line, so the task is found again (by its place in the note) before the next.
+ * A new title changes the key a task is known by, which is reported back.
+ */
+async function applyEdit(task: BoardTask, before: string, payload: Record<string, unknown>, host: ApplyHost, result: Result): Promise<void> {
+  let current = task;
+  const next = async () => {
+    await host.settled();
+    current = host.tasks().find((candidate) => candidate.filePath === task.filePath && candidate.lineNumber === task.lineNumber) ?? current;
+  };
+
+  if ('priority' in payload) {
+    const priority = str(payload.priority);
+    if (payload.priority !== null && !(priority && PRIORITIES.has(priority))) return void (result.error = 'unknown priority');
+    await host.setPriority(current, payload.priority === null ? null : (priority as TaskPriority));
+    await next();
+  }
+  if ('deadline' in payload) {
+    const deadline = str(payload.deadline);
+    if (payload.deadline !== null && !(deadline && DAY.test(deadline))) return void (result.error = 'unreadable deadline');
+    await host.setDeadline(current, payload.deadline === null ? null : (deadline as string));
+    await next();
+  }
+  if ('tags' in payload) {
+    if (!Array.isArray(payload.tags)) return void (result.error = 'unreadable tags');
+    const keys = payload.tags.filter((tag): tag is string => typeof tag === 'string').map(normalizeTagKey).filter(Boolean);
+    await host.setTags(current, keys);
+    await next();
+  }
+  if ('repeat' in payload) {
+    const repeat = payload.repeat === null ? null : repeatOf(payload.repeat);
+    if (payload.repeat !== null && !repeat) return void (result.error = 'unreadable repeat');
+    await host.setRepeat(current, repeat);
+    await next();
+  }
+  if ('title' in payload) {
+    const title = str(payload.title)?.replace(/\s+/g, ' ').trim();
+    if (!title) return void (result.error = 'no title');
+    await host.setText(current, title);
+    await next();
+  }
+
+  const after = [...keyTasks(host.tasks())].find(([, candidate]) => candidate.filePath === task.filePath && candidate.lineNumber === task.lineNumber)?.[0];
+  if (after && before !== after) {
+    result.from = before;
+    result.key = after;
+  }
 }

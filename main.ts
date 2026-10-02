@@ -754,6 +754,12 @@ export default class TaskProPlugin extends Plugin {
         setStatus: (task, status) => this.setTaskStatusFor(this.boardTaskRef(task), status),
         setRemind: (task, value) => this.setTaskRemindFor(this.boardTaskRef(task), value),
         setSchedule: (task, schedule) => this.setTaskScheduleFor(this.boardTaskRef(task), schedule),
+        setPriority: (task, priority) => this.setTaskPriorityFor(this.boardTaskRef(task), priority),
+        setDeadline: (task, deadline) => this.setTaskDeadlineFor(this.boardTaskRef(task), deadline),
+        setTags: (task, keys) => this.setTaskTagsFor(this.boardTaskRef(task), keys),
+        setRepeat: (task, repeat) =>
+          this.handleRepeatUpdate(task.filePath, task.line, this.boardTaskRef(task).blockId, repeat, task.lineNumber),
+        setText: (task, text) => this.setTaskTextFor(this.boardTaskRef(task), text),
         deleteTask: async (task) => {
           const nested = descendantsOf(task, indexFamilies(this.taskStore.inFile(task.filePath))).length;
           await this.deleteTaskFor(this.boardTaskRef(task), displayTitle(task.text) || task.text, nested);

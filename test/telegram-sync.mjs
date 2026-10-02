@@ -15,7 +15,7 @@ const build = await esbuild.build({
       export { keyTasks, keyForNewTask, reminderAt, buildSnapshot } from "../src/telegram/snapshot";
       export { applyCommands, lineForNewTask } from "../src/telegram/apply";
       export { TelegramSync, syncEndpoint } from "../src/telegram/sync-service";
-      export { setSchedule, setRemind } from "../src/task-metadata";
+      export { setSchedule, setRemind, setPriority, setDeadline, setTags, setRepeat, replaceTaskText } from "../src/task-metadata";
       export { handleUpdate } from "../supabase/functions/_shared/bot.ts";
       export { handleSync } from "../supabase/functions/_shared/sync.ts";
       export { runTick } from "../supabase/functions/_shared/tick.ts";
@@ -40,7 +40,7 @@ const build = await esbuild.build({
   ],
 });
 const mod = await import('data:text/javascript;base64,' + Buffer.from(build.outputFiles[0].text).toString('base64'));
-const { parseBoardTasks, keyTasks, keyForNewTask, reminderAt, buildSnapshot, applyCommands, lineForNewTask, TelegramSync, syncEndpoint, setSchedule, setRemind } = mod;
+const { parseBoardTasks, keyTasks, keyForNewTask, reminderAt, buildSnapshot, applyCommands, lineForNewTask, TelegramSync, syncEndpoint, setSchedule, setRemind, setPriority, setDeadline, setTags, setRepeat, replaceTaskText } = mod;
 
 let checked = 0;
 function eq(actual, expected, label) {
@@ -70,7 +70,8 @@ eq(reminderAt(tasksOf('A.md', '- [ ] x @schedule(2026-10-05 09:30)')[0], { enabl
 
 const snapshot = buildSnapshot(two, defaults);
 eq(snapshot.map((t) => [t.key, t.status]), [['A.md|Same|0', 'open'], ['A.md|Same|1', 'open'], ['A.md|^tp-1|0', 'open'], ['A.md|Doing|0', 'doing']], 'only the open tasks are reported');
-eq(snapshot[3], { key: 'A.md|Doing|0', title: 'Doing', status: 'doing', priority: 'high', deadline: null, plan_date: null, plan_start: null, plan_end: null, remind_at: null, tags: ['work'], note_path: 'A.md' }, 'with what is set on them');
+eq(snapshot[3], { key: 'A.md|Doing|0', title: 'Doing', status: 'doing', priority: 'high', deadline: null, plan_date: null, plan_start: null, plan_end: null, remind_at: null, repeat: null, tags: ['work'], note_path: 'A.md' }, 'with what is set on them');
+eq(buildSnapshot(tasksOf('A.md', '- [ ] Weekly @repeat(2w)\n- [ ] Daily @repeat(daily)'), defaults).map((t) => t.repeat), ['2w', '1d'], 'a repeating task says how often, as 2w');
 
 // ── A task made in Telegram ────────────────────────────────────────────────
 const line = lineForNewTask({ title: 'Buy bread', priority: 'high', tags: ['home'], deadline: '2026-10-09', plan: { date: '2026-10-03', start: '09:00', end: '10:00' }, remind: { date: '2026-10-03', time: '08:30' } });
@@ -97,6 +98,11 @@ function notes(initial) {
     setStatus: async (task, status) => edit(task, (l) => l.replace(/- \[.\]/, `- ${status}`)),
     setRemind: async (task, value) => edit(task, (l) => setRemind(l, value)),
     setSchedule: async (task, schedule) => edit(task, (l) => setSchedule(l, schedule)),
+    setPriority: async (task, priority) => edit(task, (l) => setPriority(l, priority)),
+    setDeadline: async (task, deadline) => edit(task, (l) => setDeadline(l, deadline)),
+    setTags: async (task, keys) => edit(task, (l) => setTags(l, keys)),
+    setRepeat: async (task, repeat) => edit(task, (l) => setRepeat(l, repeat)),
+    setText: async (task, text) => edit(task, (l) => replaceTaskText(l, text)),
     deleteTask: async (task) => files.set(task.filePath, files.get(task.filePath).filter((l) => l !== task.line)),
     settled: async () => {},
   };
@@ -129,6 +135,32 @@ function notes(initial) {
   eq(n.text('Work.md'), ['- [ ] Report', '- [x] Other'].join('\n'), 'ticked, planned off, reminder set and then given back to the setting');
 }
 {
+  const n = notes({ 'Work.md': ['- [ ] Report @priority(low)', '- [ ] Plain ^tp-9', '- [ ] Report'].join('\n') });
+  const results = await applyCommands([
+    { id: 'e1', kind: 'edit', payload: { key: 'Work.md|Report|0', priority: 'highest', deadline: '2026-10-09', tags: ['Work Stuff', 'home'], repeat: '2w' } },
+    { id: 'e2', kind: 'edit', payload: { key: 'Work.md|^tp-9|0', title: 'Renamed' } },
+    { id: 'e3', kind: 'edit', payload: { key: 'Work.md|Report|1', title: 'Report two' } },
+    { id: 'e4', kind: 'edit', payload: { key: 'Work.md|Report|0', priority: null, deadline: null, tags: [], repeat: null } },
+    { id: 'e5', kind: 'edit', payload: { key: 'Work.md|Report two|0', priority: 'urgent' } },
+    { id: 'e6', kind: 'edit', payload: { key: 'Work.md|Report two|0', repeat: 'often' } },
+    { id: 'e7', kind: 'edit', payload: { key: 'Work.md|Report two|0', title: '  ' } },
+  ], n.host);
+  eq(results.map((r) => [r.id, r.key ?? null, r.from ?? null, r.error ?? null]), [
+    ['e1', null, null, null],
+    ['e2', null, null, null],
+    ['e3', 'Work.md|Report two|0', 'Work.md|Report|1', null],
+    ['e4', null, null, null],
+    ['e5', null, null, 'unknown priority'],
+    ['e6', null, null, 'unreadable repeat'],
+    ['e7', null, null, 'no title'],
+  ], 'an edit is made, a rename reports the new key, a bad value is refused with a reason');
+  eq(n.text('Work.md'), ['- [ ] Report', '- [ ] Renamed ^tp-9', '- [ ] Report two'].join('\n'), 'the settings are written and then cleared again; a block ID keeps its place');
+  const first = notes({ 'Work.md': '- [ ] Report @priority(low)' });
+  await applyCommands([{ id: 'x', kind: 'edit', payload: { key: 'Work.md|Report|0', priority: 'highest', deadline: '2026-10-09', tags: ['Work Stuff', 'home'], repeat: '2w' } }], first.host);
+  const read = parseBoardTasks('Work.md', first.text('Work.md'))[0];
+  eq([read.text, read.priority, read.deadline, read.tags, read.repeat], ['Report', 'highest', '2026-10-09', ['work-stuff', 'home'], { every: 2, unit: 'week' }], 'all of it reads back from the line');
+}
+{
   const n = notes({ 'Work.md': '- [ ] Only' });
   const [result] = await applyCommands([{ id: 'a', kind: 'add', payload: { key: 'tg:1', title: 'No inbox', tags: [] } }], n.host);
   eq(result.error, 'no inbox note is set', 'with no inbox note a new task says so');
@@ -145,7 +177,7 @@ eq([syncEndpoint('https://abc.supabase.co'), syncEndpoint('https://abc.supabase.
   const { handleUpdate, handleSync, runTick, MemoryStore } = mod;
   const store = new MemoryStore();
   const sent = [];
-  const tg = { send: async (chat, text, buttons) => void sent.push({ text, buttons }), answer: async () => {}, clearButtons: async () => {} };
+  const tg = { send: async (chat, text, buttons) => void sent.push({ text, buttons }), edit: async () => {}, answer: async () => {}, setCommands: async () => {} };
   const clock = { now: new Date('2026-10-02T12:00:00Z') };
   const say = (text) => handleUpdate({ message: { chat: { id: 7, type: 'private' }, text, message_id: 1 } }, { store, tg, pairingCode: 'k', now: () => clock.now });
   await say('/start k');
@@ -191,6 +223,14 @@ eq([syncEndpoint('https://abc.supabase.co'), syncEndpoint('https://abc.supabase.
   eq([vet.key, vet.pending, vet.n], ['Inbox.md|Call the vet|0', false, 3], 'the bot has the new task under its note’s key, and its number did not change');
   eq((await store.pendingCommands()).length, 0, 'nothing is left waiting');
   eq(store.tasks.some((t) => t.title === 'Report'), false, 'a task ticked off is no longer open');
+
+  // A title changed in Telegram renames the task in the notes; the bot keeps its number.
+  await handleUpdate({ message: { chat: { id: 7, type: 'private' }, text: 'Existing renamed', message_id: 2, reply_to_message: { text: '✏️ عنوان تازه برای #۱\n«Existing»' } } }, { store, tg, pairingCode: 'k', now: () => clock.now });
+  outcome = await sync.syncNow();
+  eq(n.text('Inbox.md').split('\n')[0], '- [ ] Existing renamed', 'a new title is written into the note');
+  const renamed = store.tasks.find((t) => t.title === 'Existing renamed');
+  eq([renamed.n, renamed.key], [1, 'Inbox.md|Existing renamed|0'], 'the task keeps its number and takes its new key');
+  eq((await store.pendingCommands()).length, 0, 'and nothing is left waiting');
 
   // The confirmation is lost on the way back: the changes are not made twice.
   await say('another one');

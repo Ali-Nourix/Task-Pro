@@ -5,12 +5,20 @@
 ### Telegram bot
 
 - **A Telegram bot for your tasks and reminders**, backed by your own Supabase
-  project (`supabase/`: a migration, three Edge Functions, a Persian setup
-  guide). Add tasks in plain words, list today and overdue, tick, snooze, move,
-  set a reminder, delete; reminders arrive in Telegram even with the computer off.
+  project (`supabase/`: migrations, three Edge Functions, a Persian setup guide).
+  It works like a small app: a main menu, lists in sections (overdue, today,
+  tomorrow, later, unplanned) set in quotes with filters and pages, and a card
+  for each task, all edited in place, with coloured buttons.
+- **Every setting of a task from Telegram**: title, status, priority, deadline,
+  plan, reminder, tags and repeat, each a button that shows its value and opens
+  its choices (presets, or a typed answer such as "every 3 days"). Add tasks in
+  plain words; reminders arrive as a card with Done and Snooze.
 - **Sync from the plugin**: a new **Telegram** settings tab and the **Sync
-  Telegram now** command. The plugin uploads a snapshot of open tasks and applies
-  queued Telegram changes to your notes, each exactly once.
+  Telegram now** command. The plugin uploads a snapshot of open tasks (now with
+  how often each repeats) and applies queued changes to your notes, each exactly
+  once, including a new `edit` change for the settings above.
+- **One double-click to update**: `update-bot.bat` redeploys the three functions;
+  they bring the database up to date themselves on first use.
 - Notes remain the source of truth; the tables are locked to the service role and
   the bot answers only the chat it was paired with.
 
