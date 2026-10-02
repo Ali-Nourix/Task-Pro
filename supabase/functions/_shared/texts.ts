@@ -1,6 +1,7 @@
 // How the bot writes: dates, tasks and every sentence, in Persian and English.
 // Everything here is HTML for Telegram: what a person typed goes through `esc`.
 
+import { JALALI_MONTHS } from './calendar-picker.ts';
 import { gregorianToJalali } from './jalali.ts';
 import { daysBetween, parseIso, utcToLocal, weekdayOf } from './time.ts';
 import type { Button, Language, OwnerRow, TaskRow } from './types.ts';
@@ -23,7 +24,6 @@ export function truncate(text: string, length: number): string {
   return chars.length > length ? `${chars.slice(0, length - 1).join('').trimEnd()}…` : text;
 }
 
-const JALALI_MONTHS = ['فروردین', 'اردیبهشت', 'خرداد', 'تیر', 'مرداد', 'شهریور', 'مهر', 'آبان', 'آذر', 'دی', 'بهمن', 'اسفند'];
 const GREGORIAN_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const FA_WEEKDAYS = ['یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه', 'پنجشنبه', 'جمعه', 'شنبه'];
 const EN_WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -86,40 +86,87 @@ function remindText(task: TaskRow, owner: Owner, today: string): string | null {
   return `${dayLabel(at.date, owner, today)} ${clockLabel(at.time, owner.language)}`;
 }
 
-/** One task for a list: its number and title, then what is set on it, on a line. */
-export function taskEntry(task: TaskRow, owner: Owner, today: string): string {
+/** A bar of ▰▱ for how much of a task's subtasks are done. */
+export function progressBar(done: number, total: number): string {
+  const cells = Math.min(total, 8);
+  const filled = total <= 8 ? done : Math.round((done / total) * cells);
+  return '▰'.repeat(filled) + '▱'.repeat(Math.max(0, cells - filled));
+}
+
+export interface EntryOptions {
+  /** Its place in the list, 1 to the end. */
+  position: number;
+  /** 0 for a task on its own or a parent, 1 for a subtask shown under its parent. */
+  depth?: 0 | 1;
+  /** A subtask whose parent is not in the list says whose it is. */
+  parentHint?: boolean;
+}
+
+const INDENT = '\u2003';
+
+/** One task for a list: its number in the list and title, then what is set on it. */
+export function taskEntry(task: TaskRow, owner: Owner, today: string, options: EntryOptions): string {
   const language = owner.language;
+  const depth = options.depth ?? 0;
+  const pad = depth ? INDENT : '';
   const glyph = task.status === 'doing' ? '🔄 ' : task.pending ? '🕓 ' : '';
   const priority = task.priority ? ` ${PRIORITY_MARK[task.priority]}` : '';
-  const head = `${glyph}<b>#${digits(task.n, language)}</b> ${esc(truncate(task.title, 110))}${priority}`;
+  const arrow = depth ? '↳ ' : '';
+  const progress = task.subs_total ? ` <code>${digits(task.subs_done ?? 0, language)}/${digits(task.subs_total, language)}</code>` : '';
+  const head = `${pad}${arrow}${glyph}<b>${digits(options.position, language)}.</b> ${esc(truncate(task.title, 110))}${priority}${progress}`;
   const parts: string[] = [];
+  if (options.parentHint && task.parent_title) parts.push(`↳ <i>${words(language).labels.subOf} «${esc(truncate(task.parent_title, 28))}»</i>`);
   const plan = planText(task, owner, today);
   if (plan) parts.push(`📅 ${plan}`);
   if (task.deadline) parts.push(`⏳ ${dayLabel(task.deadline, owner, today)}`);
   const remind = remindText(task, owner, today);
   if (remind) parts.push(`🔔 ${remind}`);
-  if (task.tags.length) parts.push(esc(task.tags.map((tag) => `#${tag}`).join(' ')));
-  return parts.length ? `${head}\n${parts.join(' · ')}` : head;
+  const repeat = repeatLabel(task.repeat ?? null, language);
+  if (repeat) parts.push(`🔁 ${repeat}`);
+  if (task.tags.length) parts.push(task.tags.map((tag) => `<code>#${esc(tag)}</code>`).join(' '));
+  const lines = [head];
+  if (task.subs_total) lines.push(`${pad}${INDENT}<code>${progressBar(task.subs_done ?? 0, task.subs_total)}</code>`);
+  if (parts.length) lines.push(`${pad}${depth ? INDENT : ''}${parts.join(' · ')}`);
+  return lines.join('\n');
+}
+
+/** What a card says about the task's family: its parent, and its open subtasks. */
+export interface Relatives {
+  parentTitle?: string | null;
+  children?: TaskRow[];
 }
 
 /** A task as the card shows it: a line for each property that is set. */
-export function taskCard(task: TaskRow, owner: Owner, today: string): string {
+export function taskCard(task: TaskRow, owner: Owner, today: string, relatives: Relatives = {}): string {
   const w = words(owner.language);
+  const language = owner.language;
   const rows: string[] = [];
   const plan = planText(task, owner, today);
   if (plan) rows.push(`📅 ${w.labels.plan} · ${plan}`);
   if (task.deadline) rows.push(`⏳ ${w.labels.deadline} · ${dayLabel(task.deadline, owner, today)}`);
   const remind = remindText(task, owner, today);
   if (remind) rows.push(`🔔 ${w.labels.remind} · ${remind}`);
-  const repeat = repeatLabel(task.repeat ?? null, owner.language);
+  const repeat = repeatLabel(task.repeat ?? null, language);
   if (repeat) rows.push(`🔁 ${w.labels.repeat} · ${repeat}`);
-  if (task.priority) rows.push(`${PRIORITY_MARK[task.priority]} ${w.labels.priority} · ${PRIORITY_NAME[owner.language][task.priority]}`);
-  if (task.tags.length) rows.push(`🏷 ${w.labels.tags} · ${esc(task.tags.map((tag) => `#${tag}`).join(' '))}`);
+  if (task.priority) rows.push(`${PRIORITY_MARK[task.priority]} ${w.labels.priority} · ${PRIORITY_NAME[language][task.priority]}`);
+  if (task.tags.length) rows.push(`🏷 ${w.labels.tags} · ${task.tags.map((tag) => `<code>#${esc(tag)}</code>`).join(' ')}`);
   if (task.note_path) rows.push(`📄 ${w.labels.note} · ${esc(task.note_path.replace(/^.*\//, '').replace(/\.md$/i, ''))}`);
   const title = task.status === 'done' ? `<s>${esc(task.title)}</s>` : `<b>${esc(task.title)}</b>`;
+  const parent = relatives.parentTitle || task.parent_title ? `↳ <i>${w.labels.subOf} «${esc(truncate(relatives.parentTitle || task.parent_title || '', 40))}»</i>\n` : '';
   const body = rows.length ? `<blockquote>${rows.join('\n')}</blockquote>` : `<i>${w.labels.nothingSet}</i>`;
-  const state = `<i>#${digits(task.n, owner.language)} · ${w.labels.statuses[task.status]}${task.pending ? ` · ${w.labels.pending}` : ''}</i>`;
-  return `${title}\n${body}\n${state}`;
+
+  let subs = '';
+  const children = relatives.children ?? [];
+  if (task.subs_total || children.length) {
+    const total = task.subs_total ?? children.length;
+    const done = task.subs_done ?? 0;
+    const list = children.map((child, i) => `${digits(i + 1, language)}. ${child.status === 'doing' ? '🔄 ' : ''}${esc(truncate(child.title, 60))}`);
+    subs =
+      `\n<b>${w.labels.subtasks}</b> <code>${digits(done, language)}/${digits(total, language)}</code> <code>${progressBar(done, total)}</code>` +
+      (list.length ? `\n<blockquote>${list.join('\n')}</blockquote>` : '');
+  }
+  const state = `<i>${w.labels.id} #${digits(task.n, language)} · ${w.labels.statuses[task.status]}${task.pending ? ` · ${w.labels.pending}` : ''}</i>`;
+  return `${parent}${title}\n${body}${subs}\n${state}`;
 }
 
 export interface Words {
@@ -170,6 +217,9 @@ export interface Words {
     tags: string;
     note: string;
     nothingSet: string;
+    subOf: string;
+    subtasks: string;
+    id: string;
     pending: string;
     statuses: Record<string, string>;
   };
@@ -237,6 +287,26 @@ export interface Words {
     editToast: string;
   };
 
+  cal: {
+    button: string;
+    kinds: { r: string; p: string; d: string; x: string };
+    pickDay: (kind: string, title: string | null, current: string | null, month: string) => string;
+    legend: string;
+    todayJump: string;
+    timeTitle: (kind: string, title: string | null, day: string) => string;
+    allDay: string;
+    customTime: string;
+    durationTitle: (title: string | null, day: string, start: string) => string;
+    durations: { m30: string; h1: string; h2: string; h3: string; none: string };
+    askReminderTime: (n: string, title: string, day: string, iso: string) => string;
+    askPlanTime: (n: string, title: string, day: string, iso: string) => string;
+    hintTime: string;
+    cantReadTime: string;
+    newOnDay: string;
+    askNew: (day: string, iso: string) => string;
+    hintNew: string;
+  };
+
   newTask: string;
   statusView: (open: number, waiting: number, lastSync: string | null, health: 'ok' | 'stale' | 'never') => string;
   agoMinutes: (minutes: number) => string;
@@ -275,7 +345,7 @@ const fa: Words = {
     '<b>#برچسب</b> · <b>!بالا</b> <b>!فوری</b> <b>!کم</b> ← برچسب و اولویت</blockquote>\n' +
     '<b>دستورها</b>\n' +
     '<blockquote expandable>/start — منوی اصلی\n/today — امروز\n/list — همهٔ تسک‌ها\n' +
-    '/done ۱۲ — انجام شد\n/remind ۱۲ فردا ۸ — یادآوری (یا off)\n/plan ۱۲ شنبه ۹-۱۰ — برنامه (یا off)\n' +
+    '/done ۱۲ — انجام شد (عدد = «شناسه» روی کارت تسک)\n/remind ۱۲ فردا ۸ — یادآوری (یا off)\n/plan ۱۲ شنبه ۹-۱۰ — برنامه (یا off)\n' +
     '/del ۱۲ — حذف\n/status — وضعیت همگام‌سازی\n/settings — تنظیمات\n' +
     '/lang fa|en · /tz Asia/Tehran · /cal jalali|gregorian · /lead ۱۰</blockquote>',
   badCode: '🚫 کد درست نیست.',
@@ -340,6 +410,9 @@ const fa: Words = {
     tags: 'برچسب',
     note: 'یادداشت',
     nothingSet: 'هنوز برنامه، مهلت یا یادآوری ندارد.',
+    subOf: 'زیرتسکِ',
+    subtasks: 'زیرتسک‌ها',
+    id: 'شناسه',
     pending: 'منتظر Obsidian',
     statuses: { open: 'باز', doing: 'در حال انجام', done: 'انجام‌شده', failed: 'ناموفق' },
   },
@@ -367,8 +440,8 @@ const fa: Words = {
     `🔔 <b>یادآوری</b>\n<blockquote>${esc(title)}${current ? `\nاکنون: ${current}` : ''}</blockquote>\nچه موقع یادت بیندازم؟`,
   planMenu: (title, current) =>
     `📅 <b>برنامه</b>\n<blockquote>${esc(title)}${current ? `\nاکنون: ${current}` : ''}</blockquote>\nکی انجامش بدهی؟`,
-  askRemind: (n, title) => `🔔 یادآوری برای #${n}\n«${title}»\n\nزمان را بنویس، مثلاً: فردا ساعت ۸`,
-  askPlan: (n, title) => `📅 برنامه برای #${n}\n«${title}»\n\nزمان را بنویس، مثلاً: شنبه ۹ تا ۱۰`,
+  askRemind: (n, title) => `🔔 یادآوری · شناسه #${n}\n«${title}»\n\nزمان را بنویس، مثلاً: فردا ساعت ۸`,
+  askPlan: (n, title) => `📅 برنامه · شناسه #${n}\n«${title}»\n\nزمان را بنویس، مثلاً: شنبه ۹ تا ۱۰`,
   askHintRemind: 'فردا ساعت ۸ …',
   askHintPlan: 'شنبه ۹ تا ۱۰ …',
   presets: { m10: '۱۰ دقیقه بعد', h1: '۱ ساعت بعد', h3: '۳ ساعت بعد', evening: 'امشب ۲۰:۰۰', tomorrow: 'فردا ۹ صبح' },
@@ -392,10 +465,10 @@ const fa: Words = {
     repeatMenu: (title, current) => `🔁 <b>تکرار</b>\n<blockquote>${esc(title)}${current ? `\nاکنون: ${current}` : ''}</blockquote>\nهر چند وقت یک‌بار برگردد؟`,
     repeatPresets: { daily: 'هر روز', weekly: 'هر هفته', biweekly: 'هر ۲ هفته', monthly: 'هر ماه' },
     noRepeat: '✖️ بدون تکرار',
-    askTitle: (n, title) => `✏️ عنوان تازه برای #${n}\n«${title}»\n\nعنوان را بنویس.`,
-    askDeadline: (n, title) => `⏳ مهلت برای #${n}\n«${title}»\n\nتاریخ را بنویس، مثلاً: جمعه ، ۱۴۰۵/۰۸/۱۰ ، ۳ روز دیگه`,
-    askTags: (n, title) => `🏷 برچسب برای #${n}\n«${title}»\n\nبرچسب‌ها را بنویس، مثلاً: کار خانه`,
-    askRepeat: (n, title) => `🔁 تکرار برای #${n}\n«${title}»\n\nبنویس، مثلاً: هر ۳ روز ، هر ۲ هفته ، ماهانه`,
+    askTitle: (n, title) => `✏️ عنوان تازه · شناسه #${n}\n«${title}»\n\nعنوان را بنویس.`,
+    askDeadline: (n, title) => `⏳ مهلت · شناسه #${n}\n«${title}»\n\nتاریخ را بنویس، مثلاً: جمعه ، ۱۴۰۵/۰۸/۱۰ ، ۳ روز دیگه`,
+    askTags: (n, title) => `🏷 برچسب · شناسه #${n}\n«${title}»\n\nبرچسب‌ها را بنویس، مثلاً: کار خانه`,
+    askRepeat: (n, title) => `🔁 تکرار · شناسه #${n}\n«${title}»\n\nبنویس، مثلاً: هر ۳ روز ، هر ۲ هفته ، ماهانه`,
     hintTitle: 'عنوان تازه …',
     hintDeadline: 'جمعه …',
     hintTags: 'کار خانه …',
@@ -406,6 +479,27 @@ const fa: Words = {
     cantReadDeadline: 'متوجه تاریخ نشدم. مثلاً: <code>جمعه</code> ، <code>۱۴۰۵/۰۸/۱۰</code> ، <code>۳ روز دیگه</code>',
     editUnavailable: '⚠️ ویرایش کامل هنوز در پایگاه داده آماده نیست. چند ثانیه بعد دوباره امتحان کن؛ اگر ماند، فایل <code>supabase/migrations/20261003000000_task_settings.sql</code> را در SQL Editor اجرا کن.',
     editToast: '✅ ذخیره شد',
+  },
+
+  cal: {
+    button: '📆 تقویم',
+    kinds: { r: '🔔 یادآوری', p: '📅 برنامه', d: '⏳ مهلت', x: '➕ تسک تازه' },
+    pickDay: (kind, title, current, month) =>
+      `📆 <b>روز را انتخاب کن</b>\n<blockquote>${kind}${title ? ` · ${esc(title)}` : ''}${current ? `\nاکنون: ${current}` : ''}</blockquote>\n<b>${month}</b>`,
+    legend: '<i>[ ] امروز · ✓ انتخاب فعلی · • روزِ دارای تسک</i>',
+    todayJump: '📍 امروز',
+    timeTitle: (kind, title, day) => `🕒 <b>ساعت چند؟</b>\n<blockquote>${kind}${title ? ` · ${esc(title)}` : ''}\n${day}</blockquote>`,
+    allDay: '☀️ بدون ساعت',
+    customTime: '✏️ ساعت دلخواه',
+    durationTitle: (title, day, start) => `⏱ <b>چقدر طول می‌کشد؟</b>\n<blockquote>${title ? `${esc(title)}\n` : ''}${day} · از ${start}</blockquote>`,
+    durations: { m30: '۳۰ دقیقه', h1: '۱ ساعت', h2: '۲ ساعت', h3: '۳ ساعت', none: 'بدون پایان' },
+    askReminderTime: (n, title, day, iso) => `⏰ ساعت یادآوری · شناسه #${n}\n«${title}»\n${day}\n${iso}\n\nساعت را بنویس، مثلاً: ۱۴:۳۰ یا ۹ شب`,
+    askPlanTime: (n, title, day, iso) => `🕒 ساعت برنامه · شناسه #${n}\n«${title}»\n${day}\n${iso}\n\nساعت را بنویس، مثلاً: ۹ تا ۱۰ یا ۱۴:۳۰`,
+    hintTime: '۱۴:۳۰ …',
+    cantReadTime: 'ساعت را نفهمیدم. مثلاً: <code>۱۴:۳۰</code> ، <code>۹ شب</code> ، <code>۹ تا ۱۰</code>',
+    newOnDay: '📆 تسک برای یک روز',
+    askNew: (day, iso) => `🗓 تسک تازه برای ${day}\n${iso}\n\nعنوان را بنویس؛ اگر ساعت هم بنویسی («ساعت ۹») برنامه می‌شود.`,
+    hintNew: 'عنوان تسک …',
   },
 
   newTask:
@@ -489,7 +583,7 @@ const en: Words = {
     '<b>#tag</b> · <b>!high</b> <b>!highest</b> <b>!low</b> → tag and priority</blockquote>\n' +
     '<b>Commands</b>\n' +
     '<blockquote expandable>/start — main menu\n/today\n/list — everything open\n' +
-    '/done 12\n/remind 12 tomorrow 8 (or off)\n/plan 12 sat 9-10 (or off)\n' +
+    '/done 12 (the number is the task card’s ID)\n/remind 12 tomorrow 8 (or off)\n/plan 12 sat 9-10 (or off)\n' +
     '/del 12\n/status — sync status\n/settings\n' +
     '/lang fa|en · /tz Asia/Tehran · /cal jalali|gregorian · /lead 10</blockquote>',
   badCode: '🚫 That code is not right.',
@@ -554,6 +648,9 @@ const en: Words = {
     tags: 'Tags',
     note: 'Note',
     nothingSet: 'No plan, deadline or reminder yet.',
+    subOf: 'subtask of',
+    subtasks: 'Subtasks',
+    id: 'ID',
     pending: 'waiting for Obsidian',
     statuses: { open: 'Open', doing: 'In progress', done: 'Done', failed: 'Failed' },
   },
@@ -581,8 +678,8 @@ const en: Words = {
     `🔔 <b>Reminder</b>\n<blockquote>${esc(title)}${current ? `\nNow: ${current}` : ''}</blockquote>\nWhen should I remind you?`,
   planMenu: (title, current) =>
     `📅 <b>Plan</b>\n<blockquote>${esc(title)}${current ? `\nNow: ${current}` : ''}</blockquote>\nWhen will you do it?`,
-  askRemind: (n, title) => `🔔 Reminder for #${n}\n“${title}”\n\nType the time, like: tomorrow at 8`,
-  askPlan: (n, title) => `📅 Plan for #${n}\n“${title}”\n\nType the time, like: sat 9-10`,
+  askRemind: (n, title) => `🔔 Reminder · ID #${n}\n“${title}”\n\nType the time, like: tomorrow at 8`,
+  askPlan: (n, title) => `📅 Plan · ID #${n}\n“${title}”\n\nType the time, like: sat 9-10`,
   askHintRemind: 'tomorrow at 8 …',
   askHintPlan: 'sat 9-10 …',
   presets: { m10: 'In 10 min', h1: 'In 1 hour', h3: 'In 3 hours', evening: 'Tonight 20:00', tomorrow: 'Tomorrow 9 am' },
@@ -606,10 +703,10 @@ const en: Words = {
     repeatMenu: (title, current) => `🔁 <b>Repeat</b>\n<blockquote>${esc(title)}${current ? `\nNow: ${current}` : ''}</blockquote>\nHow often should it come back?`,
     repeatPresets: { daily: 'Every day', weekly: 'Every week', biweekly: 'Every 2 weeks', monthly: 'Every month' },
     noRepeat: '✖️ No repeat',
-    askTitle: (n, title) => `✏️ New title for #${n}\n“${title}”\n\nType the title.`,
-    askDeadline: (n, title) => `⏳ Deadline for #${n}\n“${title}”\n\nType the date, like: friday, 2026-10-30, in 3 days`,
-    askTags: (n, title) => `🏷 Tags for #${n}\n“${title}”\n\nType the tags, like: work home`,
-    askRepeat: (n, title) => `🔁 Repeat for #${n}\n“${title}”\n\nType it, like: every 3 days, every 2 weeks, monthly`,
+    askTitle: (n, title) => `✏️ New title · ID #${n}\n“${title}”\n\nType the title.`,
+    askDeadline: (n, title) => `⏳ Deadline · ID #${n}\n“${title}”\n\nType the date, like: friday, 2026-10-30, in 3 days`,
+    askTags: (n, title) => `🏷 Tags · ID #${n}\n“${title}”\n\nType the tags, like: work home`,
+    askRepeat: (n, title) => `🔁 Repeat · ID #${n}\n“${title}”\n\nType it, like: every 3 days, every 2 weeks, monthly`,
     hintTitle: 'New title …',
     hintDeadline: 'friday …',
     hintTags: 'work home …',
@@ -620,6 +717,27 @@ const en: Words = {
     cantReadDeadline: 'I did not catch the date. Try: <code>friday</code>, <code>2026-10-30</code>, <code>in 3 days</code>',
     editUnavailable: '⚠️ Full editing is not ready in the database yet. Try again in a few seconds; if it stays, run <code>supabase/migrations/20261003000000_task_settings.sql</code> in the SQL Editor.',
     editToast: '✅ Saved',
+  },
+
+  cal: {
+    button: '📆 Calendar',
+    kinds: { r: '🔔 Reminder', p: '📅 Plan', d: '⏳ Deadline', x: '➕ New task' },
+    pickDay: (kind, title, current, month) =>
+      `📆 <b>Pick a day</b>\n<blockquote>${kind}${title ? ` · ${esc(title)}` : ''}${current ? `\nNow: ${current}` : ''}</blockquote>\n<b>${month}</b>`,
+    legend: '<i>[ ] today · ✓ current · • a day with tasks</i>',
+    todayJump: '📍 Today',
+    timeTitle: (kind, title, day) => `🕒 <b>What time?</b>\n<blockquote>${kind}${title ? ` · ${esc(title)}` : ''}\n${day}</blockquote>`,
+    allDay: '☀️ No time',
+    customTime: '✏️ Other time',
+    durationTitle: (title, day, start) => `⏱ <b>How long?</b>\n<blockquote>${title ? `${esc(title)}\n` : ''}${day} · from ${start}</blockquote>`,
+    durations: { m30: '30 min', h1: '1 hour', h2: '2 hours', h3: '3 hours', none: 'No end' },
+    askReminderTime: (n, title, day, iso) => `⏰ Reminder time · ID #${n}\n“${title}”\n${day}\n${iso}\n\nType the time, like: 14:30 or 9 pm`,
+    askPlanTime: (n, title, day, iso) => `🕒 Plan time · ID #${n}\n“${title}”\n${day}\n${iso}\n\nType the time, like: 9-10 or 14:30`,
+    hintTime: '14:30 …',
+    cantReadTime: 'I did not catch the time. Try: <code>14:30</code>, <code>9 pm</code>, <code>9-10</code>',
+    newOnDay: '📆 Task for a day',
+    askNew: (day, iso) => `🗓 New task for ${day}\n${iso}\n\nType the title; add a time (“at 9”) to plan it.`,
+    hintNew: 'Task title …',
   },
 
   newTask:

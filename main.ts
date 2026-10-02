@@ -751,6 +751,8 @@ export default class TaskProPlugin extends Plugin {
         tasks: () => this.syncableTasks(),
         inboxPath: () => this.boardInboxPath() || null,
         appendLine: (path, line) => this.appendTaskLine(path, line),
+        dayTarget: (day) => this.dayNoteTarget(day, this.settings.board.calendarSystem ?? this.settings.calendarSystem).path || null,
+        addTaskOnDay: (day, line) => this.addTaskOnDay(day, line, this.settings.board.calendarSystem ?? this.settings.calendarSystem),
         setStatus: (task, status) => this.setTaskStatusFor(this.boardTaskRef(task), status),
         setRemind: (task, value) => this.setTaskRemindFor(this.boardTaskRef(task), value),
         setSchedule: (task, schedule) => this.setTaskScheduleFor(this.boardTaskRef(task), schedule),

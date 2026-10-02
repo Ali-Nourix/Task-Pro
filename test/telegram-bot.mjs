@@ -19,6 +19,7 @@ const build = await esbuild.build({
       export { jalaliToGregorian as botJalaliToGregorian, gregorianToJalali as botGregorianToJalali } from "../supabase/functions/_shared/jalali.ts";
       export { jalaliToGregorian, gregorianToJalali } from "../src/date-utils";
       export { TASK_SETTINGS_SQL } from "../supabase/functions/_shared/schema-sql.ts";
+      export { buildMonth, daysIn, monthKeyOf, dayOf } from "../supabase/functions/_shared/calendar-picker.ts";
     `,
     resolveDir: new URL('.', import.meta.url).pathname,
     loader: 'ts',
@@ -240,7 +241,7 @@ async function paired() {
   ] });
 
   await w.press('rm:1');
-  eq(w.data(w.lastEdit()), ['rs:1:10', 'rs:1:60', 'rs:1:180', 'rs:1:eve', 'rs:1:tom', 'rc:1', 'cfg:1'], 'the reminder menu offers moments, a free choice and a way back');
+  eq(w.data(w.lastEdit()), ['rs:1:10', 'rs:1:60', 'rs:1:180', 'rs:1:eve', 'rs:1:tom', 'cn:r:1:1405-7', 'rc:1', 'cfg:1'], 'the reminder menu offers moments, the calendar, a free choice and a way back');
   await w.press('rs:1:60');
   eq([w.store.tasks[0].remind_at, w.store.commands.at(-1).payload.moment], ['2026-10-02T13:00:00.000Z', { date: '2026-10-02', time: '16:30' }], 'a preset reminder an hour from now');
   eq(w.lastEdit().text.includes('یادآوری تنظیم شد') && w.lastEdit().text.includes('🔔'), true, 'shown on the card');
@@ -263,7 +264,7 @@ async function paired() {
   eq(w.last().text.includes('متوجه زمان نشدم'), true, 'an answer it cannot read is said so');
 
   await w.press('pl:2');
-  eq(w.data(w.lastEdit()), ['ps:2:0', 'ps:2:1', 'ps:2:2', 'ps:2:7', 'pc:2', 'cfg:2'], 'the plan menu offers days');
+  eq(w.data(w.lastEdit()), ['ps:2:0', 'ps:2:1', 'ps:2:2', 'ps:2:7', 'cn:p:2:1405-7', 'pc:2', 'cfg:2'], 'the plan menu offers days and the calendar');
   await w.press('ps:2:1');
   eq([w.store.tasks[1].plan_date, w.store.tasks[1].plan_start, w.store.commands.at(-1).payload.plan], ['2026-10-03', null, { date: '2026-10-03' }], 'a day for a task with no hours');
   await w.say('/plan 2 sat 9-10');
@@ -326,9 +327,9 @@ async function paired() {
   eq(w.data(first).filter((d) => d.startsWith('t:')).length, 8, 'eight task buttons');
   eq(w.data(first).filter((d) => d.startsWith('ls:')), ['ls:a:1', 'ls:a:0', 'ls:u:0'], 'a way to the next page, then the filters that have tasks');
   eq(first.buttons[4].map((b) => b.text), ['·', '۱ از ۳', '›'], 'the page number sits between the arrows');
-  eq(first.text.includes('<b>#۱</b>') && !first.text.includes('<b>#۹</b>'), true, 'the text holds the same eight');
+  eq(first.text.includes('<b>۱.</b>') && !first.text.includes('<b>۹.</b>'), true, 'the text holds the same eight');
   await w.press('ls:a:1');
-  eq([w.lastEdit().id, w.lastEdit().text.includes('<b>#۹</b>'), w.lastEdit().buttons[4].map((b) => b.text)], [555, true, ['‹', '۲ از ۳', '›']], 'the next page replaces the list in place');
+  eq([w.lastEdit().id, w.lastEdit().text.includes('<b>۹.</b>'), w.lastEdit().buttons[4].map((b) => b.text)], [555, true, ['‹', '۲ از ۳', '›']], 'the next page replaces the list in place');
   await w.press('ls:a:9');
   eq(w.lastEdit().buttons.find((row) => row[0].text === '‹' || row[0].text === '·')[1].text, '۳ از ۳', 'a page past the end is the last');
   await w.press('t:19@a2');
@@ -354,7 +355,7 @@ async function paired() {
   await w.press('st');
   eq(w.lastEdit().text.includes('🟡'), true, 'and says when Obsidian has been closed for a while');
   await w.press('new');
-  eq(w.lastEdit().text.includes('تسک جدید') && w.data(w.lastEdit()).join() === 'home', true, '“new task” explains and offers the menu');
+  eq(w.lastEdit().text.includes('تسک جدید') && w.data(w.lastEdit()).join() === 'cn:x:0:1405-7,home', true, '“new task” explains, offers a day from the calendar and the menu');
   await w.press('home');
   eq(w.lastEdit().text.startsWith('✨'), true, 'the menu button goes home');
   await w.press('help');
@@ -366,12 +367,12 @@ async function paired() {
 }
 
 
-// The statements the functions run to update the database are the migration's.
+// The statements the functions run to update the database are the migrations'.
 {
   const fs = await import('fs');
-  const migration = fs.readFileSync(new URL('../supabase/migrations/20261003000000_task_settings.sql', import.meta.url), 'utf8');
+  const read = (name) => fs.readFileSync(new URL(`../supabase/migrations/${name}`, import.meta.url), 'utf8');
   const code = (text) => text.split('\n').filter((line) => !line.startsWith('--')).join(' ').replace(/\s+/g, ' ').trim();
-  eq(code(mod.TASK_SETTINGS_SQL), code(migration), 'the update the functions run is the migration file');
+  eq(code(mod.TASK_SETTINGS_SQL), code(read('20261003000000_task_settings.sql') + '\n' + read('20261004000000_subtasks.sql')), 'the update the functions run is the migration files, in order');
 }
 
 // ── Every setting of a task ────────────────────────────────────────────────
@@ -461,6 +462,122 @@ async function paired() {
   eq([x.store.tasks[0].priority, x.last().text.includes('task_settings.sql')], [null, true], 'if the database cannot queue an edit yet, nothing is changed and the owner is told what to do');
 }
 
+
+// ── The calendar the bot draws ─────────────────────────────────────────────
+{
+  const month = mod.buildMonth('1405-7', 'jalali', 'fa', '1405-7');
+  const days = month.weeks.flat().filter(Boolean).sort();
+  eq([days.length, days[0], days.at(-1)], [30, '2026-09-23', '2026-10-22'], 'Mehr 1405 has thirty days, from 23 September to 22 October');
+  eq(month.header, ['ج', 'پ', 'چ', 'س', 'د', 'ی', 'ش'], 'a Persian week is drawn from the right, Saturday first');
+  eq(month.weeks[0].filter(Boolean).length, 3, 'the first row has four blanks before the first day (Mehr 1 is a Wednesday)');
+  eq([month.prev, month.next], ['1405-6', '1405-8'], 'the neighbouring months');
+  eq([mod.buildMonth('1405-12', 'jalali', 'en', '1405-12').weeks.flat().filter(Boolean).length, mod.buildMonth('1403-12', 'jalali', 'en', '1403-12').weeks.flat().filter(Boolean).length], [29, 30], 'Esfand has thirty days only in a leap year (1403)');
+  eq(mod.buildMonth('1405-12', 'jalali', 'en', '1405-12').next, '1406-1', 'and the year turns');
+  const greg = mod.buildMonth('2026-10', 'gregorian', 'en', '2026-10');
+  eq([greg.header[0], greg.weeks.flat().filter(Boolean).length, greg.weeks[0].findIndex(Boolean)], ['Mo', 31, 3], 'a Gregorian month starts on Monday: 1 October 2026 is a Thursday');
+  eq(mod.monthKeyOf('jalali', '2026-10-12'), '1405-7', 'a date’s month in either calendar');
+  eq(mod.dayOf('jalali', 1405, 7, 20), '2026-10-12', '20 Mehr 1405 is 12 October 2026');
+}
+
+{
+  const w = await paired();
+  await w.sync({ snapshot: [{ key: 'W.md|^a|0', title: 'Report', status: 'open', plan_date: '2026-10-12', tags: [] }] });
+
+  await w.press('rm:1@a0');
+  await w.press('cn:r:1:1405-7@a0');
+  const calendar = w.lastEdit();
+  eq(calendar.text.includes('<b>مهر ۱۴۰۵</b>') && calendar.text.includes('Report'), true, 'the calendar names the month and the task');
+  const labels = calendar.buttons.flat().map((b) => b.text);
+  eq([labels[0], labels[2], labels.includes('[۱۰]'), labels.includes('۲۰•')], ['‹', '›', true, true], 'with today in brackets (10 Mehr) and a bullet on the day that has a task (20 Mehr)');
+  const twenty = calendar.buttons.flat().find((b) => b.text === '۲۰•');
+  eq(twenty.data, 'cd:r:1:2026-10-12@a0', 'a day is picked by its Gregorian date');
+  eq(calendar.buttons.at(-1).map((b) => b.data), ['cfg:1@a0'], 'with a way back');
+  await w.press('cn:r:1:1405-8@a0');
+  eq(w.lastEdit().text.includes('<b>آبان ۱۴۰۵</b>'), true, 'the arrows change the month');
+
+  await w.press('cd:r:1:2026-10-12@a0');
+  const times = w.lastEdit();
+  eq([times.text.includes('ساعت چند'), times.buttons.flat().filter((b) => b.data.startsWith('ct:r:1:2026-10-12:')).length], [true, 18], 'a day opens the hours');
+  await w.press('ct:r:1:2026-10-12:0900@a0');
+  eq([w.store.tasks[0].remind_at, w.store.commands.at(-1).payload.moment], ['2026-10-12T05:30:00.000Z', { date: '2026-10-12', time: '09:00' }], 'an hour sets the reminder, in Tehran time');
+  await w.press('ct:r:1:2026-10-01:0900@a0');
+  eq(w.toasts.at(-1).includes('گذشته'), true, 'a moment already past is refused over the chat');
+  await w.press('cc:r:1:2026-10-12');
+  eq([w.last().text.startsWith('⏰'), w.last().text.includes('2026-10-12'), w.last().options.forceReply !== undefined], [true, true, true], 'another hour is asked for, with the day in the question');
+  await w.reply('۱۴:۳۰', w.last().text);
+  eq(w.store.tasks[0].remind_at, '2026-10-12T11:00:00.000Z', 'and read from the answer');
+
+  await w.press('cn:p:1:1405-7@a0');
+  await w.press('cd:p:1:2026-10-14@a0');
+  await w.press('ct:p:1:2026-10-14:1000@a0');
+  eq(w.data(w.lastEdit()).slice(0, 4), ['cu:p:1:2026-10-14:1000:30@a0', 'cu:p:1:2026-10-14:1000:60@a0', 'cu:p:1:2026-10-14:1000:120@a0', 'cu:p:1:2026-10-14:1000:180@a0'], 'a plan then asks how long');
+  await w.press('cu:p:1:2026-10-14:1000:90@a0');
+  eq([w.store.tasks[0].plan_date, w.store.tasks[0].plan_start, w.store.tasks[0].plan_end], ['2026-10-14', '10:00', '11:30'], 'the plan has its start and end');
+  await w.press('cw:p:1:2026-10-15@a0');
+  eq([w.store.tasks[0].plan_date, w.store.tasks[0].plan_start], ['2026-10-15', null], 'or only a day');
+  await w.press('cc:p:1:2026-10-16');
+  await w.reply('9-10', w.last().text);
+  eq([w.store.tasks[0].plan_date, w.store.tasks[0].plan_start, w.store.tasks[0].plan_end], ['2026-10-16', '09:00', '10:00'], 'or a typed range');
+
+  await w.press('cn:d:1:1405-7@a0');
+  await w.press('cd:d:1:2026-10-20@a0');
+  eq([w.store.tasks[0].deadline, w.store.commands.at(-1).payload.deadline], ['2026-10-20', '2026-10-20'], 'a deadline is one tap on a day');
+
+  // A task made for a day chosen on the calendar.
+  await w.press('new');
+  eq(w.data(w.lastEdit()).includes('cn:x:0:1405-7'), true, '“new task” offers a day from the calendar');
+  await w.press('cd:x:0:2026-10-12');
+  eq([w.last().text.startsWith('🗓'), w.last().text.includes('2026-10-12')], [true, true], 'the title is asked for, with the day in the question');
+  await w.reply('خرید نان ساعت ۹ #خانه', w.last().text);
+  const made = w.store.tasks.find((t) => t.title === 'خرید نان');
+  eq([made.plan_date, made.plan_start, made.tags, w.store.commands.at(-1).payload.day], ['2026-10-12', '09:00', ['خانه'], '2026-10-12'], 'the task is planned for that day, at the hour typed');
+}
+
+// ── Which day a new task is written for ────────────────────────────────────
+{
+  const w = await paired();
+  const dayOf = async (text) => {
+    await w.say(text);
+    return w.store.commands.at(-1).payload.day;
+  };
+  eq(await dayOf('خرید نان 1405/07/20'), '2026-10-12', 'a task typed with a Jalali date is for that day, not the month');
+  eq(await dayOf('call mom remind 2026-10-20 8'), '2026-10-20', 'a reminder’s day counts when there is no plan');
+  eq(await dayOf('report due 2026-10-25'), '2026-10-25', 'and a deadline’s when there is neither');
+  eq(await dayOf('plan 2026-10-14 remind 2026-10-13 8 due 2026-10-30'), '2026-10-14', 'the plan wins');
+  eq(await dayOf('buy milk'), '2026-10-02', 'with no date at all it is for today');
+}
+
+// ── Subtasks and the numbering of a list ───────────────────────────────────
+{
+  const w = await paired();
+  await w.sync({ snapshot: [
+    { key: 'P.md|^p|0', title: 'Launch', status: 'open', plan_date: '2026-10-02', subs_done: 1, subs_total: 3, tags: [] },
+    { key: 'P.md|Write copy|0', title: 'Write copy', status: 'open', plan_date: '2026-10-02', parent_key: 'P.md|^p|0', parent_title: 'Launch', tags: [] },
+    { key: 'P.md|Design|0', title: 'Design', status: 'doing', parent_key: 'P.md|^p|0', parent_title: 'Launch', tags: [] },
+    { key: 'Q.md|Solo|0', title: 'Solo', status: 'open', plan_date: '2026-10-02', tags: [] },
+    { key: 'Q.md|Orphan|0', title: 'Orphan', status: 'open', deadline: '2026-10-01', parent_key: 'Q.md|Closed|0', parent_title: 'Closed parent', tags: [] },
+  ] });
+  eq(w.store.tasks.map((t) => [t.title, t.parent_key, t.subs_total]), [['Launch', null, 3], ['Write copy', 'P.md|^p|0', null], ['Design', 'P.md|^p|0', null], ['Solo', null, null], ['Orphan', 'Q.md|Closed|0', null]], 'the upload keeps who is under whom, and the counts');
+
+  await w.say('/list');
+  const text = w.last().text;
+  const order = ['Orphan', 'Launch', 'Write copy', 'Design', 'Solo'].map((title) => text.indexOf(title));
+  eq(order.every((at, i) => at > (order[i - 1] ?? -1)), true, 'a parent is followed by its subtasks, the families in order of their sections');
+  eq([text.includes('<b>۱.</b> Orphan'), text.includes('<b>۲.</b> Launch'), text.includes('<b>۳.</b> Write copy'), text.includes('<b>۴.</b> 🔄 Design') || text.includes('🔄 <b>۴.</b> Design'), text.includes('<b>۵.</b> Solo')], [true, true, true, true, true], 'numbered 1 to 5 in the order they are read, with no gaps');
+  eq(text.includes('↳ 🔄 <b>۴.</b> Design') || text.includes('↳ <b>۴.</b>'), true, 'a subtask is marked with an arrow and set in from its parent');
+  eq(text.includes('<code>۱/۳</code>') && text.includes('▰▱▱'), true, 'a parent shows how many subtasks are done, with a bar');
+  eq(text.includes('زیرتسکِ «Closed parent»'), true, 'a subtask whose parent is not in the list says whose it is');
+  eq(w.data(w.last()).filter((d) => d.startsWith('t:')), ['t:5@a0', 't:1@a0', 't:2@a0', 't:3@a0', 't:4@a0'], 'the buttons follow the same order');
+  eq(w.last().buttons[0][0].text.startsWith('۱ · '), true, 'and carry the same numbers');
+
+  await w.press('t:1@a0');
+  const card = w.lastEdit();
+  eq([card.text.includes('زیرتسک‌ها</b> <code>۱/۳</code>'), card.text.includes('۱. Write copy'), card.text.includes('۲. 🔄 Design')], [true, true, true], 'a parent’s card lists its open subtasks and the count');
+  eq(w.data(card).filter((d) => d.startsWith('t:')), ['t:2@a0', 't:3@a0'], 'with a button for each');
+  await w.press('t:2@a0');
+  eq([w.lastEdit().text.startsWith('↳ <i>زیرتسکِ «Launch»</i>'), w.data(w.lastEdit()).includes('t:1@a0')], [true, true], 'a subtask’s card says whose it is, with a button up to its parent');
+}
+
 // ── Sync ───────────────────────────────────────────────────────────────────
 {
   const w = await paired();
@@ -498,7 +615,7 @@ async function paired() {
   eq(w.last().text.includes('the note is read-only'), true, 'a change the plugin could not make is told to the owner');
   await w.say('/status');
   eq(w.last().text.includes('منتظر'), true, '/status reports the sync');
-  eq(cleanTask({ key: 'k', title: 't', status: 'done', plan_date: '2026-02-31', tags: [3, 'a'], priority: 'urgent' }), { key: 'k', title: 't', status: 'done', priority: null, deadline: null, plan_date: null, plan_start: null, plan_end: null, remind_at: null, repeat: null, tags: ['a'], note_path: null }, 'an upload is cleaned field by field');
+  eq(cleanTask({ key: 'k', title: 't', status: 'done', plan_date: '2026-02-31', tags: [3, 'a'], priority: 'urgent' }), { key: 'k', title: 't', status: 'done', priority: null, deadline: null, plan_date: null, plan_start: null, plan_end: null, remind_at: null, repeat: null, parent_key: null, parent_title: null, subs_done: null, subs_total: null, tags: ['a'], note_path: null }, 'an upload is cleaned field by field');
 }
 
 // ── Reminders ──────────────────────────────────────────────────────────────

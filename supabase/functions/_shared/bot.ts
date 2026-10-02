@@ -6,8 +6,10 @@
 
 import { normalize, parseQuickAdd } from './quickadd.ts';
 import type { Moment, Plan } from './quickadd.ts';
-import { addDays, isZone, localNow, localToUtc, utcToLocal } from './time.ts';
+import { addDays, clockMinutes, isRealDate, isZone, localNow, localToUtc, toClock, utcToLocal } from './time.ts';
+import { buildMonth, monthKeyOf, monthName, partsOf } from './calendar-picker.ts';
 import { clockLabel, dayLabel, digits, esc, priorityMark, priorityName, repeatLabel, taskCard, taskEntry, truncate, words } from './texts.ts';
+import type { Relatives } from './texts.ts';
 import type { Words } from './texts.ts';
 import type { AddPayload, Button, EditPayload, OwnerRow, PlanPayload, RemindPayload, StatusPayload, Store, TaskRow, Telegram } from './types.ts';
 import { isOpen } from './types.ts';
@@ -52,7 +54,13 @@ const PRIORITIES = ['highest', 'high', 'medium', 'low', 'lowest'] as const;
 const MAX_TAGS = 20;
 
 /** A message that answers one of the bot's questions starts with the property's emoji and ends its first line with the task's number. */
-const ASKED = /^(🔔|📅|✏|⏳|🏷|🔁)[^\n#]*#([\d۰-۹]+)[ \t]*(?:\n|$)/u;
+const ASKED = /^(🔔|📅|✏|⏳|🏷|🔁|⏰|🕒)[^\n#]*#([\d۰-۹]+)[ \t]*(?:\n|$)/u;
+/** The question "what is the task?" asked for a day chosen on the calendar: the day is on the second line. */
+const ASKED_DAY = /^🗓[^\n]*\n(\d{4}-\d{2}-\d{2})/u;
+
+/** What the calendar is picking a day for: a reminder, a plan, a deadline, or a new task. */
+type Pick = 'r' | 'p' | 'd' | 'x';
+const PICKS = new Set<string>(['r', 'p', 'd', 'x']);
 
 type Filter = 'a' | 't' | 'o' | 'u';
 const FILTERS: Filter[] = ['a', 't', 'o', 'u'];
@@ -121,8 +129,11 @@ export async function handleUpdate(update: Update, deps: BotDeps): Promise<void>
   }
 
   // An answer to one of the bot's questions: the question says which task and which property.
-  const asked = ASKED.exec(message.reply_to_message?.text ?? '');
-  if (asked) return answerAsked(asked[1], numbersIn(asked[2])[0], text, ctx);
+  const replied = message.reply_to_message?.text ?? '';
+  const askedDay = ASKED_DAY.exec(replied);
+  if (askedDay) return addTask(text, ctx, askedDay[1]);
+  const asked = ASKED.exec(replied);
+  if (asked) return answerAsked(asked[1], numbersIn(asked[2])[0], text, replied, ctx);
 
   const bare = COMMANDS[normalize(text)];
   if (BARE.has(normalize(text)) && bare) return runCommand(bare, '', ctx);
@@ -254,7 +265,8 @@ function helpView(ctx: Ctx): View {
 }
 
 function newTaskView(ctx: Ctx): View {
-  return { text: ctx.w.newTask, buttons: [[{ text: ctx.w.buttons.menu, data: 'home' }]] };
+  const key = monthKeyOf(ctx.owner.calendar, localNow(ctx.owner.timezone, ctx.deps.now()).date);
+  return { text: ctx.w.newTask, buttons: [[{ text: ctx.w.cal.newOnDay, data: `cn:x:0:${key}`, style: 'primary' }], [{ text: ctx.w.buttons.menu, data: 'home' }]] };
 }
 
 async function statusView(ctx: Ctx): Promise<View> {
@@ -307,6 +319,45 @@ function matches(filter: Filter, bucket: Bucket): boolean {
   return bucket === 'none';
 }
 
+interface Row {
+  task: TaskRow;
+  bucket: Bucket;
+  depth: 0 | 1;
+  /** A subtask whose parent is not in this list. */
+  orphan: boolean;
+}
+
+/** The tasks as a list reads: each parent followed by its subtasks, families in the order of their first task. */
+function families(shown: { task: TaskRow; bucket: Bucket }[]): Row[][] {
+  const byKey = new Map(shown.map((entry) => [entry.task.key, entry]));
+  const kids = new Map<string, { task: TaskRow; bucket: Bucket }[]>();
+  const roots: { task: TaskRow; bucket: Bucket }[] = [];
+  for (const entry of shown) {
+    const parent = entry.task.parent_key ? byKey.get(entry.task.parent_key) : undefined;
+    if (parent && parent !== entry) kids.set(parent.task.key, [...(kids.get(parent.task.key) ?? []), entry]);
+    else roots.push(entry);
+  }
+  const seen = new Set<string>();
+  const build = (root: { task: TaskRow; bucket: Bucket }): Row[] => {
+    const rows: Row[] = [{ ...root, depth: 0, orphan: !!root.task.parent_key }];
+    seen.add(root.task.key);
+    const walk = (key: string) => {
+      for (const child of kids.get(key) ?? []) {
+        if (seen.has(child.task.key)) continue;
+        seen.add(child.task.key);
+        rows.push({ ...child, depth: 1, orphan: false });
+        walk(child.task.key);
+      }
+    };
+    walk(root.task.key);
+    return rows;
+  };
+  const out = roots.map(build);
+  // Tasks that point at each other (a loop in the notes) are still listed.
+  for (const entry of shown) if (!seen.has(entry.task.key)) out.push(build(entry));
+  return out;
+}
+
 async function listView(ctx: Ctx, filter: Filter, requestedPage: number): Promise<View> {
   const { w, owner } = ctx;
   const now = ctx.deps.now();
@@ -319,10 +370,28 @@ async function listView(ctx: Ctx, filter: Filter, requestedPage: number): Promis
   for (const entry of entries) for (const f of FILTERS) if (matches(f, entry.bucket)) counts[f]++;
 
   const shown = entries.filter((entry) => matches(filter, entry.bucket));
-  const pages = Math.max(1, Math.ceil(shown.length / PAGE));
-  const page = Math.min(Math.max(0, requestedPage), pages - 1);
-  const slice = shown.slice(page * PAGE, page * PAGE + PAGE);
-  const back = `${filter}${page}`;
+  const all = families(shown);
+  // Numbered 1 to the end across every page, so the numbers read in order.
+  const position = new Map<string, number>();
+  all.flat().forEach((row, i) => position.set(row.task.key, i + 1));
+  // A page takes whole families; one family bigger than a page has a page to itself.
+  const pageList: Row[][][] = [];
+  let page: Row[][] = [];
+  let size = 0;
+  for (const family of all) {
+    if (page.length && size + family.length > PAGE) {
+      pageList.push(page);
+      page = [];
+      size = 0;
+    }
+    page.push(family);
+    size += family.length;
+  }
+  if (page.length) pageList.push(page);
+  const pages = Math.max(1, pageList.length);
+  const index = Math.min(Math.max(0, requestedPage), pages - 1);
+  const slice = pageList[index] ?? [];
+  const back = `${filter}${index}`;
 
   const filterRow = FILTERS.filter((f) => f === filter || f === 'a' || counts[f] > 0).map((f) => ({
     text: `${w.filters[f]} ${digits(counts[f], owner.language)}`,
@@ -338,31 +407,36 @@ async function listView(ctx: Ctx, filter: Filter, requestedPage: number): Promis
     let current: Bucket | null = null;
     let group: string[] = [];
     const flush = () => {
-      if (current !== null && group.length) text += `\n\n${w.sections[current]}\n<blockquote>${group.join('\n\n')}</blockquote>`;
+      if (current !== null && group.length) text += `\n\n<b>${w.sections[current]}</b>\n<blockquote>${group.join('\n\n')}</blockquote>`;
       group = [];
     };
-    for (const { task, bucket } of slice) {
-      if (bucket !== current) {
+    for (const family of slice) {
+      if (family[0].bucket !== current) {
         flush();
-        current = bucket;
+        current = family[0].bucket;
       }
-      group.push(taskEntry(task, owner, today));
+      group.push(
+        family
+          .map((row) => taskEntry(row.task, owner, today, { position: position.get(row.task.key)!, depth: row.depth, parentHint: row.orphan }))
+          .join('\n')
+      );
     }
     flush();
 
-    for (let i = 0; i < slice.length; i += 2) {
+    const rows = slice.flat();
+    for (let i = 0; i < rows.length; i += 2) {
       buttons.push(
-        slice.slice(i, i + 2).map(({ task }) => ({
-          text: `${digits(task.n, owner.language)} · ${truncate(task.title, 15)}`,
+        rows.slice(i, i + 2).map(({ task }) => ({
+          text: `${digits(position.get(task.key)!, owner.language)} · ${truncate(task.title, 15)}`,
           data: `t:${task.n}@${back}`,
         }))
       );
     }
     if (pages > 1) {
       buttons.push([
-        page > 0 ? { text: w.buttons.prev, data: `ls:${filter}:${page - 1}` } : { text: '·', data: 'noop' },
-        { text: w.page(page + 1, pages), data: 'noop' },
-        page < pages - 1 ? { text: w.buttons.next, data: `ls:${filter}:${page + 1}` } : { text: '·', data: 'noop' },
+        index > 0 ? { text: w.buttons.prev, data: `ls:${filter}:${index - 1}` } : { text: '·', data: 'noop' },
+        { text: w.page(index + 1, pages), data: 'noop' },
+        index < pages - 1 ? { text: w.buttons.next, data: `ls:${filter}:${index + 1}` } : { text: '·', data: 'noop' },
       ]);
     }
   }
@@ -378,16 +452,31 @@ function listOf(back: string): { filter: Filter; page: number } {
   return { filter, page };
 }
 
-function cardView(ctx: Ctx, task: TaskRow, back: string, header?: string, footer?: string): View {
+/** A task's parent and its open subtasks, for its card. */
+async function relativesOf(ctx: Ctx, task: TaskRow): Promise<{ parent: TaskRow | null; children: TaskRow[]; relatives: Relatives }> {
+  const { store } = ctx.deps;
+  const children = (await store.openTasks()).filter((candidate) => candidate.parent_key === task.key).sort(byPlan);
+  const parent = task.parent_key ? await store.taskByKey(task.parent_key) : null;
+  return { parent: parent && isOpen(parent.status) ? parent : null, children, relatives: { parentTitle: parent?.title ?? task.parent_title, children } };
+}
+
+async function cardView(ctx: Ctx, task: TaskRow, back: string, header?: string, footer?: string): Promise<View> {
   const { w, owner } = ctx;
   const today = localNow(owner.timezone, ctx.deps.now()).date;
   const at = back ? `@${back}` : '';
-  const text = [header, taskCard(task, owner, today), footer].filter(Boolean).join('\n\n');
+  const { parent, children, relatives } = await relativesOf(ctx, task);
+  const text = [header, taskCard(task, owner, today, relatives), footer].filter(Boolean).join('\n\n');
+  const family: Button[][] = [];
+  for (let i = 0; i < Math.min(children.length, 6); i += 2) {
+    family.push(children.slice(i, i + 2).map((child) => ({ text: `↳ ${truncate(child.title, 18)}`, data: `t:${child.n}${at}` })));
+  }
+  if (parent) family.push([{ text: `⬆️ ${truncate(parent.title, 24)}`, data: `t:${parent.n}${at}` }]);
   const buttons: Button[][] = [
     [
       { text: w.buttons.done, data: `done:${task.n}${at}`, style: 'success' },
       { text: w.task.open, data: `cfg:${task.n}${at}`, style: 'primary' },
     ],
+    ...family,
     [
       { text: w.buttons.remove, data: `del:${task.n}${at}`, style: 'danger' },
       back ? { text: w.buttons.back, data: `ls:${listOf(back).filter}:${listOf(back).page}` } : { text: w.buttons.menu, data: 'home' },
@@ -397,9 +486,10 @@ function cardView(ctx: Ctx, task: TaskRow, back: string, header?: string, footer
 }
 
 /** Every setting of a task, each a button that shows its value and opens its menu. */
-function panelView(ctx: Ctx, task: TaskRow, back: string, header?: string): View {
+async function panelView(ctx: Ctx, task: TaskRow, back: string, header?: string): Promise<View> {
   const { w, owner } = ctx;
   const today = localNow(owner.timezone, ctx.deps.now()).date;
+  const { relatives } = await relativesOf(ctx, task);
   const at = back ? `@${back}` : '';
   const f = w.task.fields;
   const dash = w.task.none;
@@ -407,7 +497,7 @@ function panelView(ctx: Ctx, task: TaskRow, back: string, header?: string): View
   const plan = task.plan_date
     ? planLabel({ date: task.plan_date, start: task.plan_start ?? undefined, end: task.plan_end ?? undefined }, owner, today)
     : dash;
-  const text = [header, w.task.panel, taskCard(task, owner, today)].filter(Boolean).join('\n\n');
+  const text = [header, w.task.panel, taskCard(task, owner, today, relatives)].filter(Boolean).join('\n\n');
   const buttons: Button[][] = [
     [
       { text: label('✏️', f.title, null), data: `ed:${task.n}` },
@@ -473,7 +563,7 @@ function deadlineMenuView(ctx: Ctx, task: TaskRow, back: string): View {
   return choiceView(ctx, task, back, w.task.deadlineMenu(task.title, task.deadline ? dayLabel(task.deadline, owner, today) : null), [
     [{ text: p.today, data: set(0) }, { text: p.tomorrow, data: set(1) }],
     [{ text: p.after, data: set(2) }, { text: p.week, data: set(7) }],
-    [{ text: w.buttons.custom, data: `dc:${task.n}`, style: 'primary' }],
+    [{ text: w.cal.button, data: `cn:d:${task.n}:${monthKeyOf(owner.calendar, todayOf(ctx))}${at}`, style: 'primary' }, { text: w.buttons.custom, data: `dc:${task.n}` }],
     ...(task.deadline ? [[{ text: w.task.noDeadline, data: `ds:${task.n}:off${at}` }]] : []),
   ]);
 }
@@ -528,7 +618,7 @@ function remindMenuView(ctx: Ctx, task: TaskRow, back: string): View {
     buttons: [
       [{ text: p.m10, data: set('10') }, { text: p.h1, data: set('60') }, { text: p.h3, data: set('180') }],
       [{ text: p.evening, data: set('eve') }, { text: p.tomorrow, data: set('tom') }],
-      [{ text: w.buttons.custom, data: `rc:${task.n}`, style: 'primary' }],
+      [{ text: w.cal.button, data: `cn:r:${task.n}:${monthKeyOf(owner.calendar, todayOf(ctx))}${at}`, style: 'primary' }, { text: w.buttons.custom, data: `rc:${task.n}` }],
       ...(task.remind_at ? [[{ text: w.buttons.noReminder, data: set('off') }]] : []),
       [{ text: w.buttons.back, data: `cfg:${task.n}${at}` }],
     ],
@@ -547,7 +637,7 @@ function planMenuView(ctx: Ctx, task: TaskRow, back: string): View {
     buttons: [
       [{ text: p.today, data: set('0') }, { text: p.tomorrow, data: set('1') }],
       [{ text: p.after, data: set('2') }, { text: p.week, data: set('7') }],
-      [{ text: w.buttons.custom, data: `pc:${task.n}`, style: 'primary' }],
+      [{ text: w.cal.button, data: `cn:p:${task.n}:${monthKeyOf(owner.calendar, todayOf(ctx))}${at}`, style: 'primary' }, { text: w.buttons.custom, data: `pc:${task.n}` }],
       ...(task.plan_date ? [[{ text: w.buttons.noPlan, data: set('off') }]] : []),
       [{ text: w.buttons.back, data: `cfg:${task.n}${at}` }],
     ],
@@ -567,11 +657,14 @@ export function cleanTitle(title: string): string {
     .slice(0, 300);
 }
 
-async function addTask(text: string, ctx: Ctx): Promise<void> {
+/** `forcedDay`: the day was chosen on the calendar, so the task is for that day. */
+async function addTask(text: string, ctx: Ctx, forcedDay?: string): Promise<void> {
   const { w, owner, chatId } = ctx;
   const now = ctx.deps.now();
   const clock = localNow(owner.timezone, now);
   const parsed = parseQuickAdd(text, { today: clock.date, minutes: clock.minutes });
+  // A day chosen on the calendar wins over a day in the words; an hour in the words is kept.
+  if (forcedDay) parsed.plan = { ...parsed.plan, date: forcedDay };
   const title = cleanTitle(parsed.title);
   if (!title) return ctx.deps.tg.send(chatId, w.needTitle);
 
@@ -603,20 +696,27 @@ async function addTask(text: string, ctx: Ctx): Promise<void> {
     remind_at: remindAt,
     tags: parsed.tags,
     repeat: null,
+    parent_key: null,
+    parent_title: null,
+    subs_done: null,
+    subs_total: null,
     note_path: null,
     origin: 'telegram',
     pending: true,
   });
-  const payload: AddPayload = { key, title, tags: parsed.tags };
+  // The task is made for the day it is planned, reminded or due on (else today), and written into that day's note.
+  const day = parsed.plan?.date ?? remind?.date ?? parsed.deadline ?? clock.date;
+  const payload: AddPayload = { key, day, title, tags: parsed.tags };
   if (parsed.priority) payload.priority = parsed.priority;
   if (parsed.deadline) payload.deadline = parsed.deadline;
   if (parsed.plan) payload.plan = parsed.plan;
   if (remind) payload.remind = remind;
   await ctx.deps.store.addCommand('add', payload);
 
-  const view = cardView(ctx, row, '', w.added, [warning, w.waitingForNotes].filter(Boolean).join('\n'));
+  const view = await cardView(ctx, row, '', w.added, [warning, w.waitingForNotes].filter(Boolean).join('\n'));
   // A task just typed can be taken back with one tap.
-  view.buttons[1][0] = { text: w.buttons.undo, data: `undo:${row.n}`, style: 'danger' };
+  const undo = view.buttons.flat().find((button) => button.data.startsWith('del:'));
+  if (undo) Object.assign(undo, { text: w.buttons.undo, data: `undo:${row.n}` });
   await sendView(ctx, view);
 }
 
@@ -689,7 +789,7 @@ async function setReminder(args: string, ctx: Ctx): Promise<void> {
   const now = ctx.deps.now();
   const clock = localNow(owner.timezone, now);
 
-  const finish = async (reply: string) => present(ctx, panelView(ctx, (await store.taskByN(n)) ?? task, '', reply));
+  const finish = async (reply: string) => present(ctx, await panelView(ctx, (await store.taskByN(n)) ?? task, '', reply));
   if (OFF.has(word)) return finish(await applyReminder(ctx, task, 'off'));
   if (DEFAULT.has(word)) return finish(await applyReminder(ctx, task, 'default'));
   const moment = parseQuickAdd(`remind ${rest}`, { today: clock.date, minutes: clock.minutes }).remind;
@@ -720,12 +820,163 @@ async function setPlan(args: string, ctx: Ctx): Promise<void> {
 
   if (OFF.has(normalize(rest))) {
     const reply = await applyPlan(ctx, task, null);
-    return present(ctx, panelView(ctx, (await store.taskByN(n)) ?? task, '', reply));
+    return present(ctx, await panelView(ctx, (await store.taskByN(n)) ?? task, '', reply));
   }
   const plan = parseQuickAdd(rest, { today: clock.date, minutes: clock.minutes }).plan;
   if (!plan || !rest) return tg.send(ctx.chatId, `${w.cantRead}\n${w.usage.plan}`);
   const reply = await applyPlan(ctx, task, plan);
-  await present(ctx, panelView(ctx, (await store.taskByN(n)) ?? task, '', reply));
+  await present(ctx, await panelView(ctx, (await store.taskByN(n)) ?? task, '', reply));
+}
+
+// ── The calendar ───────────────────────────────────────────────────────────
+
+const todayOf = (ctx: Ctx): string => localNow(ctx.owner.timezone, ctx.deps.now()).date;
+
+/** The day a task's reminder, plan or deadline is on now, in the owner's time. */
+function currentDay(ctx: Ctx, kind: Pick, task: TaskRow | null): string | null {
+  if (!task) return null;
+  if (kind === 'r') return task.remind_at ? utcToLocal(ctx.owner.timezone, new Date(task.remind_at)).date : null;
+  if (kind === 'p') return task.plan_date;
+  if (kind === 'd') return task.deadline;
+  return null;
+}
+
+/** A month drawn as buttons; the day to pick is a tap away. */
+async function calendarView(ctx: Ctx, kind: Pick, task: TaskRow | null, key: string, back: string): Promise<View> {
+  const { w, owner } = ctx;
+  const system = owner.calendar;
+  const language = owner.language;
+  const now = todayOf(ctx);
+  const at = back ? `@${back}` : '';
+  const n = task?.n ?? 0;
+  const month = buildMonth(key, system, language, monthKeyOf(system, now));
+  const busy = new Set((await ctx.deps.store.openTasks()).map((candidate) => candidate.plan_date).filter(Boolean));
+  const current = currentDay(ctx, kind, task);
+  const go = (ym: string) => `cn:${kind}:${n}:${ym}${at}`;
+
+  // Persian reads from the right: the way to the next month points left.
+  const [left, right] = language === 'fa' ? [month.next, month.prev] : [month.prev, month.next];
+  const label = `${monthName(system, language, month.month)} ${digits(month.year, language)}`;
+  const buttons: Button[][] = [
+    [
+      { text: language === 'fa' ? '‹' : '‹', data: go(left) },
+      { text: label, data: go(monthKeyOf(system, now)) },
+      { text: '›', data: go(right) },
+    ],
+    month.header.map((initial) => ({ text: initial, data: 'noop' })),
+  ];
+  for (const week of month.weeks) {
+    buttons.push(
+      week.map((iso) => {
+        if (!iso) return { text: '·', data: 'noop' };
+        const number = digits(partsOf(system, iso)[2], language);
+        const text = iso === current ? `✓${number}` : iso === now ? `[${number}]` : busy.has(iso) ? `${number}•` : number;
+        return { text, data: `cd:${kind}:${n}:${iso}${at}`, ...(iso === current ? { style: 'primary' as const } : {}) };
+      })
+    );
+  }
+  const currentLabel = current ? dayLabel(current, owner, now) : null;
+  buttons.push([{ text: w.buttons.back, data: kind === 'x' ? 'new' : `cfg:${n}${at}` }]);
+  return { text: `${w.cal.pickDay(w.cal.kinds[kind], task?.title ?? null, currentLabel, label)}\n${w.cal.legend}`, buttons };
+}
+
+/** The hours of a day, for a reminder or the start of a plan. */
+function timeView(ctx: Ctx, kind: 'r' | 'p', task: TaskRow, iso: string, back: string): View {
+  const { w, owner } = ctx;
+  const at = back ? `@${back}` : '';
+  const hours: Button[] = [];
+  for (let hour = 6; hour <= 23; hour++) {
+    const clock = `${String(hour).padStart(2, '0')}:00`;
+    hours.push({ text: digits(clock, owner.language), data: `ct:${kind}:${task.n}:${iso}:${String(hour).padStart(2, '0')}00${at}` });
+  }
+  const rows: Button[][] = [];
+  for (let i = 0; i < hours.length; i += 6) rows.push(hours.slice(i, i + 6));
+  const extra: Button[] = [{ text: w.cal.customTime, data: `cc:${kind}:${task.n}:${iso}`, style: 'primary' }];
+  if (kind === 'p') extra.push({ text: w.cal.allDay, data: `cw:p:${task.n}:${iso}${at}` });
+  rows.push(extra);
+  rows.push([{ text: w.buttons.back, data: `cn:${kind}:${task.n}:${monthKeyOf(owner.calendar, iso)}${at}` }]);
+  return { text: w.cal.timeTitle(w.cal.kinds[kind], task.title, dayLabel(iso, owner, todayOf(ctx))), buttons: rows };
+}
+
+/** How long a plan lasts, once its start is chosen. */
+function durationView(ctx: Ctx, task: TaskRow, iso: string, start: string, back: string): View {
+  const { w, owner } = ctx;
+  const at = back ? `@${back}` : '';
+  const hhmm = start.replace(':', '');
+  const pick = (minutes: number) => `cu:p:${task.n}:${iso}:${hhmm}:${minutes}${at}`;
+  const d = w.cal.durations;
+  return {
+    text: w.cal.durationTitle(task.title, dayLabel(iso, owner, todayOf(ctx)), digits(start, owner.language)),
+    buttons: [
+      [{ text: d.m30, data: pick(30) }, { text: d.h1, data: pick(60) }],
+      [{ text: d.h2, data: pick(120) }, { text: d.h3, data: pick(180) }],
+      [{ text: d.none, data: pick(0) }],
+      [{ text: w.buttons.back, data: `cd:p:${task.n}:${iso}${at}` }],
+    ],
+  };
+}
+
+const hhmmToClock = (hhmm: string): string | null => (/^\d{4}$/.test(hhmm) ? `${hhmm.slice(0, 2)}:${hhmm.slice(2)}` : null);
+
+async function calendarRoute(parts: string[], back: string, ctx: Ctx): Promise<void> {
+  const [action, kind, rawN, a = '', b = '', c = ''] = parts;
+  if (!PICKS.has(kind)) return;
+  const pick = kind as Pick;
+  const { w, owner } = ctx;
+  const { store } = ctx.deps;
+  const task = pick === 'x' ? null : await store.taskByN(Number(rawN));
+  if (pick !== 'x' && !task) {
+    ctx.toast = w.noSuchTask(digits(rawN ?? '', owner.language));
+    return;
+  }
+  const fresh = async () => (task ? ((await store.taskByN(task.n)) ?? task) : task);
+
+  if (action === 'cn') return present(ctx, await calendarView(ctx, pick, task, a, back));
+  if (!isRealDate(a)) return;
+  const day = dayLabel(a, owner, todayOf(ctx));
+
+  if (action === 'cd') {
+    if (pick === 'x') {
+      await ctx.deps.tg.send(ctx.chatId, esc(w.cal.askNew(day, a)), undefined, { forceReply: w.cal.hintNew });
+      return;
+    }
+    if (pick === 'd') {
+      if (await saveEdit(ctx, task!, { deadline: a }, { deadline: a })) ctx.toast = w.task.editToast;
+      return present(ctx, await panelView(ctx, (await fresh())!, back, w.task.saved(`${w.task.fields.deadline} · ${day}`)));
+    }
+    return present(ctx, timeView(ctx, pick, task!, a, back));
+  }
+
+  if (action === 'cc') {
+    const label = digits(task!.n, owner.language);
+    const prompt = pick === 'r' ? w.cal.askReminderTime(label, task!.title, day, a) : w.cal.askPlanTime(label, task!.title, day, a);
+    await ctx.deps.tg.send(ctx.chatId, esc(prompt), undefined, { forceReply: w.cal.hintTime });
+    return;
+  }
+
+  if (action === 'cw' && pick === 'p') {
+    const reply = await applyPlan(ctx, task!, { date: a });
+    return present(ctx, await panelView(ctx, (await fresh())!, back, reply));
+  }
+
+  const time = hhmmToClock(b);
+  if (!time) return;
+  if (action === 'ct' && pick === 'r') {
+    if (localToUtc(owner.timezone, a, time).getTime() < ctx.deps.now().getTime()) {
+      ctx.toast = w.reminderPast;
+      return;
+    }
+    const reply = await applyReminder(ctx, task!, { date: a, time });
+    return present(ctx, await panelView(ctx, (await fresh())!, back, reply));
+  }
+  if (action === 'ct' && pick === 'p') return present(ctx, durationView(ctx, task!, a, time, back));
+  if (action === 'cu' && pick === 'p') {
+    const minutes = Number(c);
+    const plan: Plan = { date: a, start: time };
+    if (minutes > 0) plan.end = toClock(Math.min(clockMinutes(time) + minutes, 23 * 60 + 59));
+    const reply = await applyPlan(ctx, task!, plan);
+    return present(ctx, await panelView(ctx, (await fresh())!, back, reply));
+  }
 }
 
 // ── A task's own settings ───────────────────────────────────────────────────
@@ -780,7 +1031,7 @@ export function parseTags(text: string): string[] {
 }
 
 /** What came back for a question the bot asked: a title, a deadline, tags, a repeat, a reminder or a plan. */
-async function answerAsked(kind: string, n: number, text: string, ctx: Ctx): Promise<void> {
+async function answerAsked(kind: string, n: number, text: string, replied: string, ctx: Ctx): Promise<void> {
   const { w, owner } = ctx;
   const { store, tg } = ctx.deps;
   if (kind === '🔔') return setReminder(`${n} ${text}`, ctx);
@@ -789,8 +1040,16 @@ async function answerAsked(kind: string, n: number, text: string, ctx: Ctx): Pro
   const task = await store.taskByN(n);
   if (!task) return tg.send(ctx.chatId, w.noSuchTask(digits(n, owner.language)));
   const clock = localNow(owner.timezone, ctx.deps.now());
-  const finish = async (what: string) => present(ctx, panelView(ctx, (await store.taskByN(n)) ?? task, '', w.task.saved(what)));
+  const finish = async (what: string) => present(ctx, await panelView(ctx, (await store.taskByN(n)) ?? task, '', w.task.saved(what)));
 
+  if (kind === '⏰' || kind === '🕒') {
+    const day = /\d{4}-\d{2}-\d{2}/.exec(replied)?.[0];
+    const plan = day ? parseQuickAdd(`${day} ${text}`, { today: clock.date, minutes: clock.minutes }).plan : undefined;
+    if (!day || !plan?.start) return tg.send(ctx.chatId, w.cal.cantReadTime);
+    if (kind === '🕒') return present(ctx, await panelView(ctx, task, '', await applyPlan(ctx, task, { date: day, start: plan.start, ...(plan.end ? { end: plan.end } : {}) })));
+    if (localToUtc(owner.timezone, day, plan.start).getTime() < ctx.deps.now().getTime()) return tg.send(ctx.chatId, w.reminderPast);
+    return present(ctx, await panelView(ctx, task, '', await applyReminder(ctx, task, { date: day, time: plan.start })));
+  }
   if (kind === '✏') {
     const title = cleanTitle(text);
     if (!title) return tg.send(ctx.chatId, w.needTitle);
@@ -856,6 +1115,13 @@ async function route(data: string, ctx: Ctx): Promise<void> {
       return present(ctx, await listView(ctx, FILTERS.find((f) => f === rawN) ?? 'a', Number(arg) || 0));
     case 'set':
       return settings(rawN, ctx);
+    case 'cn':
+    case 'cd':
+    case 'ct':
+    case 'cu':
+    case 'cw':
+    case 'cc':
+      return calendarRoute(core.split(':'), back, ctx);
   }
 
   // Everything below is about one task.
@@ -869,7 +1135,7 @@ async function route(data: string, ctx: Ctx): Promise<void> {
 
   switch (action) {
     case 't':
-      return present(ctx, cardView(ctx, task, back));
+      return present(ctx, await cardView(ctx, task, back));
     case 'rm':
       return present(ctx, remindMenuView(ctx, task, back));
     case 'pl':
@@ -909,7 +1175,7 @@ async function route(data: string, ctx: Ctx): Promise<void> {
       // A snooze under a reminder shows the card; a choice in the panel goes back to the panel.
       const show = async (reply: string) => {
         const fresh = (await store.taskByN(n)) ?? task;
-        return present(ctx, action === 'snz' ? cardView(ctx, fresh, back, reply) : panelView(ctx, fresh, back, reply));
+        return present(ctx, await (action === 'snz' ? cardView(ctx, fresh, back, reply) : panelView(ctx, fresh, back, reply)));
       };
       if (arg === 'off' || arg === 'def') return show(await applyReminder(ctx, task, arg === 'off' ? 'off' : 'default'));
       const moment = presetMoment(arg ?? '10', ctx);
@@ -921,7 +1187,7 @@ async function route(data: string, ctx: Ctx): Promise<void> {
     case 'ps': {
       if (arg === 'off') {
         const reply = await applyPlan(ctx, task, null);
-        return present(ctx, panelView(ctx, (await store.taskByN(n)) ?? task, back, reply));
+        return present(ctx, await panelView(ctx, (await store.taskByN(n)) ?? task, back, reply));
       }
       const days = Number(arg);
       if (!Number.isFinite(days)) return;
@@ -931,12 +1197,12 @@ async function route(data: string, ctx: Ctx): Promise<void> {
       if (task.plan_start) plan.start = task.plan_start;
       if (task.plan_end) plan.end = task.plan_end;
       const reply = await applyPlan(ctx, task, plan);
-      return present(ctx, panelView(ctx, (await store.taskByN(n)) ?? task, back, reply));
+      return present(ctx, await panelView(ctx, (await store.taskByN(n)) ?? task, back, reply));
     }
 
     // The task's own settings.
     case 'cfg':
-      return present(ctx, panelView(ctx, task, back));
+      return present(ctx, await panelView(ctx, task, back));
     case 'sm':
       return present(ctx, statusMenuView(ctx, task, back));
     case 'pm':
@@ -977,20 +1243,20 @@ async function route(data: string, ctx: Ctx): Promise<void> {
         await store.patchTask(task.key, { status: arg });
       }
       ctx.toast = w.task.editToast;
-      return present(ctx, panelView(ctx, (await store.taskByN(n)) ?? task, back));
+      return present(ctx, await panelView(ctx, (await store.taskByN(n)) ?? task, back));
     }
     case 'pr': {
       const priority = arg === 'off' ? null : PRIORITIES.find((level) => level === arg);
       if (priority === undefined) return;
       if (await saveEdit(ctx, task, { priority }, { priority })) ctx.toast = w.task.editToast;
-      return present(ctx, panelView(ctx, (await store.taskByN(n)) ?? task, back));
+      return present(ctx, await panelView(ctx, (await store.taskByN(n)) ?? task, back));
     }
     case 'ds': {
       const today = localNow(owner.timezone, deps.now()).date;
       const deadline = arg === 'off' ? null : Number.isFinite(Number(arg)) ? addDays(today, Number(arg)) : undefined;
       if (deadline === undefined) return;
       if (await saveEdit(ctx, task, { deadline }, { deadline })) ctx.toast = w.task.editToast;
-      return present(ctx, panelView(ctx, (await store.taskByN(n)) ?? task, back));
+      return present(ctx, await panelView(ctx, (await store.taskByN(n)) ?? task, back));
     }
     case 'tr':
     case 'tx': {
@@ -1002,7 +1268,7 @@ async function route(data: string, ctx: Ctx): Promise<void> {
       const repeat = arg === 'off' ? null : /^\d{1,3}[dwm]$/.test(arg ?? '') ? arg! : undefined;
       if (repeat === undefined) return;
       if (await saveEdit(ctx, task, { repeat }, { repeat })) ctx.toast = w.task.editToast;
-      return present(ctx, panelView(ctx, (await store.taskByN(n)) ?? task, back));
+      return present(ctx, await panelView(ctx, (await store.taskByN(n)) ?? task, back));
     }
   }
 }

@@ -911,6 +911,17 @@ only a snapshot of your open tasks and a queue of what you asked for in Telegram
   each showing its value. Pick a preset or reply with your own ("every 3 days",
   "friday"). New tasks are written in plain words ("call the bank tomorrow 10").
   Reminders arrive as a card with Done and Snooze buttons.
+- **Pick a day on a calendar.** Reminder, plan, deadline and "New task for a day"
+  open a month drawn as buttons, in the Jalali or the Gregorian calendar (Saturday
+  first in Persian), with today in brackets, the current day ticked and a dot on
+  days that have tasks; then the hour (and, for a plan, how long it lasts).
+- **A task lands in its day's note.** A task made in Telegram is written into the
+  note of the day it is planned, reminded or due on (else today), as one added on
+  the calendar is, using the daily-note settings; with "New tasks go to the inbox"
+  set, it goes there.
+- **Subtasks, and lists that read in order.** Lists number the tasks 1 to the end,
+  a parent is followed by its subtasks (marked ↳, with a count and a bar), and a
+  card shows a parent's open subtasks or whose subtask it is.
 - **In Obsidian:** a background sync (every 2 minutes by default, and on **Sync
   Telegram now**) uploads the snapshot, then applies what you asked for in
   Telegram to your notes: new tasks go to the board's inbox note, the rest edit

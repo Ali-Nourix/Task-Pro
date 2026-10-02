@@ -70,7 +70,15 @@ eq(reminderAt(tasksOf('A.md', '- [ ] x @schedule(2026-10-05 09:30)')[0], { enabl
 
 const snapshot = buildSnapshot(two, defaults);
 eq(snapshot.map((t) => [t.key, t.status]), [['A.md|Same|0', 'open'], ['A.md|Same|1', 'open'], ['A.md|^tp-1|0', 'open'], ['A.md|Doing|0', 'doing']], 'only the open tasks are reported');
-eq(snapshot[3], { key: 'A.md|Doing|0', title: 'Doing', status: 'doing', priority: 'high', deadline: null, plan_date: null, plan_start: null, plan_end: null, remind_at: null, repeat: null, tags: ['work'], note_path: 'A.md' }, 'with what is set on them');
+eq(snapshot[3], { key: 'A.md|Doing|0', title: 'Doing', status: 'doing', priority: 'high', deadline: null, plan_date: null, plan_start: null, plan_end: null, remind_at: null, repeat: null, parent_key: null, parent_title: null, subs_done: null, subs_total: null, tags: ['work'], note_path: 'A.md' }, 'with what is set on them');
+
+const family = buildSnapshot(tasksOf('F.md', ['- [ ] Parent ^tp-1', '  - [x] Done child', '  - [ ] Open child', '    - [ ] Grandchild', '- [ ] Other'].join('\n')), defaults);
+eq(family.map((t) => [t.key, t.parent_key, t.parent_title, t.subs_done, t.subs_total]), [
+  ['F.md|^tp-1|0', null, null, 1, 2],
+  ['F.md|Open child|0', 'F.md|^tp-1|0', 'Parent', 0, 1],
+  ['F.md|Grandchild|0', 'F.md|Open child|0', 'Open child', null, null],
+  ['F.md|Other|0', null, null, null, null],
+], 'subtasks are uploaded under their parent, the parent with how many are done out of how many (a closed subtask counts, though it is not uploaded)');
 eq(buildSnapshot(tasksOf('A.md', '- [ ] Weekly @repeat(2w)\n- [ ] Daily @repeat(daily)'), defaults).map((t) => t.repeat), ['2w', '1d'], 'a repeating task says how often, as 2w');
 
 // ── A task made in Telegram ────────────────────────────────────────────────
@@ -159,6 +167,36 @@ function notes(initial) {
   await applyCommands([{ id: 'x', kind: 'edit', payload: { key: 'Work.md|Report|0', priority: 'highest', deadline: '2026-10-09', tags: ['Work Stuff', 'home'], repeat: '2w' } }], first.host);
   const read = parseBoardTasks('Work.md', first.text('Work.md'))[0];
   eq([read.text, read.priority, read.deadline, read.tags, read.repeat], ['Report', 'highest', '2026-10-09', ['work-stuff', 'home'], { every: 2, unit: 'week' }], 'all of it reads back from the line');
+}
+{
+  const files = new Map([['Inbox.md', ['- [ ] Existing']], ['Daily/2026-10-12.md', ['# Tasks', '']]]);
+  const all = () => [...files].flatMap(([path, lines]) => parseBoardTasks(path, lines.join('\n')));
+  const host = {
+    tasks: all,
+    inboxPath: () => 'Inbox.md',
+    appendLine: async (path, text) => (files.get(path).push(text), true),
+    dayTarget: (day) => `Daily/${day}.md`,
+    addTaskOnDay: async (day, text) => {
+      const path = `Daily/${day}.md`;
+      if (!files.has(path)) files.set(path, ['# Tasks', '']);
+      files.get(path).push(text);
+      return path;
+    },
+    setStatus: async () => {}, setRemind: async () => {}, setSchedule: async () => {}, setPriority: async () => {}, setDeadline: async () => {},
+    setTags: async () => {}, setRepeat: async () => {}, setText: async () => {}, deleteTask: async () => {}, settled: async () => {},
+  };
+  const [dated, plain, later] = await applyCommands([
+    { id: 'd1', kind: 'add', payload: { key: 'tg:1', day: '2026-10-12', title: 'Pay rent', tags: [], plan: { date: '2026-10-12' } } },
+    { id: 'd2', kind: 'add', payload: { key: 'tg:2', title: 'No day given', tags: [] } },
+    { id: 'd3', kind: 'status', payload: { key: 'tg:1', status: 'doing' } },
+  ], host);
+  eq([dated.key, files.get('Daily/2026-10-12.md').at(-1)], ['Daily/2026-10-12.md|Pay rent|0', '- [ ] Pay rent @schedule(2026-10-12)'], 'a task made for a day is written into that day’s note, and named by it');
+  eq([plain.key, files.get('Inbox.md').at(-1)], ['Inbox.md|No day given|0', '- [ ] No day given'], 'one with no day (an older bot) still goes to the inbox');
+  eq(later.error ?? null, null, 'and a later change finds the task by the key Telegram gave it');
+  const [fresh] = await applyCommands([{ id: 'd4', kind: 'add', payload: { key: 'tg:4', day: '2026-11-01', title: 'Next month', tags: [] } }], host);
+  eq([fresh.key, files.has('Daily/2026-11-01.md')], ['Daily/2026-11-01.md|Next month|0', true], 'a day with no note yet gets one');
+  const [broken] = await applyCommands([{ id: 'd5', kind: 'add', payload: { key: 'tg:5', day: '2026-10-12', title: 'Nope', tags: [] } }], { ...host, addTaskOnDay: async () => null });
+  eq(broken.error, "the day's note could not be written", 'a day’s note that cannot be written says so rather than falling back silently');
 }
 {
   const n = notes({ 'Work.md': '- [ ] Only' });

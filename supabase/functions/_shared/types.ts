@@ -31,6 +31,12 @@ export interface TaskRow {
   remind_sent_for: string | null;
   /** How often it comes back: 1d, 2w, 1m. */
   repeat: string | null;
+  /** The task it is nested under. */
+  parent_key: string | null;
+  parent_title: string | null;
+  /** For a task with subtasks: how many of its direct subtasks are done, and how many it has. */
+  subs_done: number | null;
+  subs_total: number | null;
   tags: string[];
   note_path: string | null;
   origin: 'vault' | 'telegram';
@@ -40,13 +46,15 @@ export interface TaskRow {
 /** A task as the plugin uploads it. */
 export type SnapshotTask = Pick<
   TaskRow,
-  'key' | 'title' | 'status' | 'priority' | 'deadline' | 'plan_date' | 'plan_start' | 'plan_end' | 'remind_at' | 'repeat' | 'tags' | 'note_path'
+  'key' | 'title' | 'status' | 'priority' | 'deadline' | 'plan_date' | 'plan_start' | 'plan_end' | 'remind_at' | 'repeat' | 'parent_key' | 'parent_title' | 'subs_done' | 'subs_total' | 'tags' | 'note_path'
 >;
 
 export type CommandKind = 'add' | 'status' | 'remind' | 'plan' | 'edit' | 'delete';
 
 export interface AddPayload {
   key: string;
+  /** The day it was made for: it is written into that day's note. */
+  day?: string;
   title: string;
   priority?: Priority;
   tags: string[];

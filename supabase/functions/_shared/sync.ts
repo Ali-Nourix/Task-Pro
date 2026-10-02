@@ -28,6 +28,7 @@ export interface SyncResponse {
   serverTime: string;
 }
 
+const count = (value: unknown): number | null => (typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 100_000 ? value : null);
 const text = (value: unknown, max: number): string | null => (typeof value === 'string' && value.length > 0 && value.length <= max ? value : null);
 
 /** A task from the upload, or null when it is not one. */
@@ -52,6 +53,10 @@ export function cleanTask(value: unknown): SnapshotTask | null {
     plan_end: clock(v.plan_end),
     remind_at: remind,
     repeat: typeof v.repeat === 'string' && /^\d{1,3}[dwm]$/.test(v.repeat) ? v.repeat : null,
+    parent_key: text(v.parent_key, 600),
+    parent_title: text(v.parent_title, 600),
+    subs_done: count(v.subs_done),
+    subs_total: count(v.subs_total),
     tags,
     note_path: text(v.note_path, 600),
   };

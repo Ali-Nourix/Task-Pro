@@ -8,8 +8,15 @@ type Client = ReturnType<typeof createClient>;
 
 const OPEN_STATUSES = ['open', 'doing'];
 
-/** The database has not been given the `repeat` column yet (the schema is brought up to date on first use). */
-const noRepeatColumn = (error: { message: string } | null): boolean => !!error && /repeat/i.test(error.message) && /column/i.test(error.message);
+/** Columns added after the first release; a database without them yet (the schema is brought up to date on first use) is still served. */
+const NEWER_COLUMNS = ['repeat', 'parent_key', 'parent_title', 'subs_done', 'subs_total'] as const;
+const noNewerColumn = (error: { message: string } | null): boolean =>
+  !!error && /column/i.test(error.message) && NEWER_COLUMNS.some((name) => error.message.includes(name));
+const withoutNewer = <T extends object>(row: T): Partial<T> => {
+  const copy = { ...row } as Record<string, unknown>;
+  for (const name of NEWER_COLUMNS) delete copy[name];
+  return copy as Partial<T>;
+};
 const CHUNK = 200;
 
 function fail(what: string, error: { message: string } | null): void {
@@ -51,11 +58,9 @@ export function supabaseStore(url: string, serviceKey: string): Store {
     },
 
     async insertTask(task) {
-      const { repeat, ...rest } = task;
       const first = await db.from('tasks').insert(task);
-      if (first.error && noRepeatColumn(first.error)) await one(db.from('tasks').insert(rest), 'insert task');
+      if (first.error && noNewerColumn(first.error)) await one(db.from('tasks').insert(withoutNewer(task)), 'insert task');
       else fail('insert task', first.error);
-      void repeat;
       // Read back: its number is given by the database just after the insert.
       return (await one(db.from('tasks').select('*').eq('key', task.key).single(), 'read task')) as TaskRow;
     },
@@ -63,10 +68,8 @@ export function supabaseStore(url: string, serviceKey: string): Store {
     async patchTask(key, patch) {
       const row = { ...patch, updated_at: new Date().toISOString() };
       const first = await db.from('tasks').update(row).eq('key', key);
-      if (first.error && noRepeatColumn(first.error)) {
-        const { repeat: _repeat, ...rest } = row;
-        await one(db.from('tasks').update(rest).eq('key', key), 'patch task');
-      } else fail('patch task', first.error);
+      if (first.error && noNewerColumn(first.error)) await one(db.from('tasks').update(withoutNewer(row)).eq('key', key), 'patch task');
+      else fail('patch task', first.error);
     },
 
     async removeTask(key) {
@@ -79,9 +82,8 @@ export function supabaseStore(url: string, serviceKey: string): Store {
       for (let i = 0; i < written.length; i += CHUNK) {
         const chunk = written.slice(i, i + CHUNK).map((row) => ({ ...row, origin: 'vault', pending: false, seen_run: run, updated_at: new Date().toISOString() }));
         const first = await db.from('tasks').upsert(chunk, { onConflict: 'key' });
-        if (first.error && noRepeatColumn(first.error)) {
-          await one(db.from('tasks').upsert(chunk.map(({ repeat: _repeat, ...rest }) => rest), { onConflict: 'key' }), 'upload tasks');
-        } else fail('upload tasks', first.error);
+        if (first.error && noNewerColumn(first.error)) await one(db.from('tasks').upsert(chunk.map(withoutNewer), { onConflict: 'key' }), 'upload tasks');
+        else fail('upload tasks', first.error);
       }
       // Rows left as Telegram has them still count as seen.
       const kept = [...keep];
