@@ -878,6 +878,15 @@ settings), which writes `@remind(15m)`, `@remind(1h)` or `@remind(off)` into
 its line. A small bell on the plan chip shows a time of its own, and a
 crossed-out bell no reminder.
 
+**On a date…** in the same menu asks for a day (in the Gregorian or the Jalali
+calendar) and a time, and reminds you at that moment, whether or not the task is
+planned: `@remind(2026-10-05 09:30)`. It takes the place of the reminder before
+the plan, since a task has one `@remind`. The notice says *Reminder* instead of
+*Starts in…*, with the same **Done**, **Snooze 5 min** and **Open**, and shows as
+a bell chip with the day and time (*Tomorrow, 09:30*) on the line, grey once it
+has passed. It is announced once, up to 10 minutes late. **No reminder** replaces
+it with `@remind(off)`, and **As in settings** (under a plan with a time) clears it.
+
 ### Active notes
 
 Active-note reminders are on by default. Tasks that only appear through an

@@ -88,8 +88,9 @@ const WAITING_LINK_PATTERN = /\[\[([^\]#|\n]*)#\^([a-zA-Z0-9-]+)(?:\|[^\]\n]*)?\
 // Canonical inline form is `@remind(10m)`: how long before its planned start a
 // task asks for attention, in minutes (`m`) or hours (`h`); `@remind(0m)` is
 // at the start, and `@remind(off)` turns the reminder off for this task. A
-// task without one uses the reminder setting.
-const REMIND_PATTERN = /@remind\(\s*(off|\d{1,4}\s*[mh]?)\s*\)/i;
+// task without one uses the reminder setting. `@remind(2026-10-05 09:30)` is a
+// reminder at one moment of its own, planned or not.
+const REMIND_PATTERN = /@remind\(\s*(?:(off|\d{1,4}\s*[mh]?)|(\d{4}-\d{2}-\d{2})[ T]+(\d{1,2}:\d{2}))\s*\)/i;
 const REMIND_PATTERN_GLOBAL = new RegExp(REMIND_PATTERN.source, 'gi');
 
 function normalizeAfterMarkerRemovalPreserveIndent(line: string): string {
@@ -483,14 +484,29 @@ export function setWaiting(line: string, links: readonly TaskLink[] | null): str
  */
 export function extractRemind(line: string): number | null | undefined {
   const match = REMIND_PATTERN.exec(line);
-  if (!match) return undefined;
+  if (!match || match[1] === undefined) return undefined;
   const value = match[1].toLowerCase().replace(/\s+/g, '');
   if (value === 'off') return null;
   const amount = parseInt(value, 10);
   return value.endsWith('h') ? amount * 60 : amount;
 }
 
-export function formatRemindMarker(minutes: number | null): string {
+/** A reminder at one moment: a day and a time on it. */
+export interface RemindAt {
+  date: string;
+  time: string;
+}
+
+/** A task's reminder at a moment of its own, when it has one. */
+export function extractRemindAt(line: string): RemindAt | undefined {
+  const match = REMIND_PATTERN.exec(line);
+  if (!match || match[2] === undefined || !isRealIsoDate(match[2])) return undefined;
+  const time = normalizeClock(match[3], false);
+  return time ? { date: match[2], time } : undefined;
+}
+
+export function formatRemindMarker(minutes: number | null | RemindAt): string {
+  if (minutes !== null && typeof minutes === 'object') return `@remind(${minutes.date} ${minutes.time})`;
   if (minutes === null) return '@remind(off)';
   return minutes >= 60 && minutes % 60 === 0 ? `@remind(${minutes / 60}h)` : `@remind(${minutes}m)`;
 }
@@ -503,8 +519,11 @@ export function stripRemindPreserveIndent(line: string): string {
   return normalizeAfterMarkerRemovalPreserveIndent(line.replace(REMIND_PATTERN_GLOBAL, ''));
 }
 
-/** Sets the task's own reminder (`null` turns it off), or with `undefined` leaves it to the setting. */
-export function setRemind(line: string, minutes: number | null | undefined): string {
+/**
+ * Sets the task's own reminder: minutes before its plan, a moment of its own,
+ * `null` for none, or with `undefined` back to the setting.
+ */
+export function setRemind(line: string, minutes: number | null | RemindAt | undefined): string {
   const without = stripRemindPreserveIndent(line);
   if (minutes === undefined) return without;
   return insertBeforeBlockId(without, formatRemindMarker(minutes));

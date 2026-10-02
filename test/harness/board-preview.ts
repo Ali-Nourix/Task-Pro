@@ -32,7 +32,8 @@ import {
   renderDailyTemplate,
 } from '../../src/calendar/daily-notes';
 import { createScheduleChip } from '../../src/ui/chips';
-import { TaskLink, extractSchedule, setRemind, setSchedule, setWaiting } from '../../src/task-metadata';
+import { RemindAt, TaskLink, extractSchedule, setRemind, setSchedule, setWaiting } from '../../src/task-metadata';
+import { openRemindPanel } from '../../src/ui/remind-editor';
 import { RelationIndex, newBlockId, subtaskCounts } from '../../src/board/task-relations';
 import { TaskTag } from '../../src/tags';
 import { blockEnd, removeBlock } from '../../src/task-lines';
@@ -384,7 +385,16 @@ const host = {
     const fresh = tasks.find((t) => t.filePath === task.filePath && t.lineNumber === task.lineNumber)!;
     await edit(fresh, (line) => setWaiting(line, links));
   },
-  setRemind: (task: BoardTask, minutes: number | null | undefined) => edit(task, (line) => setRemind(line, minutes)),
+  setRemind: (task: BoardTask, minutes: number | null | RemindAt | undefined) => edit(task, (line) => setRemind(line, minutes)),
+  editRemind: async (task: BoardTask) => {
+    const choice = await openRemindPanel({
+      language,
+      calendarSystem,
+      current: task.remindAt,
+      suggest: task.schedule?.start ? { date: task.schedule.date, time: task.schedule.start } : undefined,
+    });
+    if (choice !== undefined) await edit(task, (line) => setRemind(line, choice === null ? undefined : choice));
+  },
   setDates: (task: BoardTask, patch: { schedule?: TaskSchedule | null; deadline?: string | null }) =>
     edit(task, (line) => {
       let next = line;

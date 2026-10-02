@@ -258,6 +258,29 @@ try {
   });
   await page.waitForTimeout(250);
   ok((await lineWith(page, morningTitle)).includes('-23:00)'), 'the card’s end time is written');
+
+  // Remind me on a date: from the card's row, a panel asks for the day and the time.
+  const remindRow = page.locator('.taskpro-cal-prop', { hasText: 'Remind me' }).locator('.taskpro-cal-prop__pick');
+  eq((await remindRow.textContent()).trim(), '10 min before', 'the card says how the reminder stands');
+  await remindRow.click();
+  const menuLabels = await page.locator('.taskpro-menu__item').allTextContents();
+  ok(menuLabels.some((label) => label.includes('On a date')), 'the choices include one on a date');
+  await page.locator('.taskpro-menu__item', { hasText: 'On a date' }).click();
+  eq(await page.locator('.taskpro-remind-panel').count(), 1, 'which asks for the day and the time');
+  const [, planDay, planStart] = (await lineWith(page, morningTitle)).match(/(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2})/);
+  eq(await page.locator('.taskpro-remind-panel input[type="date"]').inputValue(), planDay, 'starting at the plan’s day');
+  eq(await page.locator('.taskpro-remind-panel input[type="text"]').inputValue(), planStart, 'and its start');
+  await page.locator('.taskpro-remind-panel input[type="date"]').fill(inDays(3));
+  await page.locator('.taskpro-remind-panel input[type="text"]').fill('8:15');
+  await page.locator('.taskpro-remind-panel .taskpro-panel__btn--primary').click();
+  await page.waitForTimeout(250);
+  ok((await lineWith(page, morningTitle)).includes(`@remind(${inDays(3)} 08:15)`), 'the moment is written');
+  eq((await remindRow.textContent()).includes('08:15'), true, 'and the card shows it');
+  await remindRow.click();
+  await page.locator('.taskpro-menu__item', { hasText: 'No reminder' }).click();
+  await page.waitForTimeout(250);
+  ok((await lineWith(page, morningTitle)).includes('@remind(off)'), 'No reminder turns it off, replacing the moment');
+  eq(await page.locator('.taskpro-remind-panel').count(), 0, 'with the panel gone');
   await page.locator('.taskpro-cal-inspector__remove:not(.is-delete)').click();
   await page.waitForTimeout(250);
   eq((await lineWith(page, morningTitle)).includes('@schedule('), false, '“Remove from calendar” unschedules it');

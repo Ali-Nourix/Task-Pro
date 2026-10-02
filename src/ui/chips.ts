@@ -412,6 +412,7 @@ const RELATION_LABELS: Record<Language, {
   tasks: (count: number) => string;
   remindAt: (minutes: number) => string;
   remindOff: string;
+  remindMoment: string;
 }> = {
   en: {
     subtasks: (done, total) => `${done} of ${total} subtasks done`,
@@ -421,6 +422,7 @@ const RELATION_LABELS: Record<Language, {
     tasks: (count) => `${count} tasks`,
     remindAt: (minutes) => (minutes === 0 ? 'Reminder at the start' : `Reminder ${minutes} min before`),
     remindOff: 'No reminder',
+    remindMoment: 'Reminder',
   },
   fa: {
     subtasks: (done, total) => `${done} از ${total} زیرتسک انجام شده`,
@@ -430,6 +432,7 @@ const RELATION_LABELS: Record<Language, {
     tasks: (count) => `${count} تسک`,
     remindAt: (minutes) => (minutes === 0 ? 'یادآوری سر شروع' : `یادآوری ${minutes} دقیقه قبل`),
     remindOff: 'بدون یادآوری',
+    remindMoment: 'یادآوری',
   },
 };
 
@@ -476,6 +479,24 @@ export function createWaitingChip(items: readonly WaitingChipItem[], language: L
     e.stopPropagation();
     onOpen(settled ? 0 : open);
   });
+  return badge;
+}
+
+/** A reminder at a moment of its own: a bell and when, "Tomorrow, 09:30". It turns quiet once the moment has gone. */
+export function createRemindChip(
+  at: { date: string; time: string },
+  options: { language: Language; calendarSystem: CalendarSystem; timeFormat: TimeFormat; status: TaskStatus }
+): HTMLElement {
+  const label = scheduleText({ date: at.date, start: at.time }, options);
+  const badge = buildChip('taskpro-remind-badge', 'bell', label);
+  badge.dataset.remind = `${at.date} ${at.time}`;
+  const [hours, minutes] = at.time.split(':').map(Number);
+  const [year, month, day] = at.date.split('-').map(Number);
+  const gone = options.status === '[x]' || new Date(year, month - 1, day, hours, minutes).getTime() < Date.now();
+  if (gone) badge.dataset.state = 'past';
+  const text = `${RELATION_LABELS[options.language].remindMoment}: ${label}`;
+  badge.setAttribute('aria-label', text);
+  badge.title = text;
   return badge;
 }
 

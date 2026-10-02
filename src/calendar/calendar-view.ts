@@ -2525,7 +2525,7 @@ export class TaskCalendar {
       );
     }
 
-    if (host.setRemind && schedule?.start) {
+    if (host.setRemind) {
       pick(
         property('bell', actionLabels.remind),
         (button) => button.createSpan({ cls: 'taskpro-cal-prop__text', text: remindHint(options()) }),
