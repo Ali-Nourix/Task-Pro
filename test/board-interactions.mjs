@@ -358,7 +358,7 @@ try {
   await page.waitForTimeout(150);
   eq(await peek().count(), 1, 'the card opens beside the row');
   eq(await peek().locator('.taskpro-cal-inspector__title').textContent(), 'Design the new home page', 'with the task’s title');
-  eq((await peek().locator('.taskpro-cal-prop__name').allTextContents()).map((t) => t.trim()), ['When', 'Status', 'Priority', 'Deadline', 'Repeat', 'Waiting on', 'Tags', 'Note'], 'and one row for every property');
+  eq((await peek().locator('.taskpro-cal-prop__name').allTextContents()).map((t) => t.trim()), ['When', 'Status', 'Priority', 'Deadline', 'Repeat', 'Waiting on', 'Remind me', 'Tags', 'Note'], 'and one row for every property');
   eq(await peek().locator('.taskpro-cal-inspector__subtask-title').allTextContents(), ['Pick the display typeface', 'Collect reference sites'], 'and its subtasks');
   eq((await peek().locator('.taskpro-cal-inspector__subtasks-count').textContent()).trim(), '1/2', 'counted');
   // Choosing a value in the card writes it into the note, and the card follows the note.

@@ -105,6 +105,8 @@ interface ActionLabels {
   remindBefore: (minutes: number) => string;
   remindOff: string;
   remindSettingOff: string;
+  remindOnDate: string;
+  remindOnDateAt: (when: string) => string;
   fromSubtasks: (done: number, total: number) => string;
 }
 
@@ -168,6 +170,8 @@ const EN: ActionLabels = {
   remindBefore: (minutes) => `${durationText('en', minutes)} before`,
   remindOff: 'No reminder',
   remindSettingOff: 'As in settings (off)',
+  remindOnDate: 'On a date…',
+  remindOnDateAt: (when) => when,
   fromSubtasks: (done, total) => `${done} of ${total} subtasks done`,
 };
 
@@ -231,6 +235,8 @@ const FA: ActionLabels = {
   remindBefore: (minutes) => `${durationText('fa', minutes)} قبل`,
   remindOff: 'بدون یادآوری',
   remindSettingOff: 'مثل تنظیمات (خاموش)',
+  remindOnDate: 'در یک تاریخ…',
+  remindOnDateAt: (when) => when,
   fromSubtasks: (done, total) => `${done} از ${total} زیرتسک انجام شده`,
 };
 
@@ -412,51 +418,75 @@ export function remindHint(o: TaskActionOptions): string {
   const labels = getActionLabels(o.language);
   const setting = o.planReminder ?? { enabled: true, leadMinutes: 10 };
   const describe = (minutes: number) => (minutes === 0 ? labels.remindAtStart : labels.remindBefore(minutes));
+  if (o.task.remindAt) return labels.remindOnDateAt(momentText(o, o.task.remindAt));
   const own = o.task.remind;
   if (own === null) return labels.remindOff;
   if (own !== undefined) return describe(own);
+  // Without a timed plan there is nothing for the setting to count back from.
+  if (!o.task.schedule?.start) return labels.remindOff;
   return setting.enabled ? describe(setting.leadMinutes) : labels.remindOff;
 }
 
-/** The reminder's choices: the setting, a time of its own, or none. Empty without a timed plan. */
+/** A reminder's moment in words: "Tomorrow, 09:30". */
+function momentText(o: TaskActionOptions, at: { date: string; time: string }): string {
+  const day = scheduleDayText(at.date, { language: o.language, calendarSystem: o.calendarSystem, timeFormat: o.timeFormat });
+  const time = formatClock(parseClock(at.time) ?? 0, o.timeFormat, o.language);
+  return `${day}${o.language === 'fa' ? '، ' : ', '}${time}`;
+}
+
+/**
+ * The reminder's choices: the setting, a lead time of its own (both only for
+ * a plan with a time of day), a moment of its own, or none.
+ */
 export function remindSections(o: TaskActionOptions): MenuSection[] {
   const { host, task } = o;
   const setRemind = host.setRemind?.bind(host);
-  if (!setRemind || !task.schedule?.start) return [];
+  if (!setRemind) return [];
   const labels = getActionLabels(o.language);
   const setting = o.planReminder ?? { enabled: true, leadMinutes: 10 };
   const describe = (minutes: number) => (minutes === 0 ? labels.remindAtStart : labels.remindBefore(minutes));
+  const timed = !!task.schedule?.start;
   const own = task.remind;
-  return [
-    {
+  const moment = task.remindAt;
+  const offNow = own === null && !moment;
+  const sections: MenuSection[] = [];
+  if (timed) {
+    sections.push({
       entries: [
         {
           label: setting.enabled ? labels.remindDefault(setting.leadMinutes) : labels.remindSettingOff,
           icon: 'settings',
-          checked: own === undefined,
-          onSelect: () => (own === undefined ? undefined : setRemind(task, undefined)),
+          checked: own === undefined && !moment,
+          onSelect: () => (own === undefined && !moment ? undefined : setRemind(task, undefined)),
         },
       ],
-    },
-    {
+    });
+    sections.push({
       entries: REMIND_CHOICES.map((minutes) => ({
         label: describe(minutes),
         icon: minutes === 0 ? 'bell-ring' : 'bell',
-        checked: own === minutes,
-        onSelect: () => (own === minutes ? undefined : setRemind(task, minutes)),
+        checked: own === minutes && !moment,
+        onSelect: () => (own === minutes && !moment ? undefined : setRemind(task, minutes)),
       })),
-    },
-    {
-      entries: [
-        { label: labels.remindOff, icon: 'bell-off', checked: own === null, onSelect: () => (own === null ? undefined : setRemind(task, null)) },
-      ],
-    },
-  ];
+    });
+  }
+  const tail: MenuEntry[] = [];
+  if (host.editRemind) {
+    tail.push({
+      label: moment ? labels.remindOnDateAt(momentText(o, moment)) : labels.remindOnDate,
+      icon: 'calendar-clock',
+      checked: !!moment,
+      onSelect: () => host.editRemind!(task),
+    });
+  }
+  tail.push({ label: labels.remindOff, icon: 'bell-off', checked: offNow, onSelect: () => (offNow ? undefined : setRemind(task, null)) });
+  sections.push({ entries: tail });
+  return sections;
 }
 
-/** "Remind me" for a plan with a start time, as a row of the plan's menu. */
+/** "Remind me", as a row of the plan's menu: before a plan that has a time, or on a date. */
 function remindEntry(o: TaskActionOptions): MenuEntry | null {
-  if (!o.host.setRemind || !o.task.schedule?.start) return null;
+  if (!o.host.setRemind) return null;
   const labels = getActionLabels(o.language);
   return withKeywords(
     { label: labels.remind, icon: 'bell', hint: remindHint(o), submenu: () => remindSections(o) },

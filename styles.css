@@ -1337,6 +1337,17 @@ li.task-list-item {
   height: 0.95em;
 }
 
+.taskpro-remind-badge {
+  --taskpro-chip-accent: var(--taskpro-accent-schedule);
+  cursor: default;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* The moment has gone, or the task is done: the bell steps back. */
+.taskpro-remind-badge[data-state="past"] {
+  --taskpro-chip-accent: var(--taskpro-accent-notstarted);
+}
+
 /* ==========================================================================
    Plan chip: when a task is planned, from @schedule(...)
    ========================================================================== */

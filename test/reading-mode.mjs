@@ -40,6 +40,7 @@ const SOURCE = [
   '    - [x] Write the copy',
   '    - [ ] Design the pages @schedule(2026-09-28 14:53-15:53) @priority(high)',
   '- [ ] Review with the team @schedule(2026-09-29 09:00-09:30)',
+  '- [ ] Call the vet @remind(2026-10-05 09:30)',
 ].join('\n');
 
 // What Obsidian renders for it: the subtasks' list inside the parent's item.
@@ -52,6 +53,7 @@ const HTML = `
     </ul>
   </li>
   <li data-line="3" data-task="" class="task-list-item"><input type="checkbox" class="task-list-item-checkbox">Review with the team @schedule(2026-09-29 09:00-09:30)</li>
+  <li data-line="4" data-task="" class="task-list-item"><input type="checkbox" class="task-list-item-checkbox">Call the vet @remind(2026-10-05 09:30)</li>
 </ul></div></div>`;
 
 const browser = await chromium.launch(process.env.PW_CHROMIUM ? { executablePath: process.env.PW_CHROMIUM } : {});
@@ -81,7 +83,7 @@ const result = await page.evaluate((source) => {
   };
   const process = window.createReadingModeProcessor({}, () => settings, () => undefined, () => undefined);
   const root = document.querySelector('.markdown-preview-section');
-  const ctx = { sourcePath: 'Planner/Launch.md', getSectionInfo: () => ({ text: source, lineStart: 0, lineEnd: 3 }) };
+  const ctx = { sourcePath: 'Planner/Launch.md', getSectionInfo: () => ({ text: source, lineStart: 0, lineEnd: 4 }) };
   process(root, ctx);
 
   const item = (line) => document.querySelector(`li[data-line="${line}"]`);
@@ -107,6 +109,8 @@ const result = await page.evaluate((source) => {
     childText: own(2),
     doneChildStatus: chips(1)?.textContent ?? null,
     siblingPlan: text(3, 'taskpro-schedule-badge'),
+    remindChip: text(4, 'taskpro-remind-badge'),
+    remindText: own(4),
   };
 }, SOURCE);
 await browser.close();
@@ -120,7 +124,7 @@ function eq(actual, expected, label) {
 }
 
 eq(errors, [], 'no page errors');
-eq(result.containers, 4, 'one row of chips per task');
+eq(result.containers, 5, 'one row of chips per task');
 eq(result.parentChipsBeforeSubtasks, 'UL', "a parent's chips on its own line, before its subtasks");
 eq(result.parentSubtasks, '1/2', "a parent's subtask progress");
 eq(result.parentPlan?.includes('14:53') ?? null, false, "a parent's plan is its own, not a subtask's time");
@@ -132,5 +136,8 @@ eq(result.childPriority, true, "a subtask's own priority");
 eq(result.childText, 'Design the pages', "the subtask's markers hidden");
 eq(result.doneChildStatus?.includes('Done') ?? null, true, 'a done subtask reads as done');
 eq(result.siblingPlan?.includes('09:00') ?? null, true, 'the next task keeps its plan');
+
+eq(result.remindChip?.includes('09:30') ?? null, true, 'a reminder at a moment is a chip with its time, though the task has no plan');
+eq(result.remindText, 'Call the vet', 'and its marker is hidden');
 
 console.log(`READING_MODE_OK (${checked} checks)`);

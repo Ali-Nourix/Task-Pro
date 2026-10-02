@@ -43,6 +43,7 @@ import {
   setRepeat,
   setSchedule,
   setRemind,
+  RemindAt,
   setTags,
   setWaiting,
   stripTaskMetadata,
@@ -74,6 +75,7 @@ import { todayKey } from './src/calendar/calendar-dates';
 import { getCalendarLabels } from './src/calendar/calendar-localization';
 import { scheduleText } from './src/calendar/schedule-text';
 import { openSchedulePanel } from './src/ui/schedule-editor';
+import { openRemindPanel } from './src/ui/remind-editor';
 import { useKeymapOf } from './src/ui/escape-scope';
 import { TaskPropertySuggest } from './src/editor/property-suggest';
 import { RemovedBlock, blockEnd, childIndent, indentOf, removeBlock } from './src/task-lines';
@@ -1426,6 +1428,19 @@ export default class TaskProPlugin extends Plugin {
       setWaiting: (task, blockers) => this.setTaskWaiting(task, blockers),
       setDates: (task, patch) => this.setTaskDatesFor(this.boardTaskRef(task), patch),
       setRemind: (task, minutes) => this.setTaskRemindFor(this.boardTaskRef(task), minutes),
+      editRemind: async (task) => {
+        const choice = await openRemindPanel({
+          language: this.settings.badgeLanguage,
+          calendarSystem: this.settings.board.calendarSystem ?? this.settings.calendarSystem,
+          timeFormat: this.settings.calendar.timeFormat,
+          current: task.remindAt,
+          // A new one starts at the plan's start, when there is one.
+          suggest: task.schedule?.start ? { date: task.schedule.date, time: task.schedule.start } : undefined,
+        });
+        if (choice === undefined) return;
+        // Taking the moment off leaves the task with the setting's reminder again.
+        await this.setTaskRemindFor(this.boardTaskRef(task), choice === null ? undefined : choice);
+      },
     };
   }
 
@@ -1559,7 +1574,7 @@ export default class TaskProPlugin extends Plugin {
   }
 
   /** A task's own reminder before its plan starts, or back to the setting with `undefined`. */
-  async setTaskRemindFor(ref: TaskRef, minutes: number | null | undefined): Promise<void> {
+  async setTaskRemindFor(ref: TaskRef, minutes: number | null | RemindAt | undefined): Promise<void> {
     const { blockId, file } = this.resolveTaskRef(ref);
     if (!file) return;
     const updated = await this.updateTaskLineInFile(file, ref.lineContent, blockId, (content) => setRemind(content, minutes), ref.lineNumber);
@@ -3007,7 +3022,7 @@ export default class TaskProPlugin extends Plugin {
     document.body.removeClass('taskpro-hide-badges-in-embeds');
     // Release the reminder ticker, overlay and audio nodes
     this.reminderService?.stop();
-    this.planReminders?.stop();
+    this.planReminders?.destroy();
     this.taskIndexService?.stop();
     // Closing the float also takes its class back off <body>, so a theme's
     // blur never outlives the plugin.

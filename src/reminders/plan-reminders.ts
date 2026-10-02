@@ -32,9 +32,11 @@ export interface DueReminder {
   task: BoardTask;
   /** Names this announcement: the task, its plan and its lead time. */
   key: string;
-  /** When the plan starts, in epoch milliseconds. */
+  /** When the plan starts, in epoch milliseconds; for a reminder at a moment of its own, that moment. */
   startsAt: number;
   lead: number;
+  /** Before a plan starts, or at a moment the task asked for. */
+  kind: 'plan' | 'moment';
 }
 
 /** When a timed plan starts, in epoch milliseconds, local time. Null for a whole-day plan. */
@@ -50,6 +52,11 @@ export function reminderKey(task: BoardTask, lead: number): string {
   return `${task.filePath}|${task.blockId ?? displayTitle(task.text)}|${schedule.date} ${schedule.start}|${lead}`;
 }
 
+/** The key of a reminder at a moment of its own; the moment is in it, so choosing another moment is a new reminder. */
+export function momentKey(task: BoardTask, at: { date: string; time: string }): string {
+  return `${task.filePath}|${task.blockId ?? displayTitle(task.text)}|${at.date} ${at.time}|at`;
+}
+
 /**
  * The plans to announce now: timed, not closed, not already announced, and
  * inside the window that opens `lead` minutes before the start and closes a
@@ -63,7 +70,16 @@ export function dueReminders(
 ): DueReminder[] {
   const due: DueReminder[] = [];
   for (const task of tasks) {
-    if (!task.schedule?.start || task.status === '[x]' || task.status === '[!]') continue;
+    if (task.status === '[x]' || task.status === '[!]') continue;
+    // A moment of its own replaces the reminder before the plan, and needs no plan.
+    if (task.remindAt) {
+      const at = planStartsAt({ date: task.remindAt.date, start: task.remindAt.time });
+      if (at === null || now < at || now > at + GRACE_MINUTES * 60_000) continue;
+      const key = momentKey(task, task.remindAt);
+      if (!announced.has(key)) due.push({ task, key, startsAt: at, lead: 0, kind: 'moment' });
+      continue;
+    }
+    if (!task.schedule?.start) continue;
     const lead = task.remind === undefined ? (settings.planReminders ? settings.planLeadMinutes : null) : task.remind;
     if (lead === null) continue;
     const startsAt = planStartsAt(task.schedule);
@@ -71,7 +87,7 @@ export function dueReminders(
     if (now < startsAt - lead * 60_000 || now > startsAt + GRACE_MINUTES * 60_000) continue;
     const key = reminderKey(task, lead);
     if (announced.has(key)) continue;
-    due.push({ task, key, startsAt, lead });
+    due.push({ task, key, startsAt, lead, kind: 'plan' });
   }
   return due.sort((a, b) => a.startsAt - b.startsAt);
 }
@@ -80,6 +96,8 @@ const LABELS: Record<Language, {
   startsIn: (minutes: number) => string;
   startsNow: string;
   started: (minutes: number) => string;
+  /** The headline of a reminder at a moment of its own. */
+  reminder: string;
   open: string;
   snooze: string;
   done: string;
@@ -88,6 +106,7 @@ const LABELS: Record<Language, {
     startsIn: (minutes) => `Starts in ${durationText('en', minutes)}`,
     startsNow: 'Starts now',
     started: (minutes) => `Started ${durationText('en', minutes)} ago`,
+    reminder: 'Reminder',
     open: 'Open',
     snooze: `Snooze ${SNOOZE_MINUTES} min`,
     done: 'Done',
@@ -96,6 +115,7 @@ const LABELS: Record<Language, {
     startsIn: (minutes) => `${durationText('fa', minutes)} دیگر شروع می‌شود`,
     startsNow: 'همین حالا شروع می‌شود',
     started: (minutes) => `${durationText('fa', minutes)} پیش شروع شد`,
+    reminder: 'یادآوری',
     open: 'باز کردن',
     snooze: `${SNOOZE_MINUTES} دقیقه بعد`,
     done: 'انجام شد',
@@ -119,6 +139,7 @@ export interface PlanReminderHost {
 
 export class PlanReminderService {
   private timer: number | null = null;
+  private destroyed = false;
   /** Put off until then, by announcement key. */
   private readonly snoozed = new Map<string, number>();
   private readonly showing = new Map<string, Notice>();
@@ -126,6 +147,8 @@ export class PlanReminderService {
   constructor(private readonly host: PlanReminderHost) {}
 
   start(): void {
+    // The store finishes loading after the plugin may already have been turned off.
+    if (this.destroyed) return;
     this.stop();
     this.timer = window.setInterval(() => void this.tick(), TICK_MS);
     this.host.registerInterval(this.timer);
@@ -135,6 +158,12 @@ export class PlanReminderService {
   stop(): void {
     if (this.timer !== null) window.clearInterval(this.timer);
     this.timer = null;
+  }
+
+  /** The plugin is unloading: stop for good, whatever asks to start later. */
+  destroy(): void {
+    this.destroyed = true;
+    this.stop();
   }
 
   /** The settings changed. */
@@ -173,9 +202,11 @@ export class PlanReminderService {
     const language = this.host.language();
     const labels = LABELS[language];
     const minutes = Math.round((reminder.startsAt - now) / 60_000);
-    const when = minutes > 0 ? labels.startsIn(minutes) : minutes === 0 ? labels.startsNow : labels.started(-minutes);
+    const when = reminder.kind === 'moment'
+      ? labels.reminder
+      : minutes > 0 ? labels.startsIn(minutes) : minutes === 0 ? labels.startsNow : labels.started(-minutes);
     const title = displayTitle(reminder.task.text) || reminder.task.text;
-    const plan = this.host.planText(reminder.task.schedule!);
+    const plan = reminder.task.schedule ? this.host.planText(reminder.task.schedule) : '';
 
     const fragment = document.createDocumentFragment();
     const notice = new Notice(fragment, 0);
@@ -188,7 +219,7 @@ export class PlanReminderService {
       el.setAttribute('dir', language === 'fa' ? 'rtl' : 'ltr');
       el.createDiv({ cls: 'taskpro-plan-notice__when', text: when });
       el.createDiv({ cls: 'taskpro-plan-notice__title', text: title, attr: { dir: 'auto' } });
-      el.createDiv({ cls: 'taskpro-plan-notice__plan', text: plan });
+      if (plan) el.createDiv({ cls: 'taskpro-plan-notice__plan', text: plan });
       const actions = el.createDiv({ cls: 'taskpro-plan-notice__actions' });
       const button = (text: string, cls: string, run: () => void) => {
         const b = actions.createEl('button', { cls: `taskpro-plan-notice__action ${cls}`, text });
@@ -211,6 +242,6 @@ export class PlanReminderService {
 
     const settings = this.host.settings();
     if (settings.planSound) this.host.playSound();
-    if (settings.planSystemNotification) this.host.systemNotification(when, `${isolate(title)} · ${plan}`);
+    if (settings.planSystemNotification) this.host.systemNotification(when, plan ? `${isolate(title)} · ${plan}` : isolate(title));
   }
 }

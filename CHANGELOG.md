@@ -194,6 +194,12 @@
 - Whole-day plans and done tasks are skipped. A plan is announced once, even
   across a restart, and one that came due while Obsidian was closed is still
   announced up to 10 minutes after its start.
+- **Remind me › On a date…** asks for a day (Gregorian or Jalali) and a time
+  and reminds you at that moment, planned or not: `@remind(2026-10-05 09:30)`.
+  It replaces the reminder before the plan. The notice reads *Reminder*, and
+  the line shows a bell chip with the day and time, grey once it has passed.
+  The row is in the card and in the plan's menu for any task, not only one
+  with a time of day.
 
 ### Timeline
 
@@ -418,6 +424,7 @@ Each animation says what just happened. Only opacity and transform move.
 - A task's checkbox is a square with soft corners now (`--taskpro-check-radius`), not a circle, in the table, the board, the calendar and the card.
 - In the status capsule the icon sits level with the letters and set in from the capsule's end, instead of low and close to the edge.
 - The task card's header is tidier: the checkbox, the title's first line and the two tools share one centre line, and the date field no longer runs past the card's edge.
+- Turning the plugin off right after it started could leave the plan-reminder ticker running, announcing every reminder twice. The ticker now stays off once the plugin has been unloaded.
 - Subtasks in the unscheduled list have a gap between their boxes, so the tint of a lit family does not run together.
 
 - A task added under a heading is laid out the Markdown way: a blank line

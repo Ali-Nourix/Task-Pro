@@ -32,7 +32,7 @@ import {
   TaskStatus,
 } from '../types';
 import { TaskTag, applyTagColor, resolveTag, resolveTagColor } from '../tags';
-import { extractTags, setPriority, setTags } from '../task-metadata';
+import { RemindAt, extractTags, setPriority, setTags } from '../task-metadata';
 import { isWithinTargetFolder } from '../path-utils';
 import { gregorianToJalali } from '../date-utils';
 import { getDeadlineInfo } from '../widget-localization';
@@ -251,8 +251,13 @@ export interface TaskBoardHost {
    * each is left alone when absent from the patch, and `null` removes it.
    */
   setDates?(task: BoardTask, patch: { schedule?: TaskSchedule | null; deadline?: string | null }): Promise<void>;
-  /** The task's own reminder before its plan starts: minutes, `null` for none, `undefined` for the setting. */
-  setRemind?(task: BoardTask, minutes: number | null | undefined): Promise<void>;
+  /**
+   * The task's own reminder: minutes before its plan starts, a moment of its own,
+   * `null` for none, `undefined` for the setting.
+   */
+  setRemind?(task: BoardTask, minutes: number | null | RemindAt | undefined): Promise<void>;
+  /** Asks for a moment to be reminded at, and sets it. */
+  editRemind?(task: BoardTask): Promise<void>;
 
   // The calendar layout. A host without these still shows the calendar,
   // read-only.

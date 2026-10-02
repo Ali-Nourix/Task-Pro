@@ -21,6 +21,8 @@ import {
   extractPriority,
   extractRepeat,
   extractRemind,
+  extractRemindAt,
+  RemindAt,
   extractSchedule,
   extractTags,
   extractWaiting,
@@ -31,6 +33,7 @@ import type { WaitingResolver } from './decorations';
 import { ResolvedTag, TaskTag, resolveTag } from './tags';
 import {
   addRemindMark,
+  createRemindChip,
   appendTagChips,
   applyChipScale,
   createDeadlineChip,
@@ -238,6 +241,7 @@ export function createReadingModeProcessor(
         : [];
       const schedule = settings.showScheduleBadges ? extractSchedule(text) : undefined;
       const remind = schedule?.start && text.includes('@remind(') ? extractRemind(text) : undefined;
+      const remindAt = settings.showScheduleBadges && text.includes('@remind(') ? extractRemindAt(text) : undefined;
       const subtasks = settings.showSubtaskProgress ? renderedSubtasks(item) : null;
       let waiting: ReturnType<WaitingResolver> | undefined;
       if (settings.showWaitingBadges && getWaiting && text.includes('@waiting(')) {
@@ -265,7 +269,7 @@ export function createReadingModeProcessor(
         tags,
         tagChips,
         schedule,
-        { subtasks, waiting, remind }
+        { subtasks, waiting, remind, remindAt }
       );
 
       hideInlineTaskMetadata(item, settings.showRepeatBadges, settings.showTagBadges, settings.showScheduleBadges);
@@ -365,6 +369,7 @@ function createInteractiveBadgeContainer(
     subtasks?: { done: number; total: number } | null;
     waiting?: ReturnType<WaitingResolver>;
     remind?: number | null;
+    remindAt?: RemindAt;
   } = {}
 ): HTMLElement {
   const container = document.createElement('span');
@@ -444,6 +449,17 @@ function createInteractiveBadgeContainer(
       })
     );
     if (relations.remind !== undefined && schedule.start) addRemindMark(plan, relations.remind, settings.badgeLanguage);
+  }
+
+  if (relations.remindAt) {
+    container.appendChild(
+      createRemindChip(relations.remindAt, {
+        language: settings.badgeLanguage,
+        calendarSystem: settings.calendarSystem,
+        timeFormat: settings.timeFormat,
+        status,
+      })
+    );
   }
 
   const waiting = relations.waiting;

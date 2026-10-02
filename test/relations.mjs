@@ -11,7 +11,7 @@ const build = await esbuild.build({
       export { parseBoardTasks } from "../src/board/task-store";
       export * from "../src/board/task-relations";
       export * from "../src/board/task-move";
-      export { extractWaiting, setWaiting, extractRemind, setRemind, stripTaskMetadata, replaceTaskText, setSchedule } from "../src/task-metadata";
+      export { extractWaiting, setWaiting, extractRemind, extractRemindAt, setRemind, stripTaskMetadata, replaceTaskText, setSchedule } from "../src/task-metadata";
       export { dueReminders, planStartsAt, reminderKey } from "../src/reminders/plan-reminders";
       export { taskSpan, buildTimeline, finishesAfterStart } from "../src/timeline/timeline-model";
     `,
@@ -47,6 +47,7 @@ const {
   extractWaiting,
   setWaiting,
   extractRemind,
+  extractRemindAt,
   setRemind,
   stripTaskMetadata,
   replaceTaskText,
@@ -101,6 +102,20 @@ eq(extractRemind('- [ ] x @remind(1h)'), 60, 'hours');
 eq(extractRemind('- [ ] x @remind(off)'), null, 'off');
 eq(extractRemind('- [ ] x'), undefined, 'none: the setting decides');
 eq(stripTaskMetadata(line).includes('@'), false, 'every marker leaves the title');
+// A reminder at a moment of its own.
+eq(extractRemindAt('- [ ] x @remind(2026-10-05 09:30)'), { date: '2026-10-05', time: '09:30' }, 'a moment is read');
+eq(extractRemindAt('- [ ] x @remind(2026-10-05T9:30)'), { date: '2026-10-05', time: '09:30' }, 'a T and a short hour are read too');
+eq(extractRemind('- [ ] x @remind(2026-10-05 09:30)'), undefined, 'a moment is not a lead time');
+eq(extractRemindAt('- [ ] x @remind(15m)'), undefined, 'a lead time is not a moment');
+eq(extractRemindAt('- [ ] x @remind(2026-02-31 09:30)'), undefined, 'a day that does not exist is not read');
+eq(extractRemindAt('- [ ] x @remind(2026-10-05 25:30)'), undefined, 'nor an hour that does not');
+eq(stripTaskMetadata('- [ ] x @remind(2026-10-05 09:30) ^a').includes('@'), false, 'it leaves the title');
+eq(setRemind('- [ ] x @schedule(2026-09-28 09:00) ^a', { date: '2026-10-05', time: '09:30' }), '- [ ] x @schedule(2026-09-28 09:00) @remind(2026-10-05 09:30) ^a', 'written before the block ID');
+eq(setRemind('- [ ] x @remind(15m)', { date: '2026-10-05', time: '09:30' }), '- [ ] x @remind(2026-10-05 09:30)', 'it replaces a lead time');
+eq(setRemind('- [ ] x @remind(2026-10-05 09:30)', 30), '- [ ] x @remind(30m)', 'and is replaced by one');
+eq(setRemind('- [ ] x @remind(2026-10-05 09:30)', undefined), '- [ ] x', 'back to the setting');
+eq(setRemind('- [ ] x @remind(2026-10-05 09:30)', null), '- [ ] x @remind(off)', 'or off');
+eq(parseBoardTasks('N.md', '- [ ] x @remind(2026-10-05 09:30)')[0].remindAt, { date: '2026-10-05', time: '09:30' }, 'the store reads it');
 eq(
   setWaiting('- [ ] Ship it ^ship', [{ path: 'Planner/Launch', blockId: 'tp-4k2a' }]),
   '- [ ] Ship it @waiting([[Planner/Launch#^tp-4k2a]]) ^ship',
@@ -219,6 +234,26 @@ eq(dueReminders(planned, at('09:20'), settings, new Set()).map((r) => r.task.tex
 eq(dueReminders(planned, at('08:52'), { planReminders: false, planLeadMinutes: 10 }, new Set()).map((r) => r.task.text), ['Review'], 'the setting off: only tasks with a time of their own');
 eq(dueReminders(planned, at('08:46'), { planReminders: false, planLeadMinutes: 10 }, new Set()).map((r) => r.task.text), ['Review'], 'a task’s own time still counts');
 eq(setSchedule(`- [ ] x @remind(5m)`, { date: day, start: '10:00' }).includes('@remind(5m)'), true, 'a new plan keeps the reminder');
+
+// A reminder at a moment of its own: needs no plan, replaces the lead time, fires once.
+const moments = parseBoardTasks(
+  'Planner/Moments.md',
+  [
+    `- [ ] No plan @remind(${day} 14:00)`,
+    `- [ ] Planned @schedule(${day} 09:30-10:00) @remind(${day} 16:00)`,
+    `- [x] Closed @remind(${day} 14:00)`,
+    `- [ ] Plain`,
+  ].join('\n')
+);
+const clock = (value) => planStartsAt({ date: day, start: value });
+eq(dueReminders(moments, clock('13:59'), settings, new Set()).length, 0, 'not before the moment');
+eq(dueReminders(moments, clock('14:00'), settings, new Set()).map((r) => [r.task.text, r.kind]), [['No plan', 'moment']], 'at it, for a task with no plan');
+eq(dueReminders(moments, clock('09:25'), settings, new Set()).length, 0, 'it replaces the reminder before the plan');
+eq(dueReminders(moments, clock('16:05'), settings, new Set()).map((r) => r.task.text), ['Planned'], 'a planned task is reminded at its moment');
+eq(dueReminders(moments, clock('14:11'), settings, new Set()).length, 0, 'let go well after it');
+const once = dueReminders(moments, clock('14:02'), settings, new Set());
+eq(dueReminders(moments, clock('14:03'), settings, new Set(once.map((r) => r.key))).length, 0, 'announced once');
+eq(dueReminders(moments, clock('14:02'), { planReminders: false, planLeadMinutes: 10 }, new Set()).length, 1, 'whatever the setting says');
 
 // ── Timeline ───────────────────────────────────────────────────────────────
 eq(taskSpan({ schedule: { date: '2026-10-01' }, deadline: '2026-10-05' }), { start: '2026-10-01', end: '2026-10-05', kind: 'span' }, 'plan to deadline');

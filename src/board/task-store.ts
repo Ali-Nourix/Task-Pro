@@ -16,6 +16,8 @@ import {
   extractDeadline,
   extractPriority,
   extractRemind,
+  extractRemindAt,
+  RemindAt,
   extractRepeat,
   extractSchedule,
   extractTags,
@@ -52,6 +54,8 @@ export interface BoardTask {
    * null when turned off, undefined when the setting decides.
    */
   remind?: number | null;
+  /** Its reminder at a moment of its own, from `@remind(2026-10-05 09:30)`; it replaces the one before the plan. */
+  remindAt?: RemindAt;
   /**
    * The task this one is nested under, as an `id` in the same note: the
    * nearest task among its list ancestors. A plain bullet in between (a note
@@ -152,8 +156,8 @@ export function parseBoardTasks(
 }
 
 /** The two markers most tasks do not have, left off the task when absent. */
-function waitingAndRemind(content: string): Pick<BoardTask, 'waiting' | 'remind'> {
-  const out: Pick<BoardTask, 'waiting' | 'remind'> = {};
+function waitingAndRemind(content: string): Pick<BoardTask, 'waiting' | 'remind' | 'remindAt'> {
+  const out: Pick<BoardTask, 'waiting' | 'remind' | 'remindAt'> = {};
   if (content.includes('@waiting(')) {
     const waiting = extractWaiting(content);
     if (waiting.length) out.waiting = waiting;
@@ -161,6 +165,8 @@ function waitingAndRemind(content: string): Pick<BoardTask, 'waiting' | 'remind'
   if (content.includes('@remind(')) {
     const remind = extractRemind(content);
     if (remind !== undefined) out.remind = remind;
+    const remindAt = extractRemindAt(content);
+    if (remindAt) out.remindAt = remindAt;
   }
   return out;
 }

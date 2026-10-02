@@ -34,6 +34,8 @@ import {
   extractPriority,
   extractRepeat,
   extractRemind,
+  extractRemindAt,
+  RemindAt,
   extractSchedule,
   extractTags,
   extractWaiting,
@@ -50,6 +52,7 @@ import { SubtaskCount, subtaskCountAt } from './board/task-relations';
 import { ResolvedTag, TaskTag, resolveTag } from './tags';
 import {
   addRemindMark,
+  createRemindChip,
   appendTagChips,
   applyChipScale,
   createDeadlineChip,
@@ -159,6 +162,7 @@ class TaskBadgeWidget extends WidgetType {
     subtasks?: SubtaskCount;
     waiting?: WaitingInfo[];
     remind?: number | null;
+    remindAt?: RemindAt;
   };
 
   constructor(
@@ -178,7 +182,7 @@ class TaskBadgeWidget extends WidgetType {
     schedule?: TaskSchedule,
     calendarSystem: CalendarSystem = 'gregorian',
     timeFormat: TimeFormat = '24h',
-    relations: { subtasks?: SubtaskCount; waiting?: WaitingInfo[]; remind?: number | null } = {}
+    relations: { subtasks?: SubtaskCount; waiting?: WaitingInfo[]; remind?: number | null; remindAt?: RemindAt } = {}
   ) {
     super();
     this.widgetState = Object.freeze({
@@ -201,6 +205,7 @@ class TaskBadgeWidget extends WidgetType {
       subtasks: relations.subtasks,
       waiting: relations.waiting,
       remind: relations.remind,
+      remindAt: relations.remindAt,
     });
   }
 
@@ -263,6 +268,8 @@ class TaskBadgeWidget extends WidgetType {
       subtasksEq &&
       waitingEq &&
       this.widgetState.remind === other.widgetState.remind &&
+      this.widgetState.remindAt?.date === other.widgetState.remindAt?.date &&
+      this.widgetState.remindAt?.time === other.widgetState.remindAt?.time &&
       this.widgetState.status === other.widgetState.status &&
       this.widgetState.deadline === other.widgetState.deadline &&
       this.widgetState.priority === other.widgetState.priority &&
@@ -360,6 +367,12 @@ class TaskBadgeWidget extends WidgetType {
         })
       );
       if (s.remind !== undefined && s.schedule.start) addRemindMark(plan, s.remind, s.language);
+    }
+
+    if (s.remindAt) {
+      container.appendChild(
+        createRemindChip(s.remindAt, { language: s.language, calendarSystem: s.calendarSystem, timeFormat: s.timeFormat, status: s.status })
+      );
     }
 
     if (s.waiting?.length) {
@@ -499,6 +512,7 @@ function buildDecorations(
         const waitingLinks = settings.showWaitingBadges && content.includes('@waiting(') ? extractWaiting(content) : [];
         const waiting = waitingLinks.length && getWaiting ? getWaiting(filePath, waitingLinks) : undefined;
         const remind = schedule && content.includes('@remind(') ? extractRemind(content) : undefined;
+        const remindAt = settings.showScheduleBadges && content.includes('@remind(') ? extractRemindAt(content) : undefined;
 
         if (deadline) {
           const deadlineMatch = DEADLINE_MATCH_REGEX.exec(content);
@@ -555,7 +569,7 @@ function buildDecorations(
         // A dependency and a reminder are hidden while their chip says them.
         for (const [shown, pattern] of [
           [!!waiting, WAITING_MARKER_PATTERN],
-          [remind !== undefined, REMIND_MARKER_PATTERN],
+          [remind !== undefined || !!remindAt, REMIND_MARKER_PATTERN],
         ] as const) {
           const match = shown ? pattern.exec(content) : null;
           if (!match) continue;
@@ -599,7 +613,7 @@ function buildDecorations(
               schedule,
               settings.calendarSystem,
               settings.timeFormat,
-              { subtasks, waiting, remind }
+              { subtasks, waiting, remind, remindAt }
             ),
             side: 1,
           }),
