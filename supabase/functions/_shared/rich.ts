@@ -55,7 +55,7 @@ export function htmlToRich(html: string): string {
     if (!chunk) continue;
     for (const raw of chunk.split('\n')) {
       const text = inline(raw);
-      const title = /^\*\*(.+?)\*\*((?:\s+·\s+.*)?)$/.exec(text);
+      const title = /^\*\*(.+?)\*\*((?:\s+[·—]\s+.*)?)$/.exec(text);
       if (title && /^<b>/.test(raw)) {
         heading++;
         lines.push(`${heading === 1 ? '#' : '##'} ${title[1]}${title[2]}`, '');

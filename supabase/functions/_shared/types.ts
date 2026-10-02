@@ -16,6 +16,8 @@ export interface OwnerRow {
   lead_minutes: number;
   /** Show screens as Telegram's rich messages (headings, tables, task lists). On unless turned off. */
   rich?: boolean | null;
+  /** How many invisible characters widen a short message (0: none). */
+  pad?: number | null;
   last_sync_at: string | null;
 }
 

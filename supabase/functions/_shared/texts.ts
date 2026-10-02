@@ -15,6 +15,11 @@ export function digits(text: string | number, language: Language): string {
   return language === 'fa' ? s.replace(/\d/g, (d) => PERSIAN[Number(d)]) : s;
 }
 
+/** "1 of 3" as the language writes it. A slash between digits is turned round when read right to left, so Persian says «از». */
+export function ratio(done: number, total: number, language: Language): string {
+  return language === 'fa' ? `${digits(done, 'fa')} از ${digits(total, 'fa')}` : `${done}/${total}`;
+}
+
 /** Text safe to put inside Telegram's HTML. */
 export function esc(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -113,7 +118,7 @@ export function taskEntry(task: TaskRow, owner: Owner, today: string, options: E
   const glyph = task.status === 'doing' ? '🔄 ' : task.pending ? '🕓 ' : '';
   const priority = task.priority ? ` ${PRIORITY_MARK[task.priority]}` : '';
   const arrow = depth ? '↳ ' : '';
-  const progress = task.subs_total ? ` <code>${digits(task.subs_done ?? 0, language)}/${digits(task.subs_total, language)}</code>` : '';
+  const progress = task.subs_total ? ` <code>${ratio(task.subs_done ?? 0, task.subs_total, language)}</code>` : '';
   const head = `${pad}${arrow}${glyph}<b>${digits(options.position, language)}.</b> ${esc(truncate(task.title, 110))}${priority}${progress}`;
   const parts: string[] = [];
   if (options.parentHint && task.parent_title) parts.push(`↳ <i>${words(language).labels.subOf} «${esc(truncate(task.parent_title, 28))}»</i>`);
@@ -127,7 +132,7 @@ export function taskEntry(task: TaskRow, owner: Owner, today: string, options: E
   if (task.tags.length) parts.push(task.tags.map((tag) => `<code>#${esc(tag)}</code>`).join(' '));
   const lines = [head];
   if (task.subs_total) lines.push(`${pad}${INDENT}<code>${progressBar(task.subs_done ?? 0, task.subs_total)}</code>`);
-  if (parts.length) lines.push(`${pad}${depth ? INDENT : ''}${parts.join(' · ')}`);
+  if (parts.length) lines.push(`${pad}${depth ? INDENT : ''}${parts.join(' • ')}`);
   return lines.join('\n');
 }
 
@@ -163,7 +168,7 @@ export function taskCard(task: TaskRow, owner: Owner, today: string, relatives: 
     const done = task.subs_done ?? 0;
     const list = children.map((child, i) => `${digits(i + 1, language)}. ${child.status === 'doing' ? '🔄 ' : ''}${esc(truncate(child.title, 60))}`);
     subs =
-      `\n<b>${w.labels.subtasks}</b> <code>${digits(done, language)}/${digits(total, language)}</code> <code>${progressBar(done, total)}</code>` +
+      `\n<b>${w.labels.subtasks}</b> <code>${ratio(done, total, language)}</code> <code>${progressBar(done, total)}</code>` +
       (list.length ? `\n<blockquote>${list.join('\n')}</blockquote>` : '');
   }
   const state = `<i>${w.labels.id} #${digits(task.n, language)} · ${w.labels.statuses[task.status]}${task.pending ? ` · ${w.labels.pending}` : ''}</i>`;
@@ -178,7 +183,7 @@ export function taskEntryRich(task: TaskRow, owner: Owner, today: string, option
   const sub = `${pad}  `;
   const glyph = task.status === 'doing' ? '🔄 ' : task.pending ? '🕓 ' : '';
   const priority = task.priority ? ` ${PRIORITY_MARK[task.priority]}` : '';
-  const progress = task.subs_total ? ` \`${digits(task.subs_done ?? 0, language)}/${digits(task.subs_total, language)}\` \`${progressBar(task.subs_done ?? 0, task.subs_total)}\`` : '';
+  const progress = task.subs_total ? ` \`${ratio(task.subs_done ?? 0, task.subs_total, language)}\` \`${progressBar(task.subs_done ?? 0, task.subs_total)}\`` : '';
   const lines = [`${pad}- [ ] ${glyph}**${digits(options.position, language)}.** ${mdEscape(truncate(task.title, 110))}${priority}${progress}`];
   const parts: string[] = [];
   if (options.parentHint && task.parent_title) parts.push(`↳ *${words(language).labels.subOf} «${mdEscape(truncate(task.parent_title, 28))}»*`);
@@ -190,7 +195,7 @@ export function taskEntryRich(task: TaskRow, owner: Owner, today: string, option
   const repeat = repeatLabel(task.repeat ?? null, language);
   if (repeat) parts.push(`🔁 ${mdEscape(repeat)}`);
   if (task.tags.length) parts.push(task.tags.map((tag) => `\`#${tag.replace(/`/g, '')}\``).join(' '));
-  if (parts.length) lines[0] += '  ', lines.push(`${sub}${parts.join(' · ')}`);
+  if (parts.length) lines[0] += '  ', lines.push(`${sub}${parts.join(' • ')}`);
   return lines.join('\n');
 }
 
@@ -223,7 +228,7 @@ export function taskCardRich(task: TaskRow, owner: Owner, today: string, relativ
     const total = task.subs_total ?? children.length;
     const done = task.subs_done ?? 0;
     const list = children.map((child) => `- [ ] ${child.status === 'doing' ? '🔄 ' : ''}${mdEscape(truncate(child.title, 60))}`);
-    md.push(`**${w.labels.subtasks}** \`${digits(done, language)}/${digits(total, language)}\` \`${progressBar(done, total)}\`${list.length ? `\n\n${list.join('\n')}` : ''}`);
+    md.push(`**${w.labels.subtasks}** \`${ratio(done, total, language)}\` \`${progressBar(done, total)}\`${list.length ? `\n\n${list.join('\n')}` : ''}`);
   }
   if (footer) md.push(htmlToRich(footer));
   md.push(`*${w.labels.id} #${digits(task.n, language)} · ${w.labels.statuses[task.status]}${task.pending ? ` · ${w.labels.pending}` : ''}*`);
@@ -374,8 +379,9 @@ export interface Words {
   newTask: string;
   statusView: (open: number, waiting: number, lastSync: string | null, health: 'ok' | 'stale' | 'never') => string;
   agoMinutes: (minutes: number) => string;
-  settings: (o: { language: string; calendar: string; timezone: string; lead: number; rich: string }) => string;
-  settingButtons: { language: string; calendar: string; lead: (minutes: number) => string; zone: (zone: string) => string; rich: (on: boolean) => string };
+  settings: (o: { language: string; calendar: string; timezone: string; lead: number; rich: string; pad: string }) => string;
+  settingButtons: { language: string; calendar: string; lead: (minutes: number) => string; zone: (zone: string) => string; rich: (on: boolean) => string; pad: (pad: string) => string };
+  padNames: (pad: number) => string;
   richNames: { on: string; off: string };
   richUnavailable: string;
   nav: { home: string; today: string; all: string; newTask: string; settings: string };
@@ -598,14 +604,16 @@ const fa: Words = {
     minutes < 1 ? 'همین الان' : minutes < 60 ? `${digits(minutes, 'fa')} دقیقه پیش` : minutes < 2880 ? `${digits(Math.floor(minutes / 60), 'fa')} ساعت پیش` : `${digits(Math.floor(minutes / 1440), 'fa')} روز پیش`,
   settings: (o) =>
     '⚙️ <b>تنظیمات</b>\n' +
-    `<blockquote>🌐 زبان · ${o.language}\n📆 تقویم · ${o.calendar}\n🕒 منطقهٔ زمانی · <code>${esc(o.timezone)}</code>\n⏱ یادآوری پیش از برنامه · ${digits(o.lead, 'fa')} دقیقه\n🧩 نمایش پیشرفته · ${o.rich}</blockquote>`,
+    `<blockquote>🌐 زبان · ${o.language}\n📆 تقویم · ${o.calendar}\n🕒 منطقهٔ زمانی · <code>${esc(o.timezone)}</code>\n⏱ یادآوری پیش از برنامه · ${digits(o.lead, 'fa')} دقیقه\n🧩 نمایش پیشرفته · ${o.rich}\n↔️ عرض پیام · ${o.pad}</blockquote>`,
   settingButtons: {
     language: '🌐 زبان',
     calendar: '📆 تقویم',
     lead: (minutes) => `⏱ ${digits(minutes, 'fa')} دقیقه پیش از برنامه`,
     zone: (zone) => `🕒 ${zone}`,
     rich: (on) => `🧩 نمایش پیشرفته: ${on ? 'روشن' : 'خاموش'}`,
+    pad: (pad) => `↔️ عرض پیام: ${pad}`,
   },
+  padNames: (pad) => (pad === 0 ? 'ساده' : pad <= 40 ? 'کم' : pad <= 60 ? 'متوسط' : pad <= 80 ? 'زیاد' : 'خیلی زیاد'),
   richNames: { on: 'روشن', off: 'خاموش' },
   richUnavailable: 'این گزینه بعد از به‌روزرسانی دیتابیس فعال می‌شود؛ چند ثانیه بعد دوباره امتحان کن.',
   nav: { home: '🏠', today: '📅', all: '📋', newTask: '➕', settings: '⚙️' },
@@ -845,14 +853,16 @@ const en: Words = {
     minutes < 1 ? 'just now' : minutes < 60 ? `${minutes} min ago` : minutes < 2880 ? `${Math.floor(minutes / 60)} h ago` : `${Math.floor(minutes / 1440)} d ago`,
   settings: (o) =>
     '⚙️ <b>Settings</b>\n' +
-    `<blockquote>🌐 Language · ${o.language}\n📆 Calendar · ${o.calendar}\n🕒 Time zone · <code>${esc(o.timezone)}</code>\n⏱ Remind before a plan · ${o.lead} min\n🧩 Rich display · ${o.rich}</blockquote>`,
+    `<blockquote>🌐 Language · ${o.language}\n📆 Calendar · ${o.calendar}\n🕒 Time zone · <code>${esc(o.timezone)}</code>\n⏱ Remind before a plan · ${o.lead} min\n🧩 Rich display · ${o.rich}\n↔️ Message width · ${o.pad}</blockquote>`,
   settingButtons: {
     language: '🌐 Language',
     calendar: '📆 Calendar',
     lead: (minutes) => `⏱ ${minutes} min before a plan`,
     zone: (zone) => `🕒 ${zone}`,
     rich: (on) => `🧩 Rich display: ${on ? 'on' : 'off'}`,
+    pad: (pad) => `↔️ Message width: ${pad}`,
   },
+  padNames: (pad) => (pad === 0 ? 'none' : pad <= 40 ? 'narrow' : pad <= 60 ? 'medium' : pad <= 80 ? 'wide' : 'widest'),
   richNames: { on: 'on', off: 'off' },
   richUnavailable: 'This option works once the database is updated; try again in a few seconds.',
   nav: { home: '🏠', today: '📅', all: '📋', newTask: '➕', settings: '⚙️' },

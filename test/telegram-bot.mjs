@@ -21,7 +21,8 @@ const build = await esbuild.build({
       export { TASK_SETTINGS_SQL } from "../supabase/functions/_shared/schema-sql.ts";
       export { buildMonth, daysIn, monthKeyOf, dayOf } from "../supabase/functions/_shared/calendar-picker.ts";
       export { htmlToRich, mdEscape } from "../supabase/functions/_shared/rich.ts";
-      export { telegramApi, widen } from "../supabase/functions/_shared/telegram-api.ts";
+      export { telegramApi } from "../supabase/functions/_shared/telegram-api.ts";
+      export { widenHtml, widenMarkdown, padOf, PADS } from "../supabase/functions/_shared/widen.ts";
     `,
     resolveDir: new URL('.', import.meta.url).pathname,
     loader: 'ts',
@@ -299,7 +300,7 @@ async function paired() {
 
   // Settings, in place.
   await w.say('/settings');
-  eq(w.data(w.last()), ['set:lang', 'set:cal', 'set:lead', 'set:tz', 'set:rich', 'home', 'ls:t:0', 'ls:a:0', 'new', 'set'], 'settings, with the tab bar');
+  eq(w.data(w.last()), ['set:lang', 'set:cal', 'set:lead', 'set:tz', 'set:rich', 'set:pad', 'home', 'ls:t:0', 'ls:a:0', 'new', 'set'], 'settings, with the tab bar');
   await w.press('set:cal');
   eq([w.store.owner.calendar, w.lastEdit().text.includes('میلادی')], ['gregorian', true], 'the calendar flips');
   await w.press('set:lead');
@@ -374,7 +375,7 @@ async function paired() {
   const fs = await import('fs');
   const read = (name) => fs.readFileSync(new URL(`../supabase/migrations/${name}`, import.meta.url), 'utf8');
   const code = (text) => text.split('\n').filter((line) => !line.startsWith('--')).join(' ').replace(/\s+/g, ' ').trim();
-  eq(code(mod.TASK_SETTINGS_SQL), code(read('20261003000000_task_settings.sql') + '\n' + read('20261004000000_subtasks.sql') + '\n' + read('20261005000000_rich_messages.sql')), 'the update the functions run is the migration files, in order');
+  eq(code(mod.TASK_SETTINGS_SQL), code(read('20261003000000_task_settings.sql') + '\n' + read('20261004000000_subtasks.sql') + '\n' + read('20261005000000_rich_messages.sql') + '\n' + read('20261006000000_message_width.sql')), 'the update the functions run is the migration files, in order');
 }
 
 // ── Every setting of a task ────────────────────────────────────────────────
@@ -586,14 +587,14 @@ async function paired() {
   eq(order.every((at, i) => at > (order[i - 1] ?? -1)), true, 'a parent is followed by its subtasks, the families in order of their sections');
   eq([text.includes('<b>۱.</b> Orphan'), text.includes('<b>۲.</b> Launch'), text.includes('<b>۳.</b> Write copy'), text.includes('<b>۴.</b> 🔄 Design') || text.includes('🔄 <b>۴.</b> Design'), text.includes('<b>۵.</b> Solo')], [true, true, true, true, true], 'numbered 1 to 5 in the order they are read, with no gaps');
   eq(text.includes('↳ 🔄 <b>۴.</b> Design') || text.includes('↳ <b>۴.</b>'), true, 'a subtask is marked with an arrow and set in from its parent');
-  eq(text.includes('<code>۱/۳</code>') && text.includes('▰▱▱'), true, 'a parent shows how many subtasks are done, with a bar');
+  eq(text.includes('<code>۱ از ۳</code>') && text.includes('▰▱▱'), true, 'a parent shows how many subtasks are done, with a bar');
   eq(text.includes('زیرتسکِ «Closed parent»'), true, 'a subtask whose parent is not in the list says whose it is');
   eq(w.data(w.last()).filter((d) => d.startsWith('t:')), ['t:5@a0', 't:1@a0', 't:2@a0', 't:3@a0', 't:4@a0'], 'the buttons follow the same order');
   eq(w.last().buttons[0][0].text.startsWith('۱ · '), true, 'and carry the same numbers');
 
   await w.press('t:1@a0');
   const card = w.lastEdit();
-  eq([card.text.includes('زیرتسک‌ها</b> <code>۱/۳</code>'), card.text.includes('۱. Write copy'), card.text.includes('۲. 🔄 Design')], [true, true, true], 'a parent’s card lists its open subtasks and the count');
+  eq([card.text.includes('زیرتسک‌ها</b> <code>۱ از ۳</code>'), card.text.includes('۱. Write copy'), card.text.includes('۲. 🔄 Design')], [true, true, true], 'a parent’s card lists its open subtasks and the count');
   eq(w.data(card).filter((d) => d.startsWith('t:')), ['t:2@a0', 't:3@a0'], 'with a button for each');
   await w.press('t:2@a0');
   eq([w.lastEdit().text.startsWith('↳ <i>زیرتسکِ «Launch»</i>'), w.data(w.lastEdit()).includes('t:1@a0')], [true, true], 'a subtask’s card says whose it is, with a button up to its parent');
@@ -617,17 +618,18 @@ async function paired() {
   ] });
   await w.say('/list');
   const sent = w.last();
-  eq([sent.options.rich.rtl, sent.options.rich.markdown.startsWith('# 📋 همهٔ تسک‌ها  ·  *۲ باز*')], [true, true], 'a screen goes out as a rich message too, read right to left in Persian');
+  eq([sent.options.rich.rtl, sent.options.rich.markdown.startsWith('# 📋 همهٔ تسک‌ها — *۲ باز*')], [true, true], 'a screen goes out as a rich message too, read right to left in Persian');
   const md = sent.options.rich.markdown;
   eq(md.includes('## 📅 امروز'), true, 'sections are headings');
-  eq(md.includes('- [ ] **۱.** Launch \\*now\\* `۱/۳` `▰▱▱`') && md.includes('  - [ ] **۲.** Write copy'), true, 'tasks are task-list items, a subtask nested under its parent, titles escaped');
+  eq(md.includes('- [ ] **۱.** Launch \\*now\\* `۱ از ۳` `▰▱▱`') && md.includes('  - [ ] **۲.** Write copy'), true, 'tasks are task-list items, a subtask nested under its parent, titles escaped');
   eq(sent.text.includes('<b>۱.</b>'), true, 'and the classic HTML is still there to fall back on');
 
   await w.press('t:1@a0');
   const screen = w.lastEdit();
   eq(screen.rich.markdown.startsWith('# Launch \\*now\\*\n\n| | |\n|:--|:--|\n| **📅 برنامه** |'), true, 'a task screen is a heading and a table of its settings');
-  eq(screen.rich.markdown.includes('**زیرتسک‌ها** `۱/۳` `▰▱▱`\n\n- [ ] Write copy'), true, 'with its open subtasks as a task list');
-  eq(screen.rich.markdown.endsWith('*شناسه #۱ · باز*'), true, 'and its ID last');
+  eq(screen.rich.markdown.includes('**زیرتسک‌ها** `۱ از ۳` `▰▱▱`\n\n- [ ] Write copy'), true, 'with its open subtasks as a task list');
+  eq(screen.rich.markdown.replace(/\n\n\u2800+$/, '').endsWith('*شناسه #۱ · باز*'), true, 'and its ID last (before the line that holds the width)');
+  eq([screen.rich.markdown.endsWith('\u2800'.repeat(60)), screen.text.endsWith('\u2800'.repeat(60))], [true, true], 'a short screen is held at a full card’s width, rich or classic');
 
   await w.press('set:rich');
   eq([w.store.owner.rich, w.lastEdit().text.includes('خاموش')], [false, true], 'the settings switch rich display off');
@@ -672,7 +674,7 @@ async function paired() {
   replies.push({ ok: false, status: 400, text: 'Bad Request: can\'t parse rich message' }, { ok: false, status: 400, text: 'Bad Request: can\'t parse rich message' });
   await tg.send(7, '<b>Hi</b>', buttons, { rich });
   eq(calls.map((c) => c.method), ['sendRichMessage', 'sendRichMessage', 'sendMessage'], 'if Telegram refuses it (once more without the colours), the classic message is sent instead');
-  eq([calls[1].body.reply_markup.inline_keyboard[0][0].style, calls[2].body.parse_mode, calls[2].body.text], [undefined, 'HTML', '<b>Hi</b>\n' + '\u2800'.repeat(30)], 'as HTML, widened');
+  eq([calls[1].body.reply_markup.inline_keyboard[0][0].style, calls[2].body.parse_mode, calls[2].body.text], [undefined, 'HTML', '<b>Hi</b>'], 'as HTML');
   calls.length = 0;
   await tg.edit(7, 55, '<b>Hi</b>', buttons, rich);
   eq([calls[0].method, calls[0].body.message_id, !!calls[0].body.rich_message], ['editMessageText', 55, true], 'an edit carries the rich message to editMessageText');
@@ -688,12 +690,48 @@ async function paired() {
 
 // ── A short message keeps its buttons from being squeezed ──────────────────
 {
-  const buttons = [[{ text: 'A', data: 'a' }]];
-  const short = mod.widen('<b>Done</b>', buttons);
-  eq([short.startsWith('<b>Done</b>\n'), short.endsWith('\u2800'), short.length > 30], [true, true, true], 'a short text gets a last line of invisible characters, so the buttons under it have room');
-  eq(mod.widen('a long enough line of words that fills the width of a message', buttons), 'a long enough line of words that fills the width of a message', 'a text that is wide already is left alone');
-  eq(mod.widen('<b>Done</b>'), '<b>Done</b>', 'and so is one with no buttons');
-  eq(mod.widen('short\nand a line that is quite a lot longer than the limit we set here', buttons).includes('\u2800'), false, 'the longest line counts, not the first');
+  const { widenHtml, widenMarkdown, padOf, PADS } = mod;
+  const short = widenHtml('<b>Done</b>', true, 60);
+  eq([short.startsWith('<b>Done</b>\n'), short.endsWith('\u2800'), Array.from(short).filter((c) => c === '\u2800').length], [true, true, 60], 'a short text gets a last line of invisible characters, so the buttons under it have room');
+  eq(widenHtml('a long enough line of words that fills the width of a message', true, 60), 'a long enough line of words that fills the width of a message', 'a text that is wide already is left alone');
+  eq(widenHtml('<b>Done</b>', false, 60), '<b>Done</b>', 'and so is one with no buttons');
+  eq(widenHtml('<b>Done</b>', true, 0), '<b>Done</b>', 'and when the width is switched off');
+  eq(widenHtml('short\nand a line that is quite a lot longer than the limit we set here', true, 60).includes('\u2800'), false, 'the longest line counts, not the first');
+  eq(widenMarkdown('# Today', '<b>Today</b>', true, 40), '# Today\n\n' + '\u2800'.repeat(40), 'a rich message is widened the same way, by a paragraph of its own');
+  eq([padOf(undefined), padOf(null), padOf(0), padOf(80), padOf(9999)], [60, 60, 0, 80, 60], 'the width defaults to 60 and a nonsense one is ignored');
+  eq([...PADS], [0, 40, 60, 80, 100], 'the choices');
+}
+
+
+// ── Buttons that are not squeezed, and a width that can be tuned ───────────
+{
+  const w = await paired();
+  await w.sync({ snapshot: [
+    { key: 'A.md|1|0', title: 'Late', status: 'open', deadline: '2026-10-01', tags: [] },
+    { key: 'A.md|2|0', title: 'Now', status: 'doing', plan_date: '2026-10-02', tags: [] },
+    { key: 'A.md|3|0', title: 'Plain', status: 'open', tags: [] },
+    { key: 'A.md|4|0', title: 'Parent', status: 'open', subs_done: 0, subs_total: 1, tags: [] },
+  ] });
+  await w.say('/list');
+  const filters = w.last().buttons.filter((row) => row.every((b) => /^ls:[atodu]:0$/.test(b.data)));
+  eq(filters.map((row) => row.map((b) => b.data)), [['ls:a:0', 'ls:t:0'], ['ls:o:0', 'ls:d:0'], ['ls:u:0']], 'the filters are two to a row, so no label is cut short');
+  eq(w.last().text.startsWith('<b>📋 همهٔ تسک‌ها</b> — <i>۴ باز</i>'), true, 'the title counts with a dash, not a dot that reads as a zero');
+  eq(w.last().text.includes('<code>۰ از ۱</code>'), true, 'and a ratio reads «۰ از ۱», not a slash that turns round');
+
+  await w.say('/settings');
+  eq(w.data(w.last()).includes('set:pad'), true, 'the settings have a button for the message width');
+  eq(w.last().text.includes('↔️ عرض پیام · متوسط'), true, 'which starts at medium (60)');
+  await w.press('set:pad');
+  eq([w.store.owner.pad, w.lastEdit().text.includes('زیاد')], [80, true], 'a tap makes it wider');
+  await w.press('set:pad');
+  await w.press('set:pad');
+  eq(w.store.owner.pad, 0, 'and round again to none');
+  await w.press('home');
+  eq(w.lastEdit().text.includes('⠀'), false, 'with none, nothing is added');
+  await w.press('set:pad');
+  eq(w.store.owner.pad, 40, 'then narrow');
+  await w.press('home');
+  eq(Array.from(w.lastEdit().text).filter((c) => c === '⠀').length, 40, 'a short screen then carries that many invisible characters');
 }
 
 // ── Sync ───────────────────────────────────────────────────────────────────

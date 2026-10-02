@@ -918,8 +918,10 @@ only a snapshot of your open tasks and a queue of what you asked for in Telegram
   real headings, tasks as a task list with subtasks nested under their parent, a
   task's settings as a table, written right to left in Persian. Clients or servers
   that do not take them get the same screen as a classic message, and **Settings →
-  Rich display** turns them off. Short messages are widened so their buttons are
-  not squeezed.
+  Rich display** turns them off. Short messages are held at a full card's width with
+  invisible characters so their buttons are not squeezed, and **Settings → Message
+  width** tunes how many (or turns it off). Filters sit two to a row, and ratios
+  read "1 از 3", not a slash that turns round.
 - **Pick a day on a calendar.** Reminder, plan, deadline and "New task for a day"
   open a month drawn as buttons, in the Jalali or the Gregorian calendar (Saturday
   first in Persian), with today in brackets, the current day ticked and a dot on
