@@ -18,21 +18,6 @@ function plain(html: string): string {
     .replace(/&amp;/g, '&');
 }
 
-/**
- * A message is as wide as its longest line, and its buttons are as wide as the
- * message: a short text leaves a narrow bubble with cramped buttons hanging under
- * it. A last line of invisible characters (braille blanks, which Telegram keeps)
- * holds the bubble at a width the buttons look right in. Only short texts get it.
- */
-const MIN_WIDTH = 30;
-const WIDENER = '\u2800'.repeat(MIN_WIDTH);
-
-export function widen(html: string, buttons?: Button[][]): string {
-  if (!buttons?.length) return html;
-  const longest = Math.max(...plain(html).split('\n').map((line) => Array.from(line).length));
-  return longest >= MIN_WIDTH ? html : `${html}\n${WIDENER}`;
-}
-
 function keyboard(buttons: Button[][], styled: boolean) {
   return {
     inline_keyboard: buttons.map((row) =>
@@ -72,7 +57,7 @@ export function telegramApi(token: string): Telegram {
     const attempt = (html: boolean, styled: boolean) =>
       call(method, {
         ...body,
-        text: html ? widen(text, buttons) : plain(text),
+        text: html ? text : plain(text),
         ...(html ? { parse_mode: 'HTML' } : {}),
         link_preview_options: { is_disabled: true },
         ...(buttons?.length ? { reply_markup: keyboard(buttons, styled) } : {}),

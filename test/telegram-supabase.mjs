@@ -70,7 +70,7 @@ function eq(actual, expected, label) {
 }
 
 // The later migrations (the test below drops their columns once, so a run starts by putting them back).
-for (const name of ['20261003000000_task_settings.sql', '20261004000000_subtasks.sql', '20261005000000_rich_messages.sql']) {
+for (const name of ['20261003000000_task_settings.sql', '20261004000000_subtasks.sql', '20261005000000_rich_messages.sql', '20261006000000_message_width.sql']) {
   const sql = fs.readFileSync(new URL(`../supabase/migrations/${name}`, import.meta.url), 'utf8').split('\n').filter((line) => !line.startsWith('--')).join('\n');
   psql(sql);
 }
@@ -158,7 +158,7 @@ try {
   ] });
   eq(psql("select title, parent_key, parent_title, subs_done, subs_total from tasks order by title"), 'Child|W.md|Weekly|0|Weekly||\nWeekly|||1|2', 'an upload carries who is under whom and the counts');
   await say('/list');
-  eq(sent.at(-1).text.includes('↳') && sent.at(-1).text.includes('<code>۱/۲</code>'), true, 'and the list shows the subtask under its parent');
+  eq(sent.at(-1).text.includes('↳') && sent.at(-1).text.includes('<code>۱ از ۲</code>'), true, 'and the list shows the subtask under its parent');
 
   // A database that has not been given the newer columns yet keeps working.
   psql('alter table tasks drop column repeat, drop column parent_key, drop column parent_title, drop column subs_done, drop column subs_total');

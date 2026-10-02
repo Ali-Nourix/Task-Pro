@@ -24,6 +24,11 @@
   switches it off. The task's screen and its settings are now one screen, reached
   by tapping the task, and a tab bar sits under the main screens. Short messages
   are widened so the buttons under them keep their room.
+- **Full-width cards**: a short message is held at the width of a full card (a
+  line of invisible characters, rich or classic), so the buttons under it are not
+  wider than it; **Message width** in the bot's settings steps through none /
+  narrow / medium / wide / widest. Filters are two to a row so no label is cut,
+  titles count with a dash instead of a dot, and a subtask ratio reads "۱ از ۳".
 - **All four statuses from Telegram**: open, in progress, done and *not done*
   (`[ ]` `[/]` `[x]` `[!]`), from the status menu or `/fail`, and a filter in the
   lists for what is in progress.

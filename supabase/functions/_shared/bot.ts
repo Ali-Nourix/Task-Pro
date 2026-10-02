@@ -9,6 +9,7 @@ import type { Moment, Plan } from './quickadd.ts';
 import { addDays, clockMinutes, isRealDate, isZone, localNow, localToUtc, toClock, utcToLocal } from './time.ts';
 import { buildMonth, monthKeyOf, monthName, partsOf } from './calendar-picker.ts';
 import { htmlToRich, mdEscape } from './rich.ts';
+import { PADS, padOf, widenHtml, widenMarkdown } from './widen.ts';
 import { clockLabel, dayLabel, digits, esc, priorityMark, priorityName, repeatLabel, taskCard, taskCardRich, taskEntry, taskEntryRich, truncate, words } from './texts.ts';
 import type { Relatives } from './texts.ts';
 import type { Words } from './texts.ts';
@@ -225,15 +226,19 @@ async function runCommand(command: string, args: string, ctx: Ctx): Promise<void
 /** The screen as a rich message, unless the owner turned that off. */
 function richOf(ctx: Ctx, view: View): Rich | undefined {
   if (ctx.owner.rich === false) return undefined;
-  return { markdown: view.rich ?? htmlToRich(view.text), rtl: ctx.owner.language === 'fa' };
+  const markdown = view.rich ?? htmlToRich(view.text);
+  return { markdown: widenMarkdown(markdown, view.text, view.buttons.length > 0, padOf(ctx.owner.pad)), rtl: ctx.owner.language === 'fa' };
 }
+
+/** The classic text of a screen, widened so a short message does not hang its buttons out from under it. */
+const textOf = (ctx: Ctx, view: View): string => widenHtml(view.text, view.buttons.length > 0, padOf(ctx.owner.pad));
 
 /** Shows a view: in place over the message a button was pressed on, otherwise as a new message. */
 async function present(ctx: Ctx, view: View): Promise<void> {
   const { tg } = ctx.deps;
   if (ctx.messageId !== undefined) {
     try {
-      await tg.edit(ctx.chatId, ctx.messageId, view.text, view.buttons, richOf(ctx, view));
+      await tg.edit(ctx.chatId, ctx.messageId, textOf(ctx, view), view.buttons, richOf(ctx, view));
       return;
     } catch (error) {
       console.error('edit failed, sending instead', error);
@@ -242,7 +247,7 @@ async function present(ctx: Ctx, view: View): Promise<void> {
   await sendView(ctx, view);
 }
 
-const sendView = (ctx: Ctx, view: View): Promise<void> => ctx.deps.tg.send(ctx.chatId, view.text, view.buttons, { rich: richOf(ctx, view) });
+const sendView = (ctx: Ctx, view: View): Promise<void> => ctx.deps.tg.send(ctx.chatId, textOf(ctx, view), view.buttons, { rich: richOf(ctx, view) });
 
 /** The tab bar under the main screens: home, today, all, new, settings. */
 function navRow(ctx: Ctx, active?: 'home' | 'today' | 'all' | 'new' | 'settings'): Button[] {
@@ -314,6 +319,7 @@ function settingsView(ctx: Ctx): View {
       timezone: owner.timezone,
       lead: owner.lead_minutes,
       rich: w.richNames[owner.rich === false ? 'off' : 'on'],
+      pad: w.padNames(padOf(owner.pad)),
     }),
     buttons: [
       [
@@ -322,6 +328,7 @@ function settingsView(ctx: Ctx): View {
       ],
       [{ text: w.settingButtons.lead(owner.lead_minutes), data: 'set:lead' }],
       [{ text: w.settingButtons.zone(owner.timezone), data: 'set:tz' }, { text: w.settingButtons.rich(owner.rich !== false), data: 'set:rich' }],
+      [{ text: w.settingButtons.pad(w.padNames(padOf(owner.pad))), data: 'set:pad' }],
       navRow(ctx, 'settings'),
     ],
   };
@@ -427,8 +434,8 @@ async function listView(ctx: Ctx, filter: Filter, requestedPage: number): Promis
     ...(f === filter ? { style: 'primary' as const } : {}),
   }));
 
-  let text = `<b>${w.listTitle[filter]}</b>${shown.length ? `  ·  <i>${w.openCount(shown.length)}</i>` : ''}`;
-  let rich = `# ${w.listTitle[filter]}${shown.length ? `  ·  *${w.openCount(shown.length)}*` : ''}`;
+  let text = `<b>${w.listTitle[filter]}</b>${shown.length ? ` — <i>${w.openCount(shown.length)}</i>` : ''}`;
+  let rich = `# ${w.listTitle[filter]}${shown.length ? ` — *${w.openCount(shown.length)}*` : ''}`;
   const buttons: Button[][] = [];
   if (!slice.length) {
     text += `\n\n${w.empty[filter]}`;
@@ -473,7 +480,8 @@ async function listView(ctx: Ctx, filter: Filter, requestedPage: number): Promis
       ]);
     }
   }
-  if (filterRow.length > 1) buttons.push(filterRow);
+  // Two to a row, so a label is never cut short.
+  if (filterRow.length > 1) for (let i = 0; i < filterRow.length; i += 2) buttons.push(filterRow.slice(i, i + 2));
   buttons.push(navRow(ctx, filter === 't' ? 'today' : filter === 'a' ? 'all' : undefined));
   return { text, buttons, rich };
 }
@@ -1330,6 +1338,17 @@ async function settings(what: string | undefined, ctx: Ctx): Promise<void> {
     } catch (error) {
       // The database has not learnt this setting yet (it updates itself on first use).
       console.error('rich setting not saved', error);
+      ctx.toast = w.richUnavailable;
+      return;
+    }
+  } else if (what === 'pad') {
+    const at = PADS.indexOf(padOf(owner.pad) as (typeof PADS)[number]);
+    const pad = PADS[(at + 1) % PADS.length];
+    try {
+      await store.patchOwner({ pad });
+      next = { ...owner, pad };
+    } catch (error) {
+      console.error('width setting not saved', error);
       ctx.toast = w.richUnavailable;
       return;
     }
