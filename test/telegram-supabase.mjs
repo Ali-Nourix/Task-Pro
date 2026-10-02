@@ -70,7 +70,7 @@ function eq(actual, expected, label) {
 }
 
 // The later migrations (the test below drops their columns once, so a run starts by putting them back).
-for (const name of ['20261003000000_task_settings.sql', '20261004000000_subtasks.sql']) {
+for (const name of ['20261003000000_task_settings.sql', '20261004000000_subtasks.sql', '20261005000000_rich_messages.sql']) {
   const sql = fs.readFileSync(new URL(`../supabase/migrations/${name}`, import.meta.url), 'utf8').split('\n').filter((line) => !line.startsWith('--')).join('\n');
   psql(sql);
 }

@@ -2,6 +2,7 @@
 // Everything here is HTML for Telegram: what a person typed goes through `esc`.
 
 import { JALALI_MONTHS } from './calendar-picker.ts';
+import { htmlToRich, mdEscape } from './rich.ts';
 import { gregorianToJalali } from './jalali.ts';
 import { daysBetween, parseIso, utcToLocal, weekdayOf } from './time.ts';
 import type { Button, Language, OwnerRow, TaskRow } from './types.ts';
@@ -73,14 +74,14 @@ export function repeatLabel(token: string | null, language: Language): string | 
 export const priorityName = (language: Language, priority: string): string => PRIORITY_NAME[language][priority];
 export const priorityMark = (priority: string): string => PRIORITY_MARK[priority];
 
-function planText(task: TaskRow, owner: Owner, today: string): string | null {
+export function planText(task: TaskRow, owner: Owner, today: string): string | null {
   if (!task.plan_date) return null;
   let text = dayLabel(task.plan_date, owner, today);
   if (task.plan_start) text += ` ${clockLabel(task.plan_start, owner.language)}${task.plan_end ? `–${clockLabel(task.plan_end, owner.language)}` : ''}`;
   return text;
 }
 
-function remindText(task: TaskRow, owner: Owner, today: string): string | null {
+export function remindText(task: TaskRow, owner: Owner, today: string): string | null {
   if (!task.remind_at) return null;
   const at = utcToLocal(owner.timezone, new Date(task.remind_at));
   return `${dayLabel(at.date, owner, today)} ${clockLabel(at.time, owner.language)}`;
@@ -169,6 +170,66 @@ export function taskCard(task: TaskRow, owner: Owner, today: string, relatives: 
   return `${parent}${title}\n${body}${subs}\n${state}`;
 }
 
+/** One task of a list as rich Markdown: a task-list item, its details under it, a subtask nested one step in. */
+export function taskEntryRich(task: TaskRow, owner: Owner, today: string, options: EntryOptions): string {
+  const language = owner.language;
+  const depth = options.depth ?? 0;
+  const pad = '  '.repeat(depth);
+  const sub = `${pad}  `;
+  const glyph = task.status === 'doing' ? '🔄 ' : task.pending ? '🕓 ' : '';
+  const priority = task.priority ? ` ${PRIORITY_MARK[task.priority]}` : '';
+  const progress = task.subs_total ? ` \`${digits(task.subs_done ?? 0, language)}/${digits(task.subs_total, language)}\` \`${progressBar(task.subs_done ?? 0, task.subs_total)}\`` : '';
+  const lines = [`${pad}- [ ] ${glyph}**${digits(options.position, language)}.** ${mdEscape(truncate(task.title, 110))}${priority}${progress}`];
+  const parts: string[] = [];
+  if (options.parentHint && task.parent_title) parts.push(`↳ *${words(language).labels.subOf} «${mdEscape(truncate(task.parent_title, 28))}»*`);
+  const plan = planText(task, owner, today);
+  if (plan) parts.push(`📅 ${mdEscape(plan)}`);
+  if (task.deadline) parts.push(`⏳ ${mdEscape(dayLabel(task.deadline, owner, today))}`);
+  const remind = remindText(task, owner, today);
+  if (remind) parts.push(`🔔 ${mdEscape(remind)}`);
+  const repeat = repeatLabel(task.repeat ?? null, language);
+  if (repeat) parts.push(`🔁 ${mdEscape(repeat)}`);
+  if (task.tags.length) parts.push(task.tags.map((tag) => `\`#${tag.replace(/`/g, '')}\``).join(' '));
+  if (parts.length) lines[0] += '  ', lines.push(`${sub}${parts.join(' · ')}`);
+  return lines.join('\n');
+}
+
+/** A task's card as rich Markdown: its title as a heading, its settings as a table, its subtasks as a task list. */
+export function taskCardRich(task: TaskRow, owner: Owner, today: string, relatives: Relatives = {}, header?: string, footer?: string): string {
+  const w = words(owner.language);
+  const language = owner.language;
+  const rows: [string, string][] = [];
+  const plan = planText(task, owner, today);
+  if (plan) rows.push([`📅 ${w.labels.plan}`, mdEscape(plan)]);
+  if (task.deadline) rows.push([`⏳ ${w.labels.deadline}`, mdEscape(dayLabel(task.deadline, owner, today))]);
+  const remind = remindText(task, owner, today);
+  if (remind) rows.push([`🔔 ${w.labels.remind}`, mdEscape(remind)]);
+  const repeat = repeatLabel(task.repeat ?? null, language);
+  if (repeat) rows.push([`🔁 ${w.labels.repeat}`, mdEscape(repeat)]);
+  if (task.priority) rows.push([`${PRIORITY_MARK[task.priority]} ${w.labels.priority}`, PRIORITY_NAME[language][task.priority]]);
+  if (task.tags.length) rows.push([`🏷 ${w.labels.tags}`, task.tags.map((tag) => `\`#${tag.replace(/`/g, '')}\``).join(' ')]);
+  if (task.note_path) rows.push([`📄 ${w.labels.note}`, mdEscape(task.note_path.replace(/^.*\//, '').replace(/\.md$/i, ''))]);
+
+  const md: string[] = [];
+  if (header) md.push(htmlToRich(header));
+  const parentTitle = relatives.parentTitle || task.parent_title;
+  if (parentTitle) md.push(`↳ *${w.labels.subOf} «${mdEscape(truncate(parentTitle, 40))}»*`);
+  md.push(task.status === 'done' ? `# ~~${mdEscape(task.title)}~~` : `# ${mdEscape(task.title)}`);
+  if (rows.length) md.push(['| | |', '|:--|:--|', ...rows.map(([name, value]) => `| **${name}** | ${value} |`)].join('\n'));
+  else md.push(`*${w.labels.nothingSet}*`);
+
+  const children = relatives.children ?? [];
+  if (task.subs_total || children.length) {
+    const total = task.subs_total ?? children.length;
+    const done = task.subs_done ?? 0;
+    const list = children.map((child) => `- [ ] ${child.status === 'doing' ? '🔄 ' : ''}${mdEscape(truncate(child.title, 60))}`);
+    md.push(`**${w.labels.subtasks}** \`${digits(done, language)}/${digits(total, language)}\` \`${progressBar(done, total)}\`${list.length ? `\n\n${list.join('\n')}` : ''}`);
+  }
+  if (footer) md.push(htmlToRich(footer));
+  md.push(`*${w.labels.id} #${digits(task.n, language)} · ${w.labels.statuses[task.status]}${task.pending ? ` · ${w.labels.pending}` : ''}*`);
+  return md.join('\n\n');
+}
+
 export interface Words {
   welcome: string;
   help: string;
@@ -201,9 +262,9 @@ export interface Words {
     prev: string;
     next: string;
   };
-  filters: { a: string; t: string; o: string; u: string };
-  listTitle: { a: string; t: string; o: string; u: string };
-  empty: { a: string; t: string; o: string; u: string };
+  filters: { a: string; t: string; o: string; d: string; u: string };
+  listTitle: { a: string; t: string; o: string; d: string; u: string };
+  empty: { a: string; t: string; o: string; d: string; u: string };
   sections: { overdue: string; today: string; tomorrow: string; later: string; none: string };
   page: (page: number, pages: number) => string;
   openCount: (count: number) => string;
@@ -230,6 +291,9 @@ export interface Words {
   reminderPast: string;
   doneTitle: string;
   doneToast: string;
+  failedTitle: string;
+  failedToast: string;
+  failed: (title: string) => string;
   done: (title: string) => string;
   noSuchTask: (n: string) => string;
   needNumber: string;
@@ -258,7 +322,7 @@ export interface Words {
     panel: string;
     fields: { title: string; status: string; priority: string; deadline: string; plan: string; remind: string; tags: string; repeat: string };
     none: string;
-    statusNames: { open: string; doing: string; done: string };
+    statusNames: { open: string; doing: string; done: string; failed: string };
     statusMenu: (title: string) => string;
     priorityMenu: (title: string) => string;
     noPriority: string;
@@ -310,8 +374,11 @@ export interface Words {
   newTask: string;
   statusView: (open: number, waiting: number, lastSync: string | null, health: 'ok' | 'stale' | 'never') => string;
   agoMinutes: (minutes: number) => string;
-  settings: (o: { language: string; calendar: string; timezone: string; lead: number }) => string;
-  settingButtons: { language: string; calendar: string; lead: (minutes: number) => string; zone: (zone: string) => string };
+  settings: (o: { language: string; calendar: string; timezone: string; lead: number; rich: string }) => string;
+  settingButtons: { language: string; calendar: string; lead: (minutes: number) => string; zone: (zone: string) => string; rich: (on: boolean) => string };
+  richNames: { on: string; off: string };
+  richUnavailable: string;
+  nav: { home: string; today: string; all: string; newTask: string; settings: string };
   zoneHint: string;
   languageNames: { fa: string; en: string };
   calendarNames: { jalali: string; gregorian: string };
@@ -345,7 +412,7 @@ const fa: Words = {
     '<b>#برچسب</b> · <b>!بالا</b> <b>!فوری</b> <b>!کم</b> ← برچسب و اولویت</blockquote>\n' +
     '<b>دستورها</b>\n' +
     '<blockquote expandable>/start — منوی اصلی\n/today — امروز\n/list — همهٔ تسک‌ها\n' +
-    '/done ۱۲ — انجام شد (عدد = «شناسه» روی کارت تسک)\n/remind ۱۲ فردا ۸ — یادآوری (یا off)\n/plan ۱۲ شنبه ۹-۱۰ — برنامه (یا off)\n' +
+    '/done ۱۲ — انجام شد (عدد = «شناسه» روی صفحهٔ تسک)\n/fail ۱۲ — انجام نشد\n/remind ۱۲ فردا ۸ — یادآوری (یا off)\n/plan ۱۲ شنبه ۹-۱۰ — برنامه (یا off)\n' +
     '/del ۱۲ — حذف\n/status — وضعیت همگام‌سازی\n/settings — تنظیمات\n' +
     '/lang fa|en · /tz Asia/Tehran · /cal jalali|gregorian · /lead ۱۰</blockquote>',
   badCode: '🚫 کد درست نیست.',
@@ -389,12 +456,13 @@ const fa: Words = {
     prev: '‹',
     next: '›',
   },
-  filters: { a: 'همه', t: 'امروز', o: 'عقب‌افتاده', u: 'بدون برنامه' },
-  listTitle: { a: '📋 همهٔ تسک‌ها', t: '📅 امروز', o: '⚠️ عقب‌افتاده', u: '📥 بدون برنامه' },
+  filters: { a: 'همه', t: 'امروز', o: 'عقب‌افتاده', d: 'در حال انجام', u: 'بدون برنامه' },
+  listTitle: { a: '📋 همهٔ تسک‌ها', t: '📅 امروز', o: '⚠️ عقب‌افتاده', d: '🔄 در حال انجام', u: '📥 بدون برنامه' },
   empty: {
     a: 'تسک بازی نیست. 🎉',
     t: 'برای امروز چیزی نیست. 🎉',
     o: 'چیزی عقب نیفتاده. 👏',
+    d: 'چیزی در حال انجام نیست.',
     u: 'همهٔ تسک‌ها برنامه یا مهلت دارند. 👏',
   },
   sections: { overdue: '⚠️ عقب‌افتاده', today: '📅 امروز', tomorrow: '🌅 فردا', later: '🗓 بعداً', none: '📥 بدون برنامه' },
@@ -423,6 +491,9 @@ const fa: Words = {
   reminderPast: '⚠️ زمان یادآوری گذشته بود؛ یادآوری ثبت نشد.',
   doneTitle: '✅ <b>انجام شد</b>',
   doneToast: '✅ انجام شد',
+  failedTitle: '❌ <b>انجام نشد</b>',
+  failedToast: '❌ انجام نشد',
+  failed: (title) => `❌ انجام نشد: ${esc(title)}`,
   done: (title) => `✅ انجام شد: ${esc(title)}`,
   noSuchTask: (n) => `تسکی با شمارهٔ ${n} پیدا نشد.`,
   needNumber: 'شمارهٔ تسک را بنویس، مثلاً ۱۲.',
@@ -452,7 +523,7 @@ const fa: Words = {
     panel: '⚙️ <b>تنظیمات تسک</b>',
     fields: { title: 'عنوان', status: 'وضعیت', priority: 'اولویت', deadline: 'مهلت', plan: 'برنامه', remind: 'یادآوری', tags: 'برچسب', repeat: 'تکرار' },
     none: '—',
-    statusNames: { open: 'باز', doing: 'در حال انجام', done: 'انجام شد' },
+    statusNames: { open: 'باز', doing: 'در حال انجام', done: 'انجام شد', failed: 'انجام نشد' },
     statusMenu: (title) => `🔄 <b>وضعیت</b>\n<blockquote>${esc(title)}</blockquote>`,
     priorityMenu: (title) => `🚩 <b>اولویت</b>\n<blockquote>${esc(title)}</blockquote>`,
     noPriority: '✖️ بدون اولویت',
@@ -527,13 +598,17 @@ const fa: Words = {
     minutes < 1 ? 'همین الان' : minutes < 60 ? `${digits(minutes, 'fa')} دقیقه پیش` : minutes < 2880 ? `${digits(Math.floor(minutes / 60), 'fa')} ساعت پیش` : `${digits(Math.floor(minutes / 1440), 'fa')} روز پیش`,
   settings: (o) =>
     '⚙️ <b>تنظیمات</b>\n' +
-    `<blockquote>🌐 زبان · ${o.language}\n📆 تقویم · ${o.calendar}\n🕒 منطقهٔ زمانی · <code>${esc(o.timezone)}</code>\n⏱ یادآوری پیش از برنامه · ${digits(o.lead, 'fa')} دقیقه</blockquote>`,
+    `<blockquote>🌐 زبان · ${o.language}\n📆 تقویم · ${o.calendar}\n🕒 منطقهٔ زمانی · <code>${esc(o.timezone)}</code>\n⏱ یادآوری پیش از برنامه · ${digits(o.lead, 'fa')} دقیقه\n🧩 نمایش پیشرفته · ${o.rich}</blockquote>`,
   settingButtons: {
     language: '🌐 زبان',
     calendar: '📆 تقویم',
     lead: (minutes) => `⏱ ${digits(minutes, 'fa')} دقیقه پیش از برنامه`,
     zone: (zone) => `🕒 ${zone}`,
+    rich: (on) => `🧩 نمایش پیشرفته: ${on ? 'روشن' : 'خاموش'}`,
   },
+  richNames: { on: 'روشن', off: 'خاموش' },
+  richUnavailable: 'این گزینه بعد از به‌روزرسانی دیتابیس فعال می‌شود؛ چند ثانیه بعد دوباره امتحان کن.',
+  nav: { home: '🏠', today: '📅', all: '📋', newTask: '➕', settings: '⚙️' },
   zoneHint: 'برای تغییر بنویس: /tz Asia/Tehran',
   languageNames: { fa: 'فارسی', en: 'English' },
   calendarNames: { jalali: 'شمسی', gregorian: 'میلادی' },
@@ -544,6 +619,7 @@ const fa: Words = {
   leadSet: (minutes) => `یادآوری برنامه‌ها ${digits(minutes, 'fa')} دقیقه قبل از شروع.`,
   usage: {
     done: '<code>/done ۱۲</code>',
+    fail: '<code>/fail ۱۲</code>',
     del: '<code>/del ۱۲</code>',
     remind: '<code>/remind ۱۲ فردا ساعت ۸</code>   (یا <code>/remind ۱۲ off</code>)',
     plan: '<code>/plan ۱۲ شنبه ساعت ۹ تا ۱۰</code>   (یا <code>/plan ۱۲ off</code>)',
@@ -627,12 +703,13 @@ const en: Words = {
     prev: '‹',
     next: '›',
   },
-  filters: { a: 'All', t: 'Today', o: 'Overdue', u: 'Unplanned' },
-  listTitle: { a: '📋 All tasks', t: '📅 Today', o: '⚠️ Overdue', u: '📥 Unplanned' },
+  filters: { a: 'All', t: 'Today', o: 'Overdue', d: 'In progress', u: 'Unplanned' },
+  listTitle: { a: '📋 All tasks', t: '📅 Today', o: '⚠️ Overdue', d: '🔄 In progress', u: '📥 Unplanned' },
   empty: {
     a: 'No open tasks. 🎉',
     t: 'Nothing for today. 🎉',
     o: 'Nothing is overdue. 👏',
+    d: 'Nothing is in progress.',
     u: 'Every task has a plan or a deadline. 👏',
   },
   sections: { overdue: '⚠️ Overdue', today: '📅 Today', tomorrow: '🌅 Tomorrow', later: '🗓 Later', none: '📥 Unplanned' },
@@ -661,6 +738,9 @@ const en: Words = {
   reminderPast: '⚠️ That reminder time had already passed; no reminder was set.',
   doneTitle: '✅ <b>Done</b>',
   doneToast: '✅ Done',
+  failedTitle: '❌ <b>Not done</b>',
+  failedToast: '❌ Not done',
+  failed: (title) => `❌ Not done: ${esc(title)}`,
   done: (title) => `✅ Done: ${esc(title)}`,
   noSuchTask: (n) => `No task numbered ${n}.`,
   needNumber: 'Give the task’s number, like 12.',
@@ -690,7 +770,7 @@ const en: Words = {
     panel: '⚙️ <b>Task settings</b>',
     fields: { title: 'Title', status: 'Status', priority: 'Priority', deadline: 'Due', plan: 'Plan', remind: 'Reminder', tags: 'Tags', repeat: 'Repeat' },
     none: '—',
-    statusNames: { open: 'Open', doing: 'In progress', done: 'Done' },
+    statusNames: { open: 'Open', doing: 'In progress', done: 'Done', failed: 'Not done' },
     statusMenu: (title) => `🔄 <b>Status</b>\n<blockquote>${esc(title)}</blockquote>`,
     priorityMenu: (title) => `🚩 <b>Priority</b>\n<blockquote>${esc(title)}</blockquote>`,
     noPriority: '✖️ No priority',
@@ -765,13 +845,17 @@ const en: Words = {
     minutes < 1 ? 'just now' : minutes < 60 ? `${minutes} min ago` : minutes < 2880 ? `${Math.floor(minutes / 60)} h ago` : `${Math.floor(minutes / 1440)} d ago`,
   settings: (o) =>
     '⚙️ <b>Settings</b>\n' +
-    `<blockquote>🌐 Language · ${o.language}\n📆 Calendar · ${o.calendar}\n🕒 Time zone · <code>${esc(o.timezone)}</code>\n⏱ Remind before a plan · ${o.lead} min</blockquote>`,
+    `<blockquote>🌐 Language · ${o.language}\n📆 Calendar · ${o.calendar}\n🕒 Time zone · <code>${esc(o.timezone)}</code>\n⏱ Remind before a plan · ${o.lead} min\n🧩 Rich display · ${o.rich}</blockquote>`,
   settingButtons: {
     language: '🌐 Language',
     calendar: '📆 Calendar',
     lead: (minutes) => `⏱ ${minutes} min before a plan`,
     zone: (zone) => `🕒 ${zone}`,
+    rich: (on) => `🧩 Rich display: ${on ? 'on' : 'off'}`,
   },
+  richNames: { on: 'on', off: 'off' },
+  richUnavailable: 'This option works once the database is updated; try again in a few seconds.',
+  nav: { home: '🏠', today: '📅', all: '📋', newTask: '➕', settings: '⚙️' },
   zoneHint: 'To change it, send: /tz Asia/Tehran',
   languageNames: { fa: 'فارسی', en: 'English' },
   calendarNames: { jalali: 'Jalali', gregorian: 'Gregorian' },
@@ -782,6 +866,7 @@ const en: Words = {
   leadSet: (minutes) => `Plans remind ${minutes} min before they start.`,
   usage: {
     done: '<code>/done 12</code>',
+    fail: '<code>/fail 12</code>',
     del: '<code>/del 12</code>',
     remind: '<code>/remind 12 tomorrow 8</code>   (or <code>/remind 12 off</code>)',
     plan: '<code>/plan 12 sat 9-10</code>   (or <code>/plan 12 off</code>)',
@@ -807,10 +892,11 @@ const en: Words = {
 export const words = (language: Language): Words => (language === 'fa' ? fa : en);
 
 /** The message a reminder arrives as, and the buttons under it. */
-export function reminderMessage(task: TaskRow, owner: Owner, today: string): { text: string; buttons: Button[][] } {
+export function reminderMessage(task: TaskRow, owner: Owner, today: string): { text: string; rich: string; buttons: Button[][] } {
   const w = words(owner.language);
   return {
     text: `${w.reminder}\n\n${taskCard(task, owner, today)}`,
+    rich: `${htmlToRich(w.reminder)}\n\n${taskCardRich(task, owner, today)}`,
     buttons: [
       [{ text: w.buttons.done, data: `done:${task.n}`, style: 'success' }],
       [
