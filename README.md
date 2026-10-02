@@ -33,6 +33,7 @@ screenshots of a live vault.</sub>
 - [Task syntax](#task-syntax)
 - [Bi-directional sync](#bi-directional-sync)
 - [Reminders](#reminders)
+- [Telegram bot](#telegram-bot)
 - [Settings](#settings)
 - [How it works](#how-it-works)
 - [Development](#development)
@@ -893,6 +894,30 @@ Active-note reminders are on by default. Tasks that only appear through an
 `![[embed]]` are not counted as belonging to the note doing the embedding — the
 alert resolves the outer note's own file, so a callout like
 `> ![[Other note#Heading]]` does not pull in tasks that are not really there.
+
+## Telegram bot
+
+Manage tasks and reminders from Telegram, even while your computer is off. It is
+optional and off by default. Your notes stay the source of truth: Supabase holds
+only a snapshot of your open tasks and a queue of what you asked for in Telegram.
+
+- **In Telegram:** write a task in plain words (*"call the bank tomorrow 10"*),
+  list today's and overdue tasks, tick one off, put it off, move it, set or clear
+  a reminder, delete it. Reminders arrive as messages, with buttons to snooze or
+  finish. The bot answers in English or Persian and understands Jalali dates.
+- **In Obsidian:** a background sync (every 2 minutes by default, and on **Sync
+  Telegram now**) uploads the snapshot, then applies what you asked for in
+  Telegram to your notes: new tasks go to the board's inbox note, the rest edit
+  the task's own line. Each command is acknowledged once, so a dropped connection
+  never applies one twice.
+- **While Obsidian is closed:** reminders still fire from the last snapshot;
+  changes you make in Telegram wait and are applied the next time Obsidian opens.
+
+Set it up once with [`supabase/README.md`](supabase/README.md) (Persian; about ten
+minutes: a bot token from BotFather, three secrets, `supabase db push`, deploy the
+three Edge Functions). Then open **Settings → TaskPro → Telegram**, turn it on and
+paste the function address and the sync token. The tokens live in Supabase
+secrets and in the plugin's settings file, never in your notes.
 
 ## Settings
 

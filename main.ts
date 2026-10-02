@@ -2,12 +2,13 @@
 // TaskPro - Main plugin entry point
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { Plugin, Editor, Hotkey, MarkdownFileInfo, MarkdownView, Notice, TFile, setIcon } from 'obsidian';
+import { Plugin, Editor, Hotkey, MarkdownFileInfo, MarkdownView, Notice, TFile, requestUrl, setIcon } from 'obsidian';
 import { EditorView } from '@codemirror/view';
 import {
   TaskProSettings,
   DEFAULT_SETTINGS,
   DEFAULT_REMINDER_SETTINGS,
+  DEFAULT_TELEGRAM_SETTINGS,
   DEFAULT_BOARD_PREFERENCES,
   DEFAULT_CALENDAR_SETTINGS,
   CalendarSystem,
@@ -53,6 +54,7 @@ import { TaskTimerService, showSystemNotification } from './src/timer-service';
 import { getRepeatLabels, getTimerLabels } from './src/timer-localization';
 import { ReminderService } from './src/reminders/reminder-service';
 import { PlanReminderService } from './src/reminders/plan-reminders';
+import { TelegramSync } from './src/telegram/sync-service';
 import { TaskCreationRegistry } from './src/task-registry';
 import { TaskIndexService } from './src/task-index-service';
 import { getReminderLabels } from './src/reminders/reminder-localization';
@@ -126,6 +128,7 @@ export default class TaskProPlugin extends Plugin {
   syncManager!: SyncManager;
   reminderService!: ReminderService;
   planReminders!: PlanReminderService;
+  telegramSync!: TelegramSync;
   /** Hidden index of when each task was first seen. Never rendered anywhere. */
   taskRegistry!: TaskCreationRegistry;
   taskIndexService!: TaskIndexService;
@@ -399,6 +402,15 @@ export default class TaskProPlugin extends Plugin {
     });
 
     // Command: Import Task
+    this.addCommand({
+      id: 'sync-telegram',
+      name: 'Sync with Telegram now',
+      callback: async () => {
+        const outcome = await this.telegramSync.syncNow();
+        new Notice(outcome.ok ? (outcome.applied ? `Synced; ${outcome.applied} change(s) made.` : 'Synced with Telegram.') : `Telegram sync failed: ${outcome.message ?? 'unknown error'}`);
+      },
+    });
+
     this.addCommand({
       id: 'import-task',
       name: 'Import Task from Reference Note',
@@ -713,8 +725,55 @@ export default class TaskProPlugin extends Plugin {
       systemNotification: (title, body) => showSystemNotification(title, body),
       registerInterval: (id) => this.registerInterval(id),
     });
+    // The Telegram bot: tasks and reminders reach it, and what is asked for there reaches the notes.
+    this.telegramSync = new TelegramSync({
+      settings: () => this.settings.telegram,
+      tasks: () => (this.taskStore.isLoaded ? this.syncableTasks() : null),
+      defaults: () => ({ enabled: this.settings.reminders.planReminders, leadMinutes: this.settings.reminders.planLeadMinutes }),
+      post: async (url, token, body) => {
+        const response = await requestUrl({
+          url,
+          method: 'POST',
+          contentType: 'application/json',
+          headers: { Authorization: `Bearer ${token}` },
+          body: JSON.stringify(body),
+          throw: false,
+        });
+        let json: unknown = null;
+        try {
+          json = response.json;
+        } catch {
+          // Not JSON: the caller reads the status.
+        }
+        return { status: response.status, json: json as { commands?: never[]; error?: string } | null };
+      },
+      apply: {
+        tasks: () => this.syncableTasks(),
+        inboxPath: () => this.boardInboxPath() || null,
+        appendLine: (path, line) => this.appendTaskLine(path, line),
+        setStatus: (task, status) => this.setTaskStatusFor(this.boardTaskRef(task), status),
+        setRemind: (task, value) => this.setTaskRemindFor(this.boardTaskRef(task), value),
+        setSchedule: (task, schedule) => this.setTaskScheduleFor(this.boardTaskRef(task), schedule),
+        deleteTask: async (task) => {
+          const nested = descendantsOf(task, indexFamilies(this.taskStore.inFile(task.filePath))).length;
+          await this.deleteTaskFor(this.boardTaskRef(task), displayTitle(task.text) || task.text, nested);
+        },
+        settled: () => this.afterNextRead(),
+      },
+      save: () => this.saveSettings(),
+      report: (outcome) => {
+        if (outcome.applied) new Notice(`TaskPro: ${outcome.applied} change${outcome.applied === 1 ? '' : 's'} from Telegram made in your notes.`);
+        if (outcome.errors) console.warn(`TaskPro: ${outcome.errors} change(s) from Telegram could not be made.`);
+        if (!outcome.ok && outcome.message) console.warn(`TaskPro: Telegram sync: ${outcome.message}`);
+      },
+      registerInterval: (id) => this.registerInterval(id),
+      now: () => Date.now(),
+    });
     this.app.workspace.onLayoutReady(() => {
-      void this.taskStore.ensureLoaded().then(() => this.planReminders.start());
+      void this.taskStore.ensureLoaded().then(() => {
+        this.planReminders.start();
+        this.telegramSync.start();
+      });
     });
 
     // Keep the hidden creation index in step with the vault so task ages
@@ -786,6 +845,7 @@ export default class TaskProPlugin extends Plugin {
     this.settings.board = Object.assign({}, DEFAULT_BOARD_PREFERENCES, saved?.board);
     this.settings.calendar = Object.assign({}, DEFAULT_CALENDAR_SETTINGS, saved?.calendar);
     this.settings.tags = sanitizeTags(saved?.tags);
+    this.settings.telegram = Object.assign({}, DEFAULT_TELEGRAM_SETTINGS, saved?.telegram);
     this.settings.board.views = sanitizeViews(saved?.board?.views);
     if (!this.settings.board.views.some((view) => view.id === this.settings.board.activeView)) this.settings.board.activeView = undefined;
 
@@ -1490,7 +1550,33 @@ export default class TaskProPlugin extends Plugin {
    * The store changed: forget the resolved links, and redraw the note chips
    * if a task something waits on was renamed, ticked off, or went away.
    */
+  /** The tasks the bot knows: the ones plan reminders watch (the target folder and the daily notes). */
+  private syncableTasks(): BoardTask[] {
+    const daily = this.settings.calendar.dailyNotesFolder.trim().replace(/^\/+|\/+$/g, '');
+    return this.taskStore
+      .all()
+      .filter((task) => this.isFileInTargetFolder(task.filePath) || (!!daily && task.filePath.startsWith(`${daily}/`)));
+  }
+
+  /** Resolves once the notes have been read again after an edit, or a moment has gone by. */
+  private afterNextRead(): Promise<void> {
+    return new Promise((resolve) => {
+      let finished = false;
+      let off: () => void = () => undefined;
+      const finish = () => {
+        if (finished) return;
+        finished = true;
+        off();
+        window.clearTimeout(limit);
+        window.setTimeout(resolve, 120);
+      };
+      off = this.taskStore.subscribe(finish);
+      const limit = window.setTimeout(finish, 1500);
+    });
+  }
+
   private onTasksChanged(): void {
+    this.telegramSync?.tasksChanged();
     this.relationsCache = null;
     const index = this.relations();
     if (!index) return;
@@ -3023,6 +3109,7 @@ export default class TaskProPlugin extends Plugin {
     // Release the reminder ticker, overlay and audio nodes
     this.reminderService?.stop();
     this.planReminders?.destroy();
+    this.telegramSync?.stop();
     this.taskIndexService?.stop();
     // Closing the float also takes its class back off <body>, so a theme's
     // blur never outlives the plugin.
