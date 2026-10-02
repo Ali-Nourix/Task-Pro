@@ -409,6 +409,11 @@ Each animation says what just happened. Only opacity and transform move.
   **Update** takes the change into the view. Views can be renamed, duplicated
   and deleted, and **Default view** puts everything back.
 
+### The task card and the calendar's blocks
+
+- The card is roomier (384px) with a larger title, fields of one height and one corner, and **All day** as a switch on a line of its own instead of the system checkbox. Its footer actions are buttons with room to be pressed, and its subtasks rows are a little taller.
+- A calendar block is a soft fill of the item's colour with a bar at its start, not an outline; the title leads and the time steps back. A done task rests: its colour fades, its title is struck through. A lit family is told by a soft ring drawn inside the block.
+
 ### Fixes
 - A task's checkbox is a square with soft corners now (`--taskpro-check-radius`), not a circle, in the table, the board, the calendar and the card.
 - In the status capsule the icon sits level with the letters and set in from the capsule's end, instead of low and close to the edge.
