@@ -7861,3 +7861,243 @@ kbd.taskpro-shortcuts__key {
     scroll-behavior: auto !important;
   }
 }
+
+/* ── The task card and the calendar's blocks, polished ───────────────────
+   Later in the sheet than the rules they refine, at the same weight. */
+
+/* The card: roomier, a larger title, fields of one height and one corner,
+   an All day switch where the system checkbox was, and footer actions that
+   read as buttons. */
+.taskpro-board .taskpro-cal-inspector {
+  width: 384px;
+  padding: var(--taskpro-space-7) var(--taskpro-space-7) var(--taskpro-space-5);
+}
+.taskpro-board .taskpro-cal-inspector__head {
+  gap: var(--taskpro-space-5);
+  padding-bottom: var(--taskpro-space-6);
+}
+.taskpro-board .taskpro-cal-inspector__head button.taskpro-cal__check {
+  width: 20px;
+  min-width: 20px;
+  height: 20px;
+  margin-top: 4px;
+  border-radius: 6px;
+}
+.taskpro-board .taskpro-cal-inspector__title {
+  font-size: 1.25em;
+  font-weight: var(--font-semibold);
+  line-height: 28px;
+  letter-spacing: -0.01em;
+}
+.taskpro-board .taskpro-cal-inspector__tools {
+  height: 28px;
+}
+.taskpro-board .taskpro-cal-inspector__tools .taskpro-board__icon-btn {
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  min-height: 28px;
+  border-radius: var(--taskpro-radius-inner);
+  color: var(--text-muted);
+}
+.taskpro-board .taskpro-cal-inspector__tools .taskpro-board__icon-btn:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+.taskpro-board .taskpro-cal-inspector__sheet {
+  padding: var(--taskpro-space-4) 0 var(--taskpro-space-4);
+}
+.taskpro-board .taskpro-cal-prop {
+  grid-template-columns: 112px minmax(0, 1fr);
+  gap: var(--taskpro-space-5);
+  min-height: 36px;
+}
+.taskpro-board .taskpro-cal-prop__name {
+  height: 36px;
+  gap: var(--taskpro-space-4);
+  font-size: var(--font-ui-small);
+}
+.taskpro-board .taskpro-cal-prop__name svg {
+  width: 15px;
+  height: 15px;
+}
+.taskpro-board .taskpro-cal-prop__value {
+  min-height: 36px;
+}
+.taskpro-board .taskpro-cal-prop__pick {
+  min-height: 30px;
+  border-radius: var(--taskpro-radius-inner);
+}
+.taskpro-board .taskpro-cal-prop__value.is-editor {
+  /* The first field's middle is on the label's middle (36px row, 32px field). */
+  padding: 2px 0 var(--taskpro-space-3);
+  gap: var(--taskpro-space-4);
+  justify-content: flex-start;
+}
+body.theme-dark .taskpro-board .taskpro-cal-inspector input[type="date"] {
+  color-scheme: dark;
+}
+body.theme-light .taskpro-board .taskpro-cal-inspector input[type="date"] {
+  color-scheme: light;
+}
+
+/* The date and the two times: one family of fields. */
+.taskpro-board .taskpro-cal-inspector .taskpro-cal-times input.taskpro-cal-times__input,
+.taskpro-board .taskpro-cal-inspector .taskpro-cal-date input.taskpro-cal-date__input {
+  height: 32px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--taskpro-radius-inner);
+  background: var(--background-modifier-form-field, var(--background-secondary));
+  box-shadow: none;
+  font-size: var(--font-ui-small);
+}
+.taskpro-board .taskpro-cal-inspector .taskpro-cal-times input.taskpro-cal-times__input:focus,
+.taskpro-board .taskpro-cal-inspector .taskpro-cal-date input.taskpro-cal-date__input:focus {
+  border-color: var(--interactive-accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--interactive-accent) 25%, transparent);
+}
+.taskpro-board .taskpro-cal-inspector .taskpro-cal-date {
+  gap: var(--taskpro-space-5);
+}
+.taskpro-board .taskpro-cal-inspector .taskpro-cal-date__weekday {
+  min-width: 3ch;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+.taskpro-board .taskpro-cal-inspector .taskpro-cal-times {
+  gap: var(--taskpro-space-4);
+}
+
+/* All day as a switch. */
+.taskpro-board .taskpro-cal-times__allday {
+  /* On a line of its own, at the start, like a setting under the fields. */
+  flex: 1 0 100%;
+  gap: var(--taskpro-space-4);
+  margin-inline-start: 0;
+  padding-top: var(--taskpro-space-1);
+  font-size: var(--font-ui-small);
+}
+.taskpro-board .taskpro-cal-times__allday input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  width: 30px;
+  min-width: 30px;
+  height: 18px;
+  min-height: 18px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--text-faint) 45%, transparent);
+  box-shadow: none;
+  cursor: pointer;
+  transition: background-color var(--taskpro-base) var(--taskpro-ease);
+}
+.taskpro-board .taskpro-cal-times__allday input[type="checkbox"]::before,
+.taskpro-board .taskpro-cal-times__allday input[type="checkbox"]::after {
+  content: none;
+}
+.taskpro-board .taskpro-cal-times__allday input[type="checkbox"]::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  inset-inline-start: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--background-primary);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.3);
+  -webkit-mask: none;
+  mask: none;
+  transition: transform var(--taskpro-base) var(--taskpro-ease-pop);
+}
+.taskpro-board .taskpro-cal-times__allday input[type="checkbox"]:checked {
+  background: var(--interactive-accent);
+}
+.taskpro-board .taskpro-cal-times__allday input[type="checkbox"]:checked::after {
+  transform: translateX(12px);
+}
+.taskpro-board[dir="rtl"] .taskpro-cal-times__allday input[type="checkbox"]:checked::after {
+  transform: translateX(-12px);
+}
+.taskpro-board .taskpro-cal-times__allday input[type="checkbox"]:focus-visible {
+  box-shadow: var(--taskpro-focus-ring);
+}
+
+/* Subtasks and the footer. */
+.taskpro-board .taskpro-cal-inspector__subtasks {
+  padding-top: var(--taskpro-space-5);
+}
+.taskpro-board .taskpro-cal-inspector__subtask {
+  min-height: 32px;
+  border-radius: var(--taskpro-radius-inner);
+}
+.taskpro-board .taskpro-cal-inspector__foot {
+  margin-top: var(--taskpro-space-5);
+  padding-top: var(--taskpro-space-5);
+}
+.taskpro-board button.taskpro-cal-inspector__remove {
+  height: 30px;
+  margin-inline-start: calc(-1 * var(--taskpro-space-4));
+  padding: 0 var(--taskpro-space-5);
+  border-radius: var(--taskpro-radius-inner);
+  font-size: var(--font-ui-small);
+}
+.taskpro-board button.taskpro-cal-inspector__remove.is-delete {
+  margin-inline: auto calc(-1 * var(--taskpro-space-4));
+}
+
+/* A block: the item's colour as a soft fill and a bar, not an outline. The
+   time steps back, the title leads, and a done task rests: its colour fades,
+   its title is struck through and nothing shouts. */
+.taskpro-board .taskpro-cal__block {
+  gap: 2px;
+  padding-block: var(--taskpro-space-3);
+  padding-inline: var(--taskpro-space-5) var(--taskpro-space-4);
+  border-radius: 8px;
+  border-inline-start-width: 3px;
+  background: color-mix(in srgb, var(--taskpro-cal-accent) 14%, var(--taskpro-board-surface));
+  box-shadow: 0 0 0 1px var(--taskpro-board-surface);
+  color: color-mix(in srgb, var(--taskpro-cal-accent) 22%, var(--text-normal));
+  transition: background-color var(--taskpro-fast) var(--taskpro-ease), box-shadow var(--taskpro-base) var(--taskpro-ease), transform var(--taskpro-fast) var(--taskpro-ease);
+}
+.taskpro-board .taskpro-cal__block:hover {
+  background: color-mix(in srgb, var(--taskpro-cal-accent) 22%, var(--taskpro-board-surface));
+}
+.taskpro-board .taskpro-cal__block-title {
+  font-weight: var(--font-semibold);
+  line-height: 1.3;
+}
+.taskpro-board .taskpro-cal__block-time {
+  color: color-mix(in srgb, var(--taskpro-cal-accent) 12%, var(--text-muted));
+  font-size: 11px;
+  opacity: 1;
+}
+.taskpro-board .taskpro-cal__block.is-done {
+  border-inline-start-color: color-mix(in srgb, var(--taskpro-cal-accent) 45%, transparent);
+  background: color-mix(in srgb, var(--taskpro-cal-accent) 7%, var(--taskpro-board-surface));
+  color: var(--text-muted);
+}
+.taskpro-board .taskpro-cal__block.is-done:hover {
+  background: color-mix(in srgb, var(--taskpro-cal-accent) 12%, var(--taskpro-board-surface));
+}
+.taskpro-board .taskpro-cal__block.is-done .taskpro-cal__block-title {
+  opacity: 0.7;
+}
+.taskpro-board .taskpro-cal__block.is-done .taskpro-cal__block-time {
+  opacity: 0.7;
+}
+/* A lit family is told by a soft ring, drawn inside so a neighbour cannot cover it. */
+.taskpro-board .taskpro-cal__block.is-family-lit {
+  box-shadow: 0 0 0 1px var(--taskpro-board-surface), inset 0 0 0 1px color-mix(in srgb, var(--taskpro-cal-accent) 55%, transparent);
+}
+.taskpro-board .taskpro-cal__chip {
+  border-radius: 6px;
+}
+.taskpro-board .taskpro-cal__chip.is-done {
+  background: color-mix(in srgb, var(--taskpro-cal-accent) 7%, var(--taskpro-board-surface));
+  color: var(--text-muted);
+}
