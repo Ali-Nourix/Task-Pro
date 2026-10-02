@@ -5,6 +5,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { BoardTask } from '../board/task-store';
+import { subtaskCounts } from '../board/task-relations';
 import type { TaskPriority, TaskRepeat, TaskStatus } from '../types';
 
 /** A task as the bot stores it. Its status is a word, not the marker between brackets. */
@@ -20,6 +21,12 @@ export interface SnapshotTask {
   remind_at: string | null;
   /** How often it comes back, as the marker writes it: 1d, 2w, 1m. */
   repeat: string | null;
+  /** The task it is nested under, by key and title (the parent may be closed, so it may not be in the upload). */
+  parent_key: string | null;
+  parent_title: string | null;
+  /** For a task with subtasks: how many of its direct subtasks are done, and how many it has. */
+  subs_done: number | null;
+  subs_total: number | null;
   tags: string[];
   note_path: string | null;
 }
@@ -81,7 +88,11 @@ const STATUS_WORDS: Partial<Record<TaskStatus, 'open' | 'doing'>> = { '[ ]': 'op
 /** The open tasks, as the bot wants them. Tasks already done are left out: the bot lists what is open. */
 export function buildSnapshot(tasks: readonly BoardTask[], defaults: ReminderDefaults): SnapshotTask[] {
   const out: SnapshotTask[] = [];
-  for (const [key, task] of keyTasks(tasks)) {
+  const keyed = keyTasks(tasks);
+  const byId = new Map<string, { key: string; task: BoardTask }>();
+  for (const [key, task] of keyed) byId.set(task.id, { key, task });
+  const counts = subtaskCounts(tasks);
+  for (const [key, task] of keyed) {
     const status = STATUS_WORDS[task.status];
     if (!status || !task.text.trim()) continue;
     out.push({
@@ -95,6 +106,10 @@ export function buildSnapshot(tasks: readonly BoardTask[], defaults: ReminderDef
       plan_end: task.schedule?.end && task.schedule.end !== '24:00' ? task.schedule.end : null,
       remind_at: reminderAt(task, defaults),
       repeat: repeatToken(task.repeat),
+      parent_key: (task.parentId && byId.get(task.parentId)?.key) || null,
+      parent_title: (task.parentId && byId.get(task.parentId)?.task.text.slice(0, 500)) || null,
+      subs_done: counts.get(task.id)?.done ?? null,
+      subs_total: counts.get(task.id)?.total ?? null,
       tags: task.tags.slice(0, 20),
       note_path: task.filePath,
     });

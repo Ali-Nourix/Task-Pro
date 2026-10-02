@@ -17,6 +17,16 @@
   Telegram now** command. The plugin uploads a snapshot of open tasks (now with
   how often each repeats) and applies queued changes to your notes, each exactly
   once, including a new `edit` change for the settings above.
+- **A calendar in the chat**: reminder, plan, deadline and "New task for a day"
+  open a month as buttons (Jalali or Gregorian, Saturday first in Persian) with
+  today, the current day and days that have tasks marked, then an hour grid and,
+  for a plan, how long it lasts. Hours can still be typed.
+- **Tasks made in Telegram go into their day's note** (the day of the plan, else
+  the reminder, else the deadline, else today) instead of the inbox, through the
+  same daily-note settings as the calendar.
+- **Subtasks and numbering**: lists number tasks 1 to the end instead of by a
+  hidden ID, a parent is followed by its subtasks with a count and a bar, and the
+  card shows the family. The ID, used by typed commands, is shown on the card.
 - **One double-click to update**: `update-bot.bat` redeploys the three functions;
   they bring the database up to date themselves on first use.
 - Notes remain the source of truth; the tables are locked to the service role and

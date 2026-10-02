@@ -16,6 +16,7 @@
 import * as esbuild from 'esbuild';
 import http from 'http';
 import { execSync } from 'child_process';
+import fs from 'fs';
 import { createRequire } from 'module';
 import path from 'path';
 
@@ -68,6 +69,13 @@ function eq(actual, expected, label) {
   if (a !== e) throw new Error(`${label}:\n  got      ${a}\n  expected ${e}`);
 }
 
+// The later migrations (the test below drops their columns once, so a run starts by putting them back).
+for (const name of ['20261003000000_task_settings.sql', '20261004000000_subtasks.sql']) {
+  const sql = fs.readFileSync(new URL(`../supabase/migrations/${name}`, import.meta.url), 'utf8').split('\n').filter((line) => !line.startsWith('--')).join('\n');
+  psql(sql);
+}
+psql("notify pgrst, 'reload schema'");
+await new Promise((resolve) => setTimeout(resolve, 600));
 psql('truncate public.tasks, public.commands, public.bot_owner restart identity');
 psql('alter sequence public.tasks_n_seq restart');
 const store = supabaseStore(url, TP_SERVICE_KEY);
@@ -142,13 +150,23 @@ try {
   await sync({ acks: [{ id: edit.id, key: 'W.md|Weekly|0' }], snapshot: [{ key: 'W.md|Weekly|0', title: 'Weekly', status: 'open', repeat: '2w', tags: [] }] });
   eq(psql("select n, key from tasks where title = 'Weekly'"), `${weekly}|W.md|Weekly|0`, 'a rename reported by the plugin moves the row to its new key and keeps its number');
 
-  // A database that has not been given the repeat column yet keeps working.
-  psql('alter table tasks drop column repeat');
+  // Subtasks.
+  await sync({ acks: (await store.pendingCommands()).map((c) => ({ id: c.id })) });
+  await sync({ snapshot: [
+    { key: 'W.md|Weekly|0', title: 'Weekly', status: 'open', repeat: '2w', subs_done: 1, subs_total: 2, tags: [] },
+    { key: 'W.md|Child|0', title: 'Child', status: 'open', parent_key: 'W.md|Weekly|0', parent_title: 'Weekly', tags: [] },
+  ] });
+  eq(psql("select title, parent_key, parent_title, subs_done, subs_total from tasks order by title"), 'Child|W.md|Weekly|0|Weekly||\nWeekly|||1|2', 'an upload carries who is under whom and the counts');
+  await say('/list');
+  eq(sent.at(-1).text.includes('↳') && sent.at(-1).text.includes('<code>۱/۲</code>'), true, 'and the list shows the subtask under its parent');
+
+  // A database that has not been given the newer columns yet keeps working.
+  psql('alter table tasks drop column repeat, drop column parent_key, drop column parent_title, drop column subs_done, drop column subs_total');
   psql("notify pgrst, 'reload schema'");
   await new Promise((resolve) => setTimeout(resolve, 600));
   await sync({ snapshot: [{ key: 'W.md|Weekly|0', title: 'Weekly', status: 'open', repeat: '2w', tags: [] }] });
   await say('plain task');
-  eq(psql("select count(*) from tasks"), '2', 'without the column, uploads and new tasks still go through');
+  eq(psql("select count(*) from tasks"), '2', 'without the columns, uploads and new tasks still go through');
   await store.patchTask('W.md|Weekly|0', { repeat: '1d', title: 'Weekly!' });
   eq(psql("select title from tasks where key = 'W.md|Weekly|0'"), 'Weekly!', 'and so do changes');
 

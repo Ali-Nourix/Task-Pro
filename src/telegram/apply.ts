@@ -32,6 +32,12 @@ export interface ApplyHost {
   /** The note a new task goes into, or null when there is none. */
   inboxPath(): string | null;
   appendLine(path: string, line: string): Promise<boolean>;
+  /**
+   * Where a task for a day goes (that day's note, or the inbox when the settings
+   * say so), and writing it there. Absent, new tasks always go to the inbox.
+   */
+  dayTarget?(day: string): string | null;
+  addTaskOnDay?(day: string, line: string): Promise<string | null>;
   setStatus(task: BoardTask, status: TaskStatus): Promise<void>;
   setRemind(task: BoardTask, value: RemindAt | null | undefined): Promise<void>;
   setSchedule(task: BoardTask, schedule: TaskSchedule | null): Promise<void>;
@@ -114,14 +120,23 @@ async function applyOne(command: Command, host: ApplyHost, aliases: Map<string, 
   const { payload } = command;
   if (command.kind === 'add') {
     const title = str(payload.title);
-    const path = host.inboxPath();
     if (!title) return void (result.error = 'no title');
-    if (!path) return void (result.error = 'no inbox note is set');
-    const key = keyForNewTask(host.tasks(), path, title);
-    if (!(await host.appendLine(path, lineForNewTask(payload)))) return void (result.error = 'the inbox note could not be written');
-    result.key = key;
+    const day = str(payload.day);
+    const line = lineForNewTask(payload);
+    const before = host.tasks();
+    let path: string | null = null;
+    // A task made for a day goes into that day's note, as one added on the calendar would.
+    if (day && DAY.test(day) && host.addTaskOnDay && host.dayTarget?.(day)) {
+      path = await host.addTaskOnDay(day, line);
+      if (!path) return void (result.error = "the day's note could not be written");
+    } else {
+      path = host.inboxPath();
+      if (!path) return void (result.error = 'no inbox note is set');
+      if (!(await host.appendLine(path, line))) return void (result.error = 'the inbox note could not be written');
+    }
+    result.key = keyForNewTask(before, path, title);
     if (typeof payload.key === 'string') {
-      aliases.set(payload.key, key);
+      aliases.set(payload.key, result.key);
       result.from = payload.key;
     }
     await host.settled();
