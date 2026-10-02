@@ -19,7 +19,7 @@ export async function runTick(deps: { store: Store; tg: Telegram; now: () => Dat
     await deps.store.markReminded(task.key, task.remind_at!);
     const message = reminderMessage(task, owner, clock.date);
     try {
-      await deps.tg.send(owner.chat_id, message.text, message.buttons);
+      await deps.tg.send(owner.chat_id, message.text, message.buttons, owner.rich === false ? undefined : { rich: { markdown: message.rich, rtl: owner.language === 'fa' } });
       sent++;
     } catch (error) {
       console.error('reminder not sent', error);

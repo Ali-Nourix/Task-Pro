@@ -906,11 +906,20 @@ only a snapshot of your open tasks and a queue of what you asked for in Telegram
   tomorrow, later, unplanned) set in quotes, eight tasks to a page, with filters;
   every step edits the same message in place, and the main buttons are coloured.
   English and Persian, Jalali dates understood.
-- **Every setting of a task.** A task's card opens a settings panel with a button
-  for each: title, status, priority, deadline, plan, reminder, tags and repeat,
-  each showing its value. Pick a preset or reply with your own ("every 3 days",
+- **Tap a task, change anything.** A task in a list opens its own screen: its
+  card on top and a button for every setting under it (title, status, priority,
+  deadline, plan, reminder, tags, repeat), each showing its value, with Done and
+  Delete above. Status is open, in progress, done or not done (the four checkbox
+  states of the notes), and the lists have a filter for what is in progress. A tab bar (home, today, all, new, settings) sits under the main
+  screens. Pick a preset or reply with your own ("every 3 days",
   "friday"). New tasks are written in plain words ("call the bank tomorrow 10").
   Reminders arrive as a card with Done and Snooze buttons.
+- **Telegram's rich messages.** Screens go out as rich messages (Bot API 10.1):
+  real headings, tasks as a task list with subtasks nested under their parent, a
+  task's settings as a table, written right to left in Persian. Clients or servers
+  that do not take them get the same screen as a classic message, and **Settings →
+  Rich display** turns them off. Short messages are widened so their buttons are
+  not squeezed.
 - **Pick a day on a calendar.** Reminder, plan, deadline and "New task for a day"
   open a month drawn as buttons, in the Jalali or the Gregorian calendar (Saturday
   first in Persian), with today in brackets, the current day ticked and a dot on

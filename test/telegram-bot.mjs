@@ -20,6 +20,8 @@ const build = await esbuild.build({
       export { jalaliToGregorian, gregorianToJalali } from "../src/date-utils";
       export { TASK_SETTINGS_SQL } from "../supabase/functions/_shared/schema-sql.ts";
       export { buildMonth, daysIn, monthKeyOf, dayOf } from "../supabase/functions/_shared/calendar-picker.ts";
+      export { htmlToRich, mdEscape } from "../supabase/functions/_shared/rich.ts";
+      export { telegramApi, widen } from "../supabase/functions/_shared/telegram-api.ts";
     `,
     resolveDir: new URL('.', import.meta.url).pathname,
     loader: 'ts',
@@ -121,7 +123,7 @@ function world(at = '2026-10-02T12:00:00Z') {
   const state = { now: new Date(at) };
   const tg = {
     send: async (chat, text, buttons, options) => void sent.push({ chat, text, buttons, options }),
-    edit: async (chat, id, text, buttons) => void edits.push({ chat, id, text, buttons }),
+    edit: async (chat, id, text, buttons, rich) => void edits.push({ chat, id, text, buttons, rich }),
     answer: async (_id, text) => void toasts.push(text),
     setCommands: async (chat, list) => void commands.push(list.map((c) => c.command)),
   };
@@ -176,8 +178,8 @@ async function paired() {
   eq(w.store.commands.map((c) => [c.kind, c.payload.title, c.payload.plan]), [['add', 'Buy bread', { date: '2026-10-03', start: '09:00' }]], 'and an add waits for the plugin');
   const card = w.last().text;
   eq([card.includes('#۱'), card.includes('<blockquote>'), card.includes('فردا ۰۹:۰۰'.replace('۰۹', '۰۹')), card.includes('ثبت شد')], [true, true, true, true], 'the reply is a card: numbered in Persian digits, the plan in a quote');
-  eq(w.data(w.last()), ['done:1', 'cfg:1', 'undo:1', 'home'], 'with done, settings, undo and menu buttons');
-  eq(w.last().buttons.flat().filter((b) => b.style).map((b) => [b.data, b.style]), [['done:1', 'success'], ['cfg:1', 'primary'], ['undo:1', 'danger']], 'done is green, settings blue and undo red');
+  eq(w.data(w.last()), ['done:1', 'undo:1', 'ed:1', 'sm:1', 'pm:1', 'dm:1', 'pl:1', 'rm:1', 'tm:1', 'qm:1', 'home'], 'with done, undo, a button for every setting and the menu');
+  eq(w.last().buttons.flat().filter((b) => b.style).map((b) => [b.data, b.style]), [['done:1', 'success'], ['undo:1', 'danger']], 'done is green and undo red');
 
   await w.say('remind in 30 minutes call mom');
   eq(w.store.tasks[1].remind_at, '2026-10-02T12:30:00.000Z', 'a reminder from now');
@@ -209,7 +211,7 @@ async function paired() {
   const today = w.last().text;
   eq([today.includes('Late'), today.includes('Today'), today.includes('Later')], [true, true, false], '/today lists what is late and what is today');
   eq(today.indexOf('عقب‌افتاده') < today.indexOf('Late') && today.indexOf('Late') < today.lastIndexOf('📅 امروز'), true, 'in sections of their own, the late first');
-  eq(w.data(w.last()), ['t:1@t0', 't:2@t0', 'ls:a:0', 'ls:t:0', 'ls:o:0', 'new', 'home'], 'each task opens by a button; the filters show only what has tasks');
+  eq(w.data(w.last()), ['t:1@t0', 't:2@t0', 'ls:a:0', 'ls:t:0', 'ls:o:0', 'home', 'ls:t:0', 'ls:a:0', 'new', 'set'], 'each task opens by a button; the filters show only what has tasks, then the tab bar');
   eq(w.last().buttons.flat().find((b) => b.data === 'ls:t:0').style, 'primary', 'the filter in use is blue');
   await w.say('/list');
   eq(w.last().text.includes('Later') && w.last().text.includes('🗓 بعداً'), true, '/list lists them all, the far ones under “later”');
@@ -218,7 +220,7 @@ async function paired() {
   await w.press('t:2@t0');
   eq([w.edits.length, w.lastEdit().id], [1, 555], 'opening a task edits the list message in place');
   eq(w.lastEdit().text.includes('Today') && w.lastEdit().text.includes('<blockquote>'), true, 'into the task’s card');
-  eq(w.data(w.lastEdit()), ['done:2@t0', 'cfg:2@t0', 'del:2@t0', 'ls:t:0'], 'whose buttons remember the list they came from');
+  eq(w.data(w.lastEdit()), ['done:2@t0', 'del:2@t0', 'ed:2', 'sm:2@t0', 'pm:2@t0', 'dm:2@t0', 'pl:2@t0', 'rm:2@t0', 'tm:2@t0', 'qm:2@t0', 'ls:t:0'], 'whose buttons remember the list they came from');
   await w.press('done:2@t0');
   eq([w.store.tasks[1].status, w.store.commands.at(-1).kind, w.store.commands.at(-1).payload], ['done', 'status', { key: 'Work.md|^b|0', status: 'done' }], 'done closes it and queues the change');
   eq([w.toasts.at(-1), w.lastEdit().text.includes('Today'), w.lastEdit().text.includes('Late')], ['✅ انجام شد', false, true], 'then the list is back, without it, and a note over the chat says so');
@@ -241,7 +243,7 @@ async function paired() {
   ] });
 
   await w.press('rm:1');
-  eq(w.data(w.lastEdit()), ['rs:1:10', 'rs:1:60', 'rs:1:180', 'rs:1:eve', 'rs:1:tom', 'cn:r:1:1405-7', 'rc:1', 'cfg:1'], 'the reminder menu offers moments, the calendar, a free choice and a way back');
+  eq(w.data(w.lastEdit()), ['rs:1:10', 'rs:1:60', 'rs:1:180', 'rs:1:eve', 'rs:1:tom', 'cn:r:1:1405-7', 'rc:1', 't:1'], 'the reminder menu offers moments, the calendar, a free choice and a way back');
   await w.press('rs:1:60');
   eq([w.store.tasks[0].remind_at, w.store.commands.at(-1).payload.moment], ['2026-10-02T13:00:00.000Z', { date: '2026-10-02', time: '16:30' }], 'a preset reminder an hour from now');
   eq(w.lastEdit().text.includes('یادآوری تنظیم شد') && w.lastEdit().text.includes('🔔'), true, 'shown on the card');
@@ -264,7 +266,7 @@ async function paired() {
   eq(w.last().text.includes('متوجه زمان نشدم'), true, 'an answer it cannot read is said so');
 
   await w.press('pl:2');
-  eq(w.data(w.lastEdit()), ['ps:2:0', 'ps:2:1', 'ps:2:2', 'ps:2:7', 'cn:p:2:1405-7', 'pc:2', 'cfg:2'], 'the plan menu offers days and the calendar');
+  eq(w.data(w.lastEdit()), ['ps:2:0', 'ps:2:1', 'ps:2:2', 'ps:2:7', 'cn:p:2:1405-7', 'pc:2', 't:2'], 'the plan menu offers days and the calendar');
   await w.press('ps:2:1');
   eq([w.store.tasks[1].plan_date, w.store.tasks[1].plan_start, w.store.commands.at(-1).payload.plan], ['2026-10-03', null, { date: '2026-10-03' }], 'a day for a task with no hours');
   await w.say('/plan 2 sat 9-10');
@@ -297,7 +299,7 @@ async function paired() {
 
   // Settings, in place.
   await w.say('/settings');
-  eq(w.data(w.last()), ['set:lang', 'set:cal', 'set:lead', 'set:tz', 'home'], 'settings');
+  eq(w.data(w.last()), ['set:lang', 'set:cal', 'set:lead', 'set:tz', 'set:rich', 'home', 'ls:t:0', 'ls:a:0', 'new', 'set'], 'settings, with the tab bar');
   await w.press('set:cal');
   eq([w.store.owner.calendar, w.lastEdit().text.includes('میلادی')], ['gregorian', true], 'the calendar flips');
   await w.press('set:lead');
@@ -325,7 +327,7 @@ async function paired() {
   eq(first.buttons.slice(0, 4).map((row) => row.length), [2, 2, 2, 2], 'a page holds eight tasks, two buttons to a row');
   eq(first.buttons[1][0].text.endsWith('…'), true, 'a long title is cut on its button');
   eq(w.data(first).filter((d) => d.startsWith('t:')).length, 8, 'eight task buttons');
-  eq(w.data(first).filter((d) => d.startsWith('ls:')), ['ls:a:1', 'ls:a:0', 'ls:u:0'], 'a way to the next page, then the filters that have tasks');
+  eq(w.data(first).filter((d) => d.startsWith('ls:')), ['ls:a:1', 'ls:a:0', 'ls:u:0', 'ls:t:0', 'ls:a:0'], 'a way to the next page, the filters that have tasks, then the tab bar’s today and all');
   eq(first.buttons[4].map((b) => b.text), ['·', '۱ از ۳', '›'], 'the page number sits between the arrows');
   eq(first.text.includes('<b>۱.</b>') && !first.text.includes('<b>۹.</b>'), true, 'the text holds the same eight');
   await w.press('ls:a:1');
@@ -355,7 +357,7 @@ async function paired() {
   await w.press('st');
   eq(w.lastEdit().text.includes('🟡'), true, 'and says when Obsidian has been closed for a while');
   await w.press('new');
-  eq(w.lastEdit().text.includes('تسک جدید') && w.data(w.lastEdit()).join() === 'cn:x:0:1405-7,home', true, '“new task” explains, offers a day from the calendar and the menu');
+  eq(w.lastEdit().text.includes('تسک جدید') && w.data(w.lastEdit()).join() === 'cn:x:0:1405-7,home,ls:t:0,ls:a:0,new,set', true, '“new task” explains, offers a day from the calendar and the menu');
   await w.press('home');
   eq(w.lastEdit().text.startsWith('✨'), true, 'the menu button goes home');
   await w.press('help');
@@ -372,7 +374,7 @@ async function paired() {
   const fs = await import('fs');
   const read = (name) => fs.readFileSync(new URL(`../supabase/migrations/${name}`, import.meta.url), 'utf8');
   const code = (text) => text.split('\n').filter((line) => !line.startsWith('--')).join(' ').replace(/\s+/g, ' ').trim();
-  eq(code(mod.TASK_SETTINGS_SQL), code(read('20261003000000_task_settings.sql') + '\n' + read('20261004000000_subtasks.sql')), 'the update the functions run is the migration files, in order');
+  eq(code(mod.TASK_SETTINGS_SQL), code(read('20261003000000_task_settings.sql') + '\n' + read('20261004000000_subtasks.sql') + '\n' + read('20261005000000_rich_messages.sql')), 'the update the functions run is the migration files, in order');
 }
 
 // ── Every setting of a task ────────────────────────────────────────────────
@@ -386,16 +388,16 @@ async function paired() {
   await w.press('t:1@a0');
   eq(w.lastEdit().text.includes('🔁') && w.lastEdit().text.includes('هر هفته'), true, 'the card says the task repeats');
   await w.press('cfg:1@a0');
-  eq(w.data(w.lastEdit()), ['ed:1', 'sm:1@a0', 'pm:1@a0', 'dm:1@a0', 'pl:1@a0', 'rm:1@a0', 'tm:1@a0', 'qm:1@a0', 't:1@a0'], 'the panel holds a button for every setting');
+  eq(w.data(w.lastEdit()), ['done:1@a0', 'del:1@a0', 'ed:1', 'sm:1@a0', 'pm:1@a0', 'dm:1@a0', 'pl:1@a0', 'rm:1@a0', 'tm:1@a0', 'qm:1@a0', 'ls:a:0'], 'a task’s screen holds a button for every setting, in one tap from the list');
   const labels = w.lastEdit().buttons.flat().map((b) => b.text);
-  eq([labels[2].includes('بالا'), labels[3].includes('جمعه'), labels[7].includes('هر هفته'), labels[6].includes('۱')], [true, true, true, true], 'each button shows what the setting is now');
+  eq([labels[4].includes('بالا'), labels[5].includes('جمعه'), labels[9].includes('هر هفته'), labels[8].includes('۱')], [true, true, true, true], 'each button shows what the setting is now');
 
   // Priority
   await w.press('pm:1@a0');
-  eq(w.data(w.lastEdit()), ['pr:1:highest@a0', 'pr:1:high@a0', 'pr:1:medium@a0', 'pr:1:low@a0', 'pr:1:lowest@a0', 'pr:1:off@a0', 'cfg:1@a0'], 'five levels, none, and a way back');
+  eq(w.data(w.lastEdit()), ['pr:1:highest@a0', 'pr:1:high@a0', 'pr:1:medium@a0', 'pr:1:low@a0', 'pr:1:lowest@a0', 'pr:1:off@a0', 't:1@a0'], 'five levels, none, and a way back');
   await w.press('pr:1:highest@a0');
   eq([w.store.tasks[0].priority, w.store.commands.at(-1).kind, w.store.commands.at(-1).payload], ['highest', 'edit', { key: 'Work.md|^a|0', priority: 'highest' }], 'a priority is kept and queued as an edit');
-  eq(w.data(w.lastEdit())[0], 'ed:1', 'and the panel is back');
+  eq(w.data(w.lastEdit())[0], 'done:1@a0', 'and the task’s screen is back');
   await w.press('pr:1:off@a0');
   eq([w.store.tasks[0].priority, w.store.commands.at(-1).payload.priority], [null, null], 'or taken off');
 
@@ -413,7 +415,7 @@ async function paired() {
 
   // Tags
   await w.press('tm:1@a0');
-  eq(w.data(w.lastEdit()), ['tr:1:0@a0', 'ta:1', 'cfg:1@a0'], 'a button for each tag to remove it, one to add');
+  eq(w.data(w.lastEdit()), ['tr:1:0@a0', 'ta:1', 't:1@a0'], 'a button for each tag to remove it, one to add');
   await w.press('ta:1');
   await w.reply('home #deep', w.last().text);
   eq([w.store.tasks[0].tags, w.store.commands.at(-1).payload.tags], [['work', 'home', 'deep'], ['work', 'home', 'deep']], 'tags are added to the ones it has');
@@ -424,7 +426,7 @@ async function paired() {
 
   // Repeat
   await w.press('qm:1@a0');
-  eq(w.data(w.lastEdit()), ['qs:1:1d@a0', 'qs:1:1w@a0', 'qs:1:2w@a0', 'qs:1:1m@a0', 'qc:1', 'qs:1:off@a0', 'cfg:1@a0'], 'four common repeats, a free one, and “no repeat” since it has one');
+  eq(w.data(w.lastEdit()), ['qs:1:1d@a0', 'qs:1:1w@a0', 'qs:1:2w@a0', 'qs:1:1m@a0', 'qc:1', 'qs:1:off@a0', 't:1@a0'], 'four common repeats, a free one, and “no repeat” since it has one');
   await w.press('qs:1:2w@a0');
   eq([w.store.tasks[0].repeat, w.store.commands.at(-1).payload.repeat], ['2w', '2w'], 'a repeat every two weeks');
   await w.press('qc:1');
@@ -444,11 +446,30 @@ async function paired() {
 
   // Status
   await w.press('sm:1@a0');
-  eq(w.data(w.lastEdit()), ['ss:1:open@a0', 'ss:1:doing@a0', 'ss:1:done@a0', 'cfg:1@a0'], 'open, in progress, done');
+  eq(w.data(w.lastEdit()), ['ss:1:open@a0', 'ss:1:doing@a0', 'ss:1:done@a0', 'ss:1:failed@a0', 't:1@a0'], 'open, in progress, done, not done');
   await w.press('ss:1:doing@a0');
   eq([w.store.tasks[0].status, w.store.commands.at(-1).payload], ['doing', { key: 'Work.md|^a|0', status: 'doing' }], 'in progress is queued as a status');
   await w.press('ss:1:done@a0');
   eq([w.store.tasks[0].status, w.lastEdit().text.includes('Report')], ['done', false], 'done goes back to the list without it');
+
+  // Not done, and the in-progress filter.
+  const y = await paired();
+  await y.sync({ snapshot: [
+    { key: 'S.md|One|0', title: 'One', status: 'open', tags: [] },
+    { key: 'S.md|Two|0', title: 'Two', status: 'doing', tags: [] },
+    { key: 'S.md|Three|0', title: 'Three', status: 'open', tags: [] },
+  ] });
+  await y.say('/list');
+  eq(y.data(y.last()).filter((d) => d.startsWith('ls:')).includes('ls:d:0'), true, 'the lists have a filter for what is in progress');
+  await y.press('ls:d:0');
+  eq([y.lastEdit().text.includes('Two'), y.lastEdit().text.includes('One'), y.lastEdit().text.includes('🔄 در حال انجام')], [true, false, true], 'that shows only those');
+  await y.press('ss:1:failed@d0');
+  eq([y.store.tasks[0].status, y.store.commands.at(-1).payload, y.toasts.at(-1)], ['failed', { key: 'S.md|One|0', status: 'failed' }, '❌ انجام نشد'], 'a task marked not done is queued as failed');
+  eq(y.lastEdit().text.includes('One'), false, 'and leaves the list');
+  await y.press('ss:3:failed');
+  eq(y.lastEdit().text.startsWith('❌ <b>انجام نشد</b>'), true, 'with no list to go back to it says so in place');
+  await y.say('/fail 2');
+  eq([y.store.tasks[1].status, y.last().text], ['failed', '❌ انجام نشد: Two'], '/fail does the same from the keyboard');
 
   // A database that cannot take an edit yet
   const x = await paired();
@@ -491,7 +512,7 @@ async function paired() {
   eq([labels[0], labels[2], labels.includes('[۱۰]'), labels.includes('۲۰•')], ['‹', '›', true, true], 'with today in brackets (10 Mehr) and a bullet on the day that has a task (20 Mehr)');
   const twenty = calendar.buttons.flat().find((b) => b.text === '۲۰•');
   eq(twenty.data, 'cd:r:1:2026-10-12@a0', 'a day is picked by its Gregorian date');
-  eq(calendar.buttons.at(-1).map((b) => b.data), ['cfg:1@a0'], 'with a way back');
+  eq(calendar.buttons.at(-1).map((b) => b.data), ['t:1@a0'], 'with a way back');
   await w.press('cn:r:1:1405-8@a0');
   eq(w.lastEdit().text.includes('<b>آبان ۱۴۰۵</b>'), true, 'the arrows change the month');
 
@@ -576,6 +597,103 @@ async function paired() {
   eq(w.data(card).filter((d) => d.startsWith('t:')), ['t:2@a0', 't:3@a0'], 'with a button for each');
   await w.press('t:2@a0');
   eq([w.lastEdit().text.startsWith('↳ <i>زیرتسکِ «Launch»</i>'), w.data(w.lastEdit()).includes('t:1@a0')], [true, true], 'a subtask’s card says whose it is, with a button up to its parent');
+}
+
+
+// ── Rich messages ──────────────────────────────────────────────────────────
+{
+  const { htmlToRich, mdEscape } = mod;
+  eq(mdEscape('a*b_c [d] $5 | x'), 'a\\*b\\_c \\[d\\] \\$5 \\| x', 'text a person wrote cannot become formatting');
+  eq(htmlToRich('<b>List</b>  ·  <i>4 open</i>\n\n<b>Late</b>\n<blockquote><b>1.</b> Fix &lt;b&gt; &amp; more\n⏳ <code>#work</code></blockquote>'),
+    '# List  ·  *4 open*\n\n## Late\n\n> **1.** Fix \\<b> & more  \n> ⏳ `#work`', 'HTML becomes rich Markdown: headings, quotes, code, entities');
+  eq(htmlToRich('hello\nworld <s>old</s>'), 'hello  \nworld ~~old~~', 'line breaks are kept');
+}
+
+{
+  const w = await paired();
+  await w.sync({ snapshot: [
+    { key: 'P.md|^p|0', title: 'Launch *now*', status: 'open', plan_date: '2026-10-02', subs_done: 1, subs_total: 3, tags: ['work'] },
+    { key: 'P.md|Write|0', title: 'Write copy', status: 'open', parent_key: 'P.md|^p|0', parent_title: 'Launch', tags: [] },
+  ] });
+  await w.say('/list');
+  const sent = w.last();
+  eq([sent.options.rich.rtl, sent.options.rich.markdown.startsWith('# 📋 همهٔ تسک‌ها  ·  *۲ باز*')], [true, true], 'a screen goes out as a rich message too, read right to left in Persian');
+  const md = sent.options.rich.markdown;
+  eq(md.includes('## 📅 امروز'), true, 'sections are headings');
+  eq(md.includes('- [ ] **۱.** Launch \\*now\\* `۱/۳` `▰▱▱`') && md.includes('  - [ ] **۲.** Write copy'), true, 'tasks are task-list items, a subtask nested under its parent, titles escaped');
+  eq(sent.text.includes('<b>۱.</b>'), true, 'and the classic HTML is still there to fall back on');
+
+  await w.press('t:1@a0');
+  const screen = w.lastEdit();
+  eq(screen.rich.markdown.startsWith('# Launch \\*now\\*\n\n| | |\n|:--|:--|\n| **📅 برنامه** |'), true, 'a task screen is a heading and a table of its settings');
+  eq(screen.rich.markdown.includes('**زیرتسک‌ها** `۱/۳` `▰▱▱`\n\n- [ ] Write copy'), true, 'with its open subtasks as a task list');
+  eq(screen.rich.markdown.endsWith('*شناسه #۱ · باز*'), true, 'and its ID last');
+
+  await w.press('set:rich');
+  eq([w.store.owner.rich, w.lastEdit().text.includes('خاموش')], [false, true], 'the settings switch rich display off');
+  await w.say('/list');
+  eq(w.last().options.rich, undefined, 'and screens then go out as classic messages only');
+  await w.press('t:1@a0');
+  eq(w.lastEdit().rich, undefined, 'edits too');
+  await w.press('set:rich');
+  eq(w.store.owner.rich, true, 'and back on');
+
+  // A database that does not have the column yet.
+  const x = await paired();
+  x.store.patchOwner = async () => { throw new Error('column "rich" does not exist'); };
+  const quiet = console.error;
+  console.error = () => {};
+  await x.press('set:rich');
+  console.error = quiet;
+  eq(x.toasts.at(-1).includes('دیتابیس'), true, 'if the database cannot keep the choice yet, the owner is told');
+}
+
+// ── Sending: the ladder from rich to classic to plain ──────────────────────
+{
+  const calls = [];
+  const replies = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    const method = String(url).split('/').pop();
+    const body = JSON.parse(init.body);
+    calls.push({ method, body });
+    const reply = replies.shift() ?? { ok: true };
+    return { ok: reply.ok, status: reply.ok ? 200 : (reply.status ?? 400), text: async () => reply.text ?? '' };
+  };
+  const quietErrors = console.error;
+  console.error = () => {};
+  const rich = { markdown: '# Hi', rtl: true };
+  const buttons = [[{ text: 'A', data: 'a', style: 'success' }]];
+  const tg = mod.telegramApi('TOKEN');
+
+  await tg.send(7, '<b>Hi</b>', buttons, { rich });
+  eq([calls[0].method, calls[0].body.rich_message, calls[0].body.reply_markup.inline_keyboard[0][0].style], ['sendRichMessage', { markdown: '# Hi', is_rtl: true, skip_entity_detection: true }, 'success'], 'a rich message goes by sendRichMessage, rich body and coloured buttons');
+  calls.length = 0;
+  replies.push({ ok: false, status: 400, text: 'Bad Request: can\'t parse rich message' }, { ok: false, status: 400, text: 'Bad Request: can\'t parse rich message' });
+  await tg.send(7, '<b>Hi</b>', buttons, { rich });
+  eq(calls.map((c) => c.method), ['sendRichMessage', 'sendRichMessage', 'sendMessage'], 'if Telegram refuses it (once more without the colours), the classic message is sent instead');
+  eq([calls[1].body.reply_markup.inline_keyboard[0][0].style, calls[2].body.parse_mode, calls[2].body.text], [undefined, 'HTML', '<b>Hi</b>\n' + '\u2800'.repeat(30)], 'as HTML, widened');
+  calls.length = 0;
+  await tg.edit(7, 55, '<b>Hi</b>', buttons, rich);
+  eq([calls[0].method, calls[0].body.message_id, !!calls[0].body.rich_message], ['editMessageText', 55, true], 'an edit carries the rich message to editMessageText');
+  calls.length = 0;
+  replies.push({ ok: false, status: 404, text: 'Not Found: method not found' });
+  await tg.send(7, 'x', undefined, { rich });
+  calls.length = 0;
+  await tg.send(7, 'x', undefined, { rich });
+  eq(calls.map((c) => c.method), ['sendMessage'], 'when Telegram does not know rich messages at all, they are not tried again for a while');
+  globalThis.fetch = realFetch;
+  console.error = quietErrors;
+}
+
+// ── A short message keeps its buttons from being squeezed ──────────────────
+{
+  const buttons = [[{ text: 'A', data: 'a' }]];
+  const short = mod.widen('<b>Done</b>', buttons);
+  eq([short.startsWith('<b>Done</b>\n'), short.endsWith('\u2800'), short.length > 30], [true, true, true], 'a short text gets a last line of invisible characters, so the buttons under it have room');
+  eq(mod.widen('a long enough line of words that fills the width of a message', buttons), 'a long enough line of words that fills the width of a message', 'a text that is wide already is left alone');
+  eq(mod.widen('<b>Done</b>'), '<b>Done</b>', 'and so is one with no buttons');
+  eq(mod.widen('short\nand a line that is quite a lot longer than the limit we set here', buttons).includes('\u2800'), false, 'the longest line counts, not the first');
 }
 
 // ── Sync ───────────────────────────────────────────────────────────────────

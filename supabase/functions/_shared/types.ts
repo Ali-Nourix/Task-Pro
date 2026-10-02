@@ -14,6 +14,8 @@ export interface OwnerRow {
   language: Language;
   calendar: CalendarKind;
   lead_minutes: number;
+  /** Show screens as Telegram's rich messages (headings, tables, task lists). On unless turned off. */
+  rich?: boolean | null;
   last_sync_at: string | null;
 }
 
@@ -145,11 +147,20 @@ export interface BotCommand {
   description: string;
 }
 
+/** The same screen as a rich message: Markdown, and whether it reads right to left. */
+export interface Rich {
+  markdown: string;
+  rtl: boolean;
+}
+
 export interface Telegram {
-  /** `text` is HTML. With `forceReply` the message asks for an answer, with that hint in the field. */
-  send(chatId: number, text: string, buttons?: Button[][], options?: { forceReply?: string }): Promise<void>;
+  /**
+   * `text` is HTML. With `rich` the message is sent as a rich message, falling back to the HTML
+   * when Telegram will not take it. With `forceReply` it asks for an answer, with that hint in the field.
+   */
+  send(chatId: number, text: string, buttons?: Button[][], options?: { forceReply?: string; rich?: Rich }): Promise<void>;
   /** Replaces a message in place, text and buttons together. Throws when it cannot (the caller then sends instead). */
-  edit(chatId: number, messageId: number, text: string, buttons?: Button[][]): Promise<void>;
+  edit(chatId: number, messageId: number, text: string, buttons?: Button[][], rich?: Rich): Promise<void>;
   /** Stops the button's spinner, with a short note over the chat when `text` is given. */
   answer(callbackId: string, text?: string): Promise<void>;
   /** The list of commands in the chat's menu. */

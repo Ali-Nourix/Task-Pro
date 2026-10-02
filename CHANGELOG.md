@@ -17,6 +17,16 @@
   Telegram now** command. The plugin uploads a snapshot of open tasks (now with
   how often each repeats) and applies queued changes to your notes, each exactly
   once, including a new `edit` change for the settings above.
+- **Telegram's rich messages (Markdown)**: every screen is also written as a rich
+  message: headings, the list as a task list with subtasks nested, a task's
+  settings as a table, right to left for Persian. If Telegram or the client does
+  not take it the classic message is sent; **Rich display** in the bot's settings
+  switches it off. The task's screen and its settings are now one screen, reached
+  by tapping the task, and a tab bar sits under the main screens. Short messages
+  are widened so the buttons under them keep their room.
+- **All four statuses from Telegram**: open, in progress, done and *not done*
+  (`[ ]` `[/]` `[x]` `[!]`), from the status menu or `/fail`, and a filter in the
+  lists for what is in progress.
 - **A calendar in the chat**: reminder, plan, deadline and "New task for a day"
   open a month as buttons (Jalali or Gregorian, Saturday first in Persian) with
   today, the current day and days that have tasks marked, then an hour grid and,
