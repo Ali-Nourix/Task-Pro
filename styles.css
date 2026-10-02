@@ -393,6 +393,8 @@ body {
      cell that is exactly as tall as its row) the ring is drawn inside
      instead. test/clip-guard.mjs is what checks that neither is forgotten. */
   --taskpro-halo: var(--taskpro-space-2);
+  /* A task's box: a square with soft corners, not a circle. */
+  --taskpro-check-radius: 4.5px;
   /* The focus ring for a box that has no halo to spare: the same two rings,
      drawn inside. */
   --taskpro-focus-ring-inset: inset 0 0 0 2px color-mix(in srgb, var(--interactive-accent) 75%, transparent);
@@ -1233,6 +1235,17 @@ li.task-list-item {
 .taskpro-interactive-badge {
   border-radius: var(--taskpro-status-radius);
   padding-inline: calc(var(--taskpro-chip-padding-inline) + 2px);
+}
+/* Letters sit a little above the middle of their em box (more so in fonts with
+   deep descenders, which Persian-capable fonts have), so an icon centred on the
+   box reads as low. The icon in a status capsule is lifted to the letters' middle
+   and set in from the capsule's end by the capsule's curve. */
+.taskpro-interactive-badge > .taskpro-chip__icon {
+  transform: translateY(-0.5px);
+  margin-inline-start: 1px;
+}
+.taskpro-interactive-badge {
+  gap: 0.4em;
 }
 
 
@@ -2287,7 +2300,7 @@ button.taskpro-chip:focus-visible {
 .taskpro-board .taskpro-board__skeleton-dot {
   width: 16px;
   height: 16px;
-  border-radius: 50%;
+  border-radius: var(--taskpro-check-radius);
 }
 .taskpro-board .taskpro-board__skeleton-bar {
   width: var(--w, 34%);
@@ -2741,7 +2754,7 @@ button.taskpro-chip:focus-visible {
   margin: 0;
   padding: 0;
   border: 1.5px solid var(--text-faint);
-  border-radius: 50%;
+  border-radius: var(--taskpro-check-radius);
   background-color: transparent;
   box-shadow: none;
   color: var(--text-on-accent, #fff);
@@ -3657,12 +3670,13 @@ button.taskpro-chip:focus-visible {
   text-decoration: line-through;
 }
 
-/* The board's round checkbox, smaller, ringed in the item's colour. */
+/* The board's checkbox, smaller, ringed in the item's colour. */
 .taskpro-board button.taskpro-board__check.taskpro-cal__check {
   width: 13px;
   min-width: 13px;
   height: 13px;
   border-width: 1.5px;
+  border-radius: calc(var(--taskpro-check-radius) - 0.5px);
 }
 .taskpro-board button.taskpro-cal__check[data-status="[ ]"] {
   border-color: color-mix(in srgb, var(--taskpro-cal-accent) 62%, var(--text-faint));
@@ -4483,8 +4497,11 @@ button.taskpro-chip:focus-visible {
   flex-direction: column;
   /* Under the parent's checkbox: the toggle, a gap, then half the box. */
   margin-inline-start: 34px;
+  margin-top: var(--taskpro-space-2);
   padding-inline-start: var(--taskpro-space-3);
   border-inline-start: 1px solid var(--taskpro-cal-line);
+  /* Boxes that light up as a family must not touch, or the tints run together. */
+  gap: var(--taskpro-space-2);
 }
 .taskpro-board .taskpro-cal__free.is-child {
   align-items: center;
@@ -4980,23 +4997,25 @@ button.taskpro-chip:focus-visible {
   display: flex;
   align-items: flex-start;
   gap: var(--taskpro-space-5);
-  padding-bottom: var(--taskpro-space-5);
+  padding-bottom: var(--taskpro-space-6);
 }
+/* The title's first line is 24px tall: the box and the tools are centred on it. */
 .taskpro-board .taskpro-cal-inspector__head button.taskpro-cal__check {
   width: 18px;
   min-width: 18px;
   height: 18px;
-  margin-top: var(--taskpro-space-2);
+  margin-top: 3px;
+  border-radius: 5px;
 }
 .taskpro-board .taskpro-cal-inspector__title {
   flex: 1 1 auto;
   min-width: 0;
-  margin: -1px calc(-1 * var(--taskpro-space-2));
-  padding: 1px var(--taskpro-space-2);
+  margin: 0 calc(-1 * var(--taskpro-space-2));
+  padding: 0 var(--taskpro-space-2);
   border-radius: 5px;
   font-size: 1.15em;
   font-weight: var(--font-semibold);
-  line-height: 1.4;
+  line-height: 24px;
   overflow-wrap: anywhere;
   cursor: text;
   unicode-bidi: plaintext;
@@ -5018,8 +5037,17 @@ button.taskpro-chip:focus-visible {
   display: flex;
   flex: 0 0 auto;
   align-items: center;
-  gap: 0;
-  margin-top: 1px;
+  align-self: flex-start;
+  gap: var(--taskpro-space-1);
+  height: 24px;
+  margin-inline-end: calc(-1 * var(--taskpro-space-2));
+}
+.taskpro-board .taskpro-cal-inspector__tools .taskpro-board__icon-btn {
+  width: 24px;
+  min-width: 24px;
+  height: 24px;
+  min-height: 24px;
+  padding: 0;
 }
 
 .taskpro-board .taskpro-cal-inspector__sheet {
@@ -5152,7 +5180,15 @@ button.taskpro-chip:focus-visible {
   color: var(--text-muted);
 }
 .taskpro-board .taskpro-cal-date__weekday {
+  flex: 0 0 auto;
   min-width: 3ch;
+}
+/* The date fills what the weekday leaves, and never runs past the card. */
+.taskpro-board .taskpro-cal-date input.taskpro-cal-date__input {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+  max-width: 148px;
 }
 
 .taskpro-board .taskpro-cal-inspector__subtasks {
