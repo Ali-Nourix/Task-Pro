@@ -1,6 +1,6 @@
 // The ticker: once a minute, announces the reminders that have come due.
 
-import { reminderButtons, taskLines, words } from './texts.ts';
+import { reminderMessage } from './texts.ts';
 import { localNow } from './time.ts';
 import type { Store, Telegram } from './types.ts';
 
@@ -12,15 +12,14 @@ export async function runTick(deps: { store: Store; tg: Telegram; now: () => Dat
   if (!owner) return 0;
   const now = deps.now();
   const due = await deps.store.dueReminders(new Date(now.getTime() - GRACE_MS), now);
-  const w = words(owner.language);
   const clock = localNow(owner.timezone, now);
   let sent = 0;
   for (const task of due) {
     // Marked first: a reminder that fails to send is lost rather than sent every minute.
     await deps.store.markReminded(task.key, task.remind_at!);
-    const lines = taskLines(task, owner, clock.date, now).join('\n');
+    const message = reminderMessage(task, owner, clock.date);
     try {
-      await deps.tg.send(owner.chat_id, `${w.reminder}\n${lines}`, reminderButtons(task, owner.language));
+      await deps.tg.send(owner.chat_id, message.text, message.buttons);
       sent++;
     } catch (error) {
       console.error('reminder not sent', error);

@@ -2,6 +2,7 @@
 
 import { hasBearer, json } from '../_shared/http.ts';
 import { handleSync } from '../_shared/sync.ts';
+import { ensureSchema } from '../_shared/schema.ts';
 import { supabaseStore } from '../_shared/supabase-store.ts';
 import { telegramApi } from '../_shared/telegram-api.ts';
 
@@ -11,6 +12,7 @@ Deno.serve(async (request) => {
   if (request.method !== 'POST') return json({ ok: false, error: 'POST only' }, 405);
   if (!hasBearer(request, Deno.env.get('SYNC_TOKEN'))) return json({ ok: false, error: 'forbidden' }, 403);
   try {
+    await ensureSchema();
     const text = await request.text();
     if (text.length > MAX_BODY) return json({ ok: false, error: 'too large' }, 413);
     const response = await handleSync(JSON.parse(text || '{}'), {

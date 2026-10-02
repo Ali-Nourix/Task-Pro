@@ -11,7 +11,7 @@ export const MAX_TASKS = 5000;
 
 export interface Ack {
   id: string;
-  /** For an added task: the key it has in the notes now. */
+  /** For an added task, or one that was renamed: the key it has in the notes now. */
   key?: string;
   error?: string;
 }
@@ -51,6 +51,7 @@ export function cleanTask(value: unknown): SnapshotTask | null {
     plan_start: clock(v.plan_start),
     plan_end: clock(v.plan_end),
     remind_at: remind,
+    repeat: typeof v.repeat === 'string' && /^\d{1,3}[dwm]$/.test(v.repeat) ? v.repeat : null,
     tags,
     note_path: text(v.note_path, 600),
   };
@@ -68,7 +69,7 @@ export async function handleSync(
     if (!ack || typeof ack.id !== 'string') continue;
     const command = await store.finishCommand(ack.id, typeof ack.error === 'string' ? ack.error.slice(0, 300) : undefined);
     if (!command) continue;
-    if (command.kind === 'add' && typeof ack.key === 'string' && !ack.error) {
+    if ((command.kind === 'add' || command.kind === 'edit') && typeof ack.key === 'string' && !ack.error) {
       await store.rekey(String(command.payload.key), ack.key);
     } else if (ack.error && ack.error !== 'cancelled' && owner && deps.tg) {
       const title = typeof command.payload.title === 'string' ? command.payload.title : String(command.payload.key ?? '');

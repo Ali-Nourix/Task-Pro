@@ -29,6 +29,8 @@ export interface TaskRow {
   plan_end: string | null;
   remind_at: string | null;
   remind_sent_for: string | null;
+  /** How often it comes back: 1d, 2w, 1m. */
+  repeat: string | null;
   tags: string[];
   note_path: string | null;
   origin: 'vault' | 'telegram';
@@ -38,10 +40,10 @@ export interface TaskRow {
 /** A task as the plugin uploads it. */
 export type SnapshotTask = Pick<
   TaskRow,
-  'key' | 'title' | 'status' | 'priority' | 'deadline' | 'plan_date' | 'plan_start' | 'plan_end' | 'remind_at' | 'tags' | 'note_path'
+  'key' | 'title' | 'status' | 'priority' | 'deadline' | 'plan_date' | 'plan_start' | 'plan_end' | 'remind_at' | 'repeat' | 'tags' | 'note_path'
 >;
 
-export type CommandKind = 'add' | 'status' | 'remind' | 'plan' | 'delete';
+export type CommandKind = 'add' | 'status' | 'remind' | 'plan' | 'edit' | 'delete';
 
 export interface AddPayload {
   key: string;
@@ -67,6 +69,16 @@ export interface RemindPayload {
 export interface PlanPayload {
   key: string;
   plan: Plan | null;
+}
+
+/** The settings of a task changed together: only the fields present are touched, and null clears one. */
+export interface EditPayload {
+  key: string;
+  title?: string;
+  priority?: Priority | null;
+  deadline?: string | null;
+  tags?: string[];
+  repeat?: string | null;
 }
 
 export interface DeletePayload {
@@ -114,14 +126,26 @@ export interface Store {
 /** Telegram, as far as the bot needs it. */
 export interface Button {
   text: string;
+  /** What comes back when it is pressed. */
   data: string;
+  /** The button's colour: blue, green or red. Older clients show it plain. */
+  style?: 'primary' | 'success' | 'danger';
+}
+
+export interface BotCommand {
+  command: string;
+  description: string;
 }
 
 export interface Telegram {
-  send(chatId: number, text: string, buttons?: Button[][]): Promise<void>;
+  /** `text` is HTML. With `forceReply` the message asks for an answer, with that hint in the field. */
+  send(chatId: number, text: string, buttons?: Button[][], options?: { forceReply?: string }): Promise<void>;
+  /** Replaces a message in place, text and buttons together. Throws when it cannot (the caller then sends instead). */
+  edit(chatId: number, messageId: number, text: string, buttons?: Button[][]): Promise<void>;
+  /** Stops the button's spinner, with a short note over the chat when `text` is given. */
   answer(callbackId: string, text?: string): Promise<void>;
-  /** Takes the buttons off a message that has been acted on. */
-  clearButtons(chatId: number, messageId: number): Promise<void>;
+  /** The list of commands in the chat's menu. */
+  setCommands(chatId: number, commands: BotCommand[]): Promise<void>;
 }
 
 export const OPEN: readonly Status[] = ['open', 'doing'];

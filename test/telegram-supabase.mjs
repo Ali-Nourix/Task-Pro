@@ -69,9 +69,10 @@ function eq(actual, expected, label) {
 }
 
 psql('truncate public.tasks, public.commands, public.bot_owner restart identity');
+psql('alter sequence public.tasks_n_seq restart');
 const store = supabaseStore(url, TP_SERVICE_KEY);
 const sent = [];
-const tg = { send: async (chat, text, buttons) => void sent.push({ chat, text, buttons }), answer: async () => {}, clearButtons: async () => {} };
+const tg = { send: async (chat, text, buttons) => void sent.push({ chat, text, buttons }), edit: async () => {}, answer: async () => {}, setCommands: async () => {} };
 const state = { now: new Date('2026-10-02T12:00:00Z') };
 const deps = { store, tg, pairingCode: 'sesame', now: () => state.now };
 let id = 1;
@@ -128,6 +129,28 @@ try {
   await press('undo:3');
   eq(psql("select count(*) from tasks where pending"), '0', 'undoing a task not yet in a note drops it');
   eq(psql("select error from commands where kind = 'add' and applied_at is not null order by created_at desc limit 1"), 'cancelled', 'and cancels the add');
+
+  // Every setting of a task: the repeat column and the edit command.
+  await sync({ snapshot: [{ key: 'W.md|^b|0', title: 'Weekly', status: 'open', repeat: '1w', tags: [] }] });
+  eq(psql("select repeat from tasks where key = 'W.md|^b|0'"), '1w', 'an upload carries how often a task repeats');
+  const weekly = Number(psql("select n from tasks where key = 'W.md|^b|0'"));
+  await press(`qs:${weekly}:2w`);
+  eq([psql(`select repeat from tasks where n = ${weekly}`), psql("select kind, payload->>'repeat' from commands where kind = 'edit'")], ['2w', 'edit|2w'], 'a repeat set in Telegram is kept and queued as an edit');
+  await press(`pr:${weekly}:off`);
+  eq(psql(`select priority is null from tasks where n = ${weekly}`), 't', 'a priority can be cleared');
+  const edit = (await store.pendingCommands()).find((c) => c.kind === 'edit');
+  await sync({ acks: [{ id: edit.id, key: 'W.md|Weekly|0' }], snapshot: [{ key: 'W.md|Weekly|0', title: 'Weekly', status: 'open', repeat: '2w', tags: [] }] });
+  eq(psql("select n, key from tasks where title = 'Weekly'"), `${weekly}|W.md|Weekly|0`, 'a rename reported by the plugin moves the row to its new key and keeps its number');
+
+  // A database that has not been given the repeat column yet keeps working.
+  psql('alter table tasks drop column repeat');
+  psql("notify pgrst, 'reload schema'");
+  await new Promise((resolve) => setTimeout(resolve, 600));
+  await sync({ snapshot: [{ key: 'W.md|Weekly|0', title: 'Weekly', status: 'open', repeat: '2w', tags: [] }] });
+  await say('plain task');
+  eq(psql("select count(*) from tasks"), '2', 'without the column, uploads and new tasks still go through');
+  await store.patchTask('W.md|Weekly|0', { repeat: '1d', title: 'Weekly!' });
+  eq(psql("select title from tasks where key = 'W.md|Weekly|0'"), 'Weekly!', 'and so do changes');
 
   console.log(`TELEGRAM_SUPABASE_OK (${checked} checks)`);
 } finally {
