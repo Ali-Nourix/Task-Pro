@@ -28,7 +28,7 @@ import { dailyNotePath, namingSystem } from './calendar/daily-notes';
 import { todayKey } from './calendar/calendar-dates';
 
 /** Tabs shown at the top of the settings screen. */
-type SettingsTabId = 'general' | 'appearance' | 'capabilities' | 'tags' | 'calendar' | 'reminders' | 'tasks';
+type SettingsTabId = 'general' | 'appearance' | 'capabilities' | 'tags' | 'calendar' | 'reminders' | 'telegram' | 'tasks';
 
 const SETTINGS_TABS: Array<{ id: SettingsTabId; label: string; icon: string }> = [
   { id: 'general', label: 'General', icon: 'settings' },
@@ -37,6 +37,7 @@ const SETTINGS_TABS: Array<{ id: SettingsTabId; label: string; icon: string }> =
   { id: 'tags', label: 'Tags', icon: 'tags' },
   { id: 'calendar', label: 'Calendar', icon: 'calendar-days' },
   { id: 'reminders', label: 'Reminders', icon: 'bell-ring' },
+  { id: 'telegram', label: 'Telegram', icon: 'send' },
   { id: 'tasks', label: 'Internal Tasks', icon: 'list-checks' },
 ];
 
@@ -178,6 +179,9 @@ export class TaskProSettingTab extends PluginSettingTab {
         this.renderPlanReminderSettings(containerEl);
         this.renderReminderSettings(containerEl);
         return;
+      case 'telegram':
+        this.renderTelegramTab(containerEl);
+        return;
       case 'tasks':
         this.renderInternalTasksTab(containerEl);
         return;
@@ -185,6 +189,84 @@ export class TaskProSettingTab extends PluginSettingTab {
       default:
         this.renderGeneralTab(containerEl);
     }
+  }
+
+  private renderTelegramTab(containerEl: HTMLElement): void {
+    this.renderSectionHeader(
+      containerEl,
+      'send',
+      'Telegram bot',
+      'Add and tick off tasks and get reminders in Telegram, even while this computer is off. When Obsidian is open, tasks and reminders go to the bot and what you asked for there is made in your notes. Set up the bot first: supabase/README.md in the plugin’s repository.'
+    );
+    const settings = this.plugin.settings.telegram;
+    const apply = async () => {
+      await this.plugin.saveSettings();
+      this.plugin.telegramSync.start();
+    };
+
+    new Setting(containerEl)
+      .setName('Sync with the bot')
+      .setDesc('Upload the open tasks and make the changes asked for in Telegram.')
+      .addToggle((toggle) =>
+        toggle.setValue(settings.enabled).onChange(async (value) => {
+          settings.enabled = value;
+          await apply();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName('Project address')
+      .setDesc('Your Supabase project, like https://abcd1234.supabase.co')
+      .addText((text) =>
+        text
+          .setPlaceholder('https://abcd1234.supabase.co')
+          .setValue(settings.url)
+          .onChange(async (value) => {
+            settings.url = value.trim();
+            await apply();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName('Sync token')
+      .setDesc('The SYNC_TOKEN you set for the bot. It is kept in this vault’s plugin data.')
+      .addText((text) => {
+        text.inputEl.type = 'password';
+        text.setPlaceholder('SYNC_TOKEN').setValue(settings.token).onChange(async (value) => {
+          settings.token = value.trim();
+          await apply();
+        });
+      });
+
+    new Setting(containerEl)
+      .setName('Ask for changes every')
+      .setDesc('While Obsidian is open. Changes made here reach the bot within half a minute whatever this is.')
+      .addDropdown((dropdown) => {
+        for (const minutes of [1, 2, 5, 10, 30]) dropdown.addOption(String(minutes), minutes === 1 ? '1 minute' : `${minutes} minutes`);
+        dropdown.setValue(String(settings.intervalMinutes)).onChange(async (value) => {
+          settings.intervalMinutes = Number(value);
+          await apply();
+        });
+      });
+
+    const status = new Setting(containerEl).setName('Status');
+    const describe = () => {
+      if (settings.lastError) return `Last problem: ${settings.lastError}`;
+      return settings.lastSyncAt ? `Last synced ${new Date(settings.lastSyncAt).toLocaleString()}` : 'Not synced yet.';
+    };
+    status.setDesc(describe());
+    status.addButton((button) =>
+      button
+        .setButtonText('Sync now')
+        .setCta()
+        .onClick(async () => {
+          button.setDisabled(true);
+          const outcome = await this.plugin.telegramSync.syncNow();
+          new Notice(outcome.ok ? (outcome.applied ? `Synced; ${outcome.applied} change(s) made.` : 'Synced.') : `Sync failed: ${outcome.message ?? 'unknown error'}`);
+          status.setDesc(describe());
+          button.setDisabled(false);
+        })
+    );
   }
 
   private renderGeneralTab(containerEl: HTMLElement): void {

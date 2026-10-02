@@ -336,6 +336,7 @@ export class Scope {
 export class Menu {}
 export class WorkspaceLeaf {}
 export const setIcon = () => {};
+export const requestUrl = async () => ({ status: 200, json: {}, text: "" });
 
 // ── CodeMirror, which the plugin also takes from the host at runtime ─────────
 export class EditorView {}

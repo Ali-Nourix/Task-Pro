@@ -515,6 +515,27 @@ export interface TaskProgressEntry {
   progress: TaskProgress;
 }
 
+/** The link between the notes and the Telegram bot (see supabase/README.md). */
+export interface TelegramSettings {
+  enabled: boolean;
+  /** The project's address, or the sync function's. */
+  url: string;
+  token: string;
+  /** How often to ask for changes while Obsidian is open, in minutes. */
+  intervalMinutes: number;
+  lastSyncAt?: string;
+  lastError?: string;
+  /** Changes made in the notes that the bot has not yet confirmed. */
+  unconfirmed?: Array<{ id: string; key?: string; from?: string; error?: string }>;
+}
+
+export const DEFAULT_TELEGRAM_SETTINGS: TelegramSettings = {
+  enabled: false,
+  url: '',
+  token: '',
+  intervalMinutes: 2,
+};
+
 export interface TaskProSettings {
   referenceNotePath: string;
   enableBadges: boolean;
@@ -553,6 +574,7 @@ export interface TaskProSettings {
   /** Show the running timer in Obsidian's status bar. */
   timerInStatusBar: boolean;
   reminders: ReminderSettings; // Daily reminder configuration
+  telegram: TelegramSettings;
   reminderState?: ReminderState; // Internal scheduler bookkeeping
   blockIdMigrationDone?: boolean; // Guard: skip inline-strip migration after first run
   activeNoteReminderDefaultApplied?: boolean; // One-time migration: active-note reminders default on
@@ -591,6 +613,7 @@ export const DEFAULT_SETTINGS: TaskProSettings = {
   timerSound: true,
   timerInStatusBar: true,
   reminders: DEFAULT_REMINDER_SETTINGS,
+  telegram: DEFAULT_TELEGRAM_SETTINGS,
 };
 
 export interface ParsedTask {

@@ -2,6 +2,24 @@
 
 ## 1.5.0 - A calendar and a timeline to plan your days on, and a board that fits a phone
 
+### Telegram bot
+
+- **A Telegram bot for your tasks and reminders**, backed by your own Supabase
+  project (`supabase/`: a migration, three Edge Functions, a Persian setup
+  guide). Add tasks in plain words, list today and overdue, tick, snooze, move,
+  set a reminder, delete; reminders arrive in Telegram even with the computer off.
+- **Sync from the plugin**: a new **Telegram** settings tab and the **Sync
+  Telegram now** command. The plugin uploads a snapshot of open tasks and applies
+  queued Telegram changes to your notes, each exactly once.
+- Notes remain the source of truth; the tables are locked to the service role and
+  the bot answers only the chat it was paired with.
+
+### Remind on a date
+
+- **Remind me → On a date…** sets a reminder for a specific day and time,
+  written as `@remind(YYYY-MM-DD HH:MM)`. It needs no plan, shows as a bell chip
+  with the day and time, and is announced once.
+
 ### Calendar
 
 - The task board has a third layout, **Calendar**, next to Table and Board,
