@@ -410,6 +410,10 @@ Each animation says what just happened. Only opacity and transform move.
   and deleted, and **Default view** puts everything back.
 
 ### Fixes
+- A task's checkbox is a square with soft corners now (`--taskpro-check-radius`), not a circle, in the table, the board, the calendar and the card.
+- In the status capsule the icon sits level with the letters and set in from the capsule's end, instead of low and close to the edge.
+- The task card's header is tidier: the checkbox, the title's first line and the two tools share one centre line, and the date field no longer runs past the card's edge.
+- Subtasks in the unscheduled list have a gap between their boxes, so the tint of a lit family does not run together.
 
 - A task added under a heading is laid out the Markdown way: a blank line
   under the heading, joined to the list already there, and a blank line
