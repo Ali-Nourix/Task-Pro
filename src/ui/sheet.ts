@@ -8,6 +8,8 @@
 // marks its root; everything that opens inside it asks the root.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { captureBack } from './back-button';
+
 /** Whether panels opened inside this element should be sheets. */
 export function wantsSheet(container: HTMLElement): boolean {
   return !!container.closest('.taskpro-board.is-compact');
@@ -56,6 +58,8 @@ export function makeSheet(el: HTMLElement, container: HTMLElement, close: () => 
     }
   };
   el.addEventListener('keydown', trap);
+  // The phone's back button closes the sheet before it goes anywhere else.
+  const releaseBack = captureBack(close);
   const grabber = createDiv({ cls: 'taskpro-sheet-grabber' });
   grabber.createSpan({ cls: 'taskpro-sheet-grabber__bar' });
   el.prepend(grabber);
@@ -107,6 +111,7 @@ export function makeSheet(el: HTMLElement, container: HTMLElement, close: () => 
   return () => {
     behind.forEach((child) => child.removeAttribute('inert'));
     el.removeEventListener('keydown', trap);
+    releaseBack();
     grabber.remove();
     // Left behind for a moment, fading, so the tap that closed the sheet
     // does not land as a click on whatever was under it.

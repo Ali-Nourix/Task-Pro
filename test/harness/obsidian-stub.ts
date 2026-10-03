@@ -199,4 +199,36 @@ export class Plugin {}
 export class App {}
 export class TFile {}
 export class FuzzySuggestModal {}
+
+/**
+ * Obsidian's dialogs go on a stack, and the phone's back button closes the last
+ * one. The harness keeps the stack where a test can press back: `__pressBack()`.
+ */
+const dialogs: Modal[] = [];
+export class Modal {
+  containerEl = document.createElement('div');
+  modalEl = document.createElement('div');
+  scope = { setTabFocusContainerEl(_el: HTMLElement | null): void {} };
+  private opened = false;
+  constructor(public app: unknown) {}
+  open(): void {
+    if (this.opened) return;
+    this.opened = true;
+    dialogs.push(this);
+  }
+  close(): void {
+    if (!this.opened) return;
+    this.opened = false;
+    const at = dialogs.indexOf(this);
+    if (at !== -1) dialogs.splice(at, 1);
+    this.onClose();
+  }
+  onClose(): void {}
+}
+(globalThis as unknown as { __pressBack: () => boolean }).__pressBack = () => {
+  const last = dialogs[dialogs.length - 1];
+  if (!last) return false;
+  last.close();
+  return true;
+};
 export class EditorSuggest {}

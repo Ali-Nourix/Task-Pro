@@ -2,7 +2,7 @@
 // TaskPro - Main plugin entry point
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { Plugin, Editor, Hotkey, MarkdownFileInfo, MarkdownView, Notice, TFile, requestUrl, setIcon } from 'obsidian';
+import { Platform, Plugin, Editor, Hotkey, MarkdownFileInfo, MarkdownView, Notice, TFile, WorkspaceLeaf, requestUrl, setIcon } from 'obsidian';
 import { EditorView } from '@codemirror/view';
 import {
   TaskProSettings,
@@ -74,6 +74,7 @@ import { getBoardLabels } from './src/board/board-localization';
 import { sanitizeViews } from './src/board/board-views';
 import { watchTwoFingerSwipe } from './src/ui/gestures';
 import { haptic } from './src/ui/haptics';
+import { createGestureHint } from './src/ui/gesture-hint';
 import { DailyNoteService, appendTaskLine } from './src/calendar/daily-notes';
 import { todayKey } from './src/calendar/calendar-dates';
 import { getCalendarLabels } from './src/calendar/calendar-localization';
@@ -611,15 +612,26 @@ export default class TaskProPlugin extends Plugin {
       },
     });
 
-    // Two fingers pulled down anywhere open the task board, on a touch screen.
+    // Two fingers pulled down anywhere and then lifted open the task board, on a touch screen.
+    const hint = createGestureHint(document);
+    let armed = false;
     const stopSwipe = watchTwoFingerSwipe(document, {
       enabled: () => this.settings.boardGesture,
+      onPull: (pull) => {
+        hint.update(pull, this.settings.badgeLanguage);
+        // A tick when the pull has gone far enough that letting go would open it.
+        if (pull?.armed && !armed) haptic('tick');
+        armed = !!pull?.armed;
+      },
       onSwipeDown: () => {
         haptic('success');
-        void this.activateBoard();
+        void this.openBoardFromGesture();
       },
     });
-    this.register(stopSwipe);
+    this.register(() => {
+      stopSwipe();
+      hint.destroy();
+    });
 
     // Command: open the all-tasks board
     this.addCommand({
@@ -1285,6 +1297,10 @@ export default class TaskProPlugin extends Plugin {
   /** Opens the board, or brings an already open one to the front. */
   async activateBoard(): Promise<void> {
     const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_TASK_BOARD)[0];
+    if (Platform.isMobile) {
+      await this.openBoardInPlace(existing);
+      return;
+    }
     if (existing) {
       await this.app.workspace.revealLeaf(existing);
       return;
@@ -1292,6 +1308,33 @@ export default class TaskProPlugin extends Plugin {
     const leaf = this.app.workspace.getLeaf('tab');
     await leaf.setViewState({ type: VIEW_TYPE_TASK_BOARD, active: true });
     await this.app.workspace.revealLeaf(leaf);
+  }
+
+  /**
+   * On a phone the board takes the place of what is open, as another note
+   * would, instead of opening in a pane of its own. That puts the note it
+   * came from one step back in that pane's history, so the phone's back
+   * gesture (the back button, the edge swipe, Obsidian's two-finger swipe)
+   * closes the board and returns to the note. A board left open in another
+   * pane is closed, so there is one.
+   */
+  private async openBoardInPlace(existing: WorkspaceLeaf | undefined): Promise<void> {
+    const { workspace } = this.app;
+    // The pane the person is in, not a new one.
+    const leaf = workspace.getMostRecentLeaf(workspace.rootSplit) ?? workspace.getLeaf(false);
+    if (leaf.view.getViewType() === VIEW_TYPE_TASK_BOARD) {
+      await workspace.revealLeaf(leaf);
+      return;
+    }
+    if (existing && existing !== leaf) existing.detach();
+    await leaf.setViewState({ type: VIEW_TYPE_TASK_BOARD, active: true });
+    await workspace.revealLeaf(leaf);
+  }
+
+  /** From the two-finger gesture, wherever the fingers were. */
+  private async openBoardFromGesture(): Promise<void> {
+    if (this.floatingBoard) return;
+    await this.activateBoard();
   }
 
   /** Opens the board on its calendar layout. A floating board switches in place. */

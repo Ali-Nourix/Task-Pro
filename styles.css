@@ -7763,21 +7763,67 @@ body.is-mobile .taskpro-board.taskpro-board button.taskpro-tl__undated-toggle {
   z-index: 4;
 }
 
-/* ── The board on a phone: a column to a screen ────────────────────────── */
+/* ── The board on a phone: a column to a screen ──────────────────────────
+   The strip of columns scrolls sideways and nothing else does: each column
+   scrolls up and down by itself, with its title staying at its top, so a
+   column read to its end does not leave the next one scrolled to a place it
+   was never at. A swipe moves one column (it cannot fly past one), and the
+   tabs above say which is in view. */
 .taskpro-board.is-compact .taskpro-board__body.is-kanban {
+  display: flex;
+  flex-direction: column;
+  padding: 0 0 calc(var(--taskpro-tabbar-h) + var(--taskpro-bottom-inset));
+  overflow: hidden;
+}
+.taskpro-board.is-compact .taskpro-board__body.is-kanban > .taskpro-kanban {
+  flex: 1 1 auto;
+  align-items: stretch;
+  min-height: 0;
+  padding: var(--taskpro-space-2) var(--taskpro-board-gutter) var(--taskpro-space-5);
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
   scroll-snap-type: x mandatory;
   scroll-padding-inline: var(--taskpro-board-gutter);
+  scrollbar-width: none;
+  /* Up and down belong to the columns; a finger moving sideways is read by the strip itself (ui/strip-swipe.ts). */
+  touch-action: pan-y pinch-zoom;
 }
-.taskpro-board.is-compact .taskpro-board__body.is-kanban.is-carrying {
+.taskpro-board.is-compact .taskpro-board__body.is-kanban > .taskpro-kanban::-webkit-scrollbar {
+  display: none;
+}
+.taskpro-board.is-compact .taskpro-board__body.is-kanban.is-carrying > .taskpro-kanban {
   scroll-snap-type: none;
 }
 .taskpro-board.is-compact .taskpro-kanban__column {
   flex: 0 0 min(84cqw, 360px);
+  max-height: 100%;
+  padding-bottom: 96px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  /* Up and down stop at the column's ends; sideways goes on to the strip of columns. */
+  overscroll-behavior: auto contain;
   scroll-snap-align: start;
+  scroll-snap-stop: always;
+  touch-action: pan-y pinch-zoom;
+}
+/* The column is what scrolls, so what is in it keeps its size instead of being squeezed to fit. */
+.taskpro-board.is-compact .taskpro-kanban__column > * {
+  flex-shrink: 0;
+}
+.taskpro-board.is-compact .taskpro-kanban__column > .taskpro-kanban__header {
+  position: sticky;
+  top: calc(-1 * var(--taskpro-space-3));
+  z-index: 2;
+  margin-top: calc(-1 * var(--taskpro-space-3));
+  padding-top: var(--taskpro-space-5);
+  background: inherit;
 }
 .taskpro-board.is-compact .taskpro-kanban__aside {
   flex: 0 0 min(84cqw, 360px);
   scroll-snap-align: start;
+  overflow-y: auto;
+  touch-action: pan-y pinch-zoom;
 }
 .taskpro-board.is-compact .taskpro-kanban__resize {
   display: none;
@@ -7795,6 +7841,12 @@ body.is-mobile .taskpro-board.taskpro-board button.taskpro-tl__undated-toggle {
   overflow-x: auto;
   background: var(--taskpro-board-surface);
   scrollbar-width: none;
+}
+.taskpro-board.is-compact .taskpro-board__body.is-kanban > .taskpro-kanban-tabs {
+  position: static;
+  flex: 0 0 auto;
+  width: auto;
+  margin-inline: var(--taskpro-board-gutter);
 }
 .taskpro-board .taskpro-kanban-tabs::-webkit-scrollbar {
   display: none;
@@ -9053,4 +9105,67 @@ body.is-mobile .taskpro-board.taskpro-board .taskpro-cal-nav.is-phone button.tas
 body.is-mobile .taskpro-board.taskpro-board.is-compact button.taskpro-kanban-tabs__tab,
 body.is-mobile .taskpro-board.taskpro-board button.taskpro-board__bar-btn {
   min-height: 40px;
+}
+
+/* The dialog that stands in Obsidian's back-button stack for a sheet is never drawn. */
+.taskpro-back-stop,
+.modal-container.taskpro-back-stop {
+  display: none !important;
+}
+
+/* ── The pull that opens the task board ────────────────────────────────────
+   Two fingers pulling down bring this up from the top of the screen behind
+   them, saying how far to go and then to let go. Drawn on the page, outside
+   the board: the pull works from any note. */
+.taskpro-gesture-hint {
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0px) + 12px);
+  left: 50%;
+  z-index: var(--layer-notice, 50);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(100vw - 32px);
+  padding: 10px 18px;
+  border-radius: 24px;
+  background: var(--background-secondary-alt, var(--background-secondary));
+  box-shadow: 0 0 0 1px var(--background-modifier-border), 0 10px 30px -8px rgba(0, 0, 0, 0.45);
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-medium);
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, -160%);
+  transition: transform 160ms var(--anim-motion-swing, ease), opacity 120ms ease;
+}
+.taskpro-gesture-hint.is-visible {
+  opacity: calc(0.35 + var(--taskpro-pull, 0) * 0.65);
+  transform: translate(-50%, calc(-160% + var(--taskpro-pull, 0) * 160%));
+  transition: none;
+}
+.taskpro-gesture-hint.is-armed {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent, #fff);
+}
+.taskpro-gesture-hint__icon {
+  display: inline-flex;
+}
+.taskpro-gesture-hint__icon .svg-icon {
+  width: 18px;
+  height: 18px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .taskpro-gesture-hint {
+    transition: none;
+  }
+}
+@media (forced-colors: active) {
+  .taskpro-gesture-hint {
+    border: 2px solid CanvasText;
+    background: Canvas;
+    color: CanvasText;
+  }
+  .taskpro-gesture-hint.is-armed {
+    border-color: Highlight;
+  }
 }

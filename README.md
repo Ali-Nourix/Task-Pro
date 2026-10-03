@@ -328,9 +328,19 @@ clear of the home indicator and of Obsidian's own floating bar.
 
 **Two fingers pulled down, anywhere, open the task board.** On a touch screen,
 from a note or from any other view: put two fingers down together and pull
-them straight down. It needs a clear move (both fingers, a good way, quickly), so
-a scroll or a pinch does not set it off. **Two-Finger Swipe Opens the Task Board**
-in the settings turns it off.
+them straight down. Nothing happens while they are down: a pill at the top of the
+screen follows the pull (*Pull down for the Task Board*, then *Release to open the
+Task Board* with a short buzz once it is far enough), and the board opens when
+**both fingers are lifted**. Pulling back up, or lifting early, cancels it, and
+the list underneath never reacts to the two fingers (no tick, no sheet). It needs
+a clear move (both fingers, a good way, quickly), so a scroll or a pinch does not
+set it off. **Two-Finger Swipe Opens the Task Board** in the settings turns it off.
+
+**The phone's back gesture goes back, one step at a time.** The board opens in the
+pane you were in, as a step of that pane's history, so the system back (the
+Android back button or swipe, Obsidian's two-finger swipe back) closes it and
+returns to the note you came from. A sheet, a menu or the quick-add field that is
+open takes the back first and closes; the next back leaves the board.
 
 **Adding a task is one line of words.** The **+** opens a sheet with a field and
 the keyboard. Type `call Sara tomorrow 9 #work !high` (or
@@ -349,8 +359,10 @@ it (when, how urgent, its tags, how far along); only what is overdue, due today
 or urgent takes a colour. The chips are one tap in, in the task's sheet, or
 back for good with **Row style › Chips** in the board's options. The circle is
 24px with a 44px target, a swipe towards the trailing side ticks the task off
-(the other way opens its sheet), and either way a line at the foot says what
-happened with **Undo**, and the phone gives a short buzz where it can.
+(the other way opens its sheet), with a buzz when it is far enough to count and
+dragging back before letting go to cancel it; either way a line at the foot says
+what happened with **Undo**. A second finger put down on a row cancels its swipe
+and its long press, so a two-finger gesture never ticks anything.
 
 **A task's sheet starts with what you most often do**: Today, Tomorrow, Next
 week and **Pick a date…** to plan it, and **Done** as a large button at the foot
@@ -359,8 +371,15 @@ the bottom with a handle to drag them down by; a submenu is a page of its own.
 
 - **The table becomes a list**, as above. **Table style** in the board's options
   brings back the full table, which then scrolls sideways.
-- **The board shows one column at a time**, snapping from one to the next,
-  with a row of tabs above it to jump between them.
+- **The board shows one column at a time**: a swipe sideways moves the strip with
+  the finger and settles on the next column, never past it (a quick flick, or
+  a drag of a fifth of the screen, is enough; a short one comes back), with a
+  short buzz. A tap that ends a swipe is not a tap. Each column scrolls up and
+  down by itself and keeps its place while you visit the others, and a row of tabs
+  above it says where you are and jumps between them. (The strip is moved by
+  the plugin rather than by the browser's own pan: where a column that scrolls
+  vertically sits inside a strip that scrolls sideways, some engines drop the sideways
+  pan.)
 - **The calendar's bar is two lines**: the period with back, forward and Today,
   and under it Month, Week, Day, Agenda, the unscheduled tasks and a **⋯** sheet
   (Gregorian or Jalali, what to show). The month is a grid of dots with the

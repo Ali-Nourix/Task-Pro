@@ -1,7 +1,7 @@
 // ── board/task-board-view.ts ──────────────────────────────────────────────
 // The Obsidian view that hosts the task board in a workspace tab.
 
-import { ItemView, WorkspaceLeaf } from 'obsidian';
+import { ItemView, Platform, WorkspaceLeaf } from 'obsidian';
 import { getBoardLabels } from './board-localization';
 import { TaskBoard, TaskBoardHost } from './task-board';
 
@@ -12,6 +12,10 @@ export class TaskBoardView extends ItemView {
 
   constructor(leaf: WorkspaceLeaf, private readonly host: TaskBoardHost) {
     super(leaf);
+    // On a phone the board takes the place of a note in its pane, and is one step in that pane's
+    // history like any page: the back gesture returns to the note, and forward to the board. Only a
+    // view that may be navigated is recorded there. On a desktop it is a tab that stays what it is.
+    this.navigation = Platform.isMobile;
   }
 
   getViewType(): string {

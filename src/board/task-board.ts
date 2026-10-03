@@ -61,7 +61,8 @@ import { openCalendarPopover } from '../calendar/calendar-popover';
 import { autoDirection } from '../ui/fields';
 import { ChangeTracker, enter, stagger, type Entrance } from '../ui/motion';
 import { claimEscape } from '../ui/escape-scope';
-import { holdToDrag, onContextPress, readyToCarry } from '../ui/touch';
+import { swipeStrip } from '../ui/strip-swipe';
+import { fingersDown, holdToDrag, onContextPress, readyToCarry } from '../ui/touch';
 import { TaskTimeline } from '../timeline/timeline-view';
 import { getTimelineLabels } from '../timeline/timeline-localization';
 import { getCalendarLabels } from '../calendar/calendar-localization';
@@ -100,6 +101,7 @@ import { addDays, resolveWeekStart, todayKey } from '../calendar/calendar-dates'
 import { openDaySheet } from './day-sheet';
 import { Parsed } from './quick-add';
 import { announce } from '../ui/announce';
+import { setBackButtonApp } from '../ui/back-button';
 import { haptic } from '../ui/haptics';
 import { showSnackbar } from '../ui/snackbar';
 import { openQuickAddSheet } from './quick-add-sheet';
@@ -394,6 +396,7 @@ export class TaskBoard {
     private readonly options: TaskBoardOptions = {}
   ) {
     this.el = container.createDiv({ cls: 'taskpro-board' });
+    setBackButtonApp(host.app);
     this.el.toggleClass('is-floating', !!options.floating);
     const view = this.el.ownerDocument.defaultView ?? window;
     this.touch = !!Platform.isMobile || !!view.matchMedia?.('(pointer: coarse)').matches;
@@ -2379,6 +2382,11 @@ export class TaskBoard {
     this.el.toggleClass('is-wrapping', !!this.prefs.wrapTitles);
     const scrollTop = this.bodyEl.scrollTop;
     const scrollLeft = this.bodyEl.scrollLeft;
+    // On a phone each column scrolls by itself and the strip of columns scrolls sideways: all of it is kept.
+    const strip = this.kanbanScroller();
+    const stripLeft = strip && strip !== this.bodyEl ? strip.scrollLeft : 0;
+    const columnTops = new Map<string, number>();
+    if (this.compact) this.bodyEl.querySelectorAll<HTMLElement>('.taskpro-kanban__column').forEach((column) => columnTops.set(column.dataset.group ?? '', column.scrollTop));
     // Read before emptying: a removed element can no longer be the focused one.
     const hadFocus = this.bodyEl.contains(this.el.ownerDocument.activeElement);
     this.bodyEl.empty();
@@ -2447,6 +2455,20 @@ export class TaskBoard {
 
     this.bodyEl.scrollTop = scrollTop;
     this.bodyEl.scrollLeft = scrollLeft;
+    const nextStrip = this.kanbanScroller();
+    if (nextStrip && nextStrip !== this.bodyEl) nextStrip.scrollLeft = stripLeft;
+    if (this.compact && columnTops.size) this.bodyEl.querySelectorAll<HTMLElement>('.taskpro-kanban__column').forEach((column) => (column.scrollTop = columnTops.get(column.dataset.group ?? '') ?? 0));
+  }
+
+  /**
+   * What scrolls sideways through the board's columns: the strip of columns on
+   * a phone (where every column scrolls up and down by itself), the body
+   * elsewhere.
+   */
+  private kanbanScroller(): HTMLElement | null {
+    if (!this.bodyEl) return null;
+    if (this.compact) return this.bodyEl.querySelector<HTMLElement>(':scope > .taskpro-kanban');
+    return this.bodyEl;
   }
 
   /** Compares the tasks with the last drawing, and keeps the new and the changed for a moment. */
@@ -3464,16 +3486,36 @@ export class TaskBoard {
     let dx = 0;
     let tracking = false;
     let swiping = false;
+    let armed = false;
+    /** Puts the row back where it was, and forgets the touch. */
+    const cancel = () => {
+      tracking = false;
+      swiping = false;
+      armed = false;
+      content.style.transform = '';
+      row.removeClass('is-swiping', 'is-armed', 'is-leading', 'is-trailing');
+    };
     content.addEventListener('pointerdown', (event) => {
       if (event.pointerType !== 'touch') return;
+      // A second finger makes it a gesture of two fingers (the pull to the board, a pinch),
+      // and none of them is a swipe on this row.
+      if (!event.isPrimary || fingersDown() > 1) {
+        if (tracking) cancel();
+        return;
+      }
       tracking = true;
       swiping = false;
+      armed = false;
       dx = 0;
       startX = event.clientX;
       startY = event.clientY;
     });
     content.addEventListener('pointermove', (event) => {
       if (!tracking) return;
+      if (fingersDown() > 1) {
+        cancel();
+        return;
+      }
       const mx = event.clientX - startX;
       const my = event.clientY - startY;
       if (!swiping) {
@@ -3491,15 +3533,20 @@ export class TaskBoard {
       content.style.transform = `translateX(${Math.round(dx)}px)`;
       row.toggleClass('is-leading', lead > 0);
       row.toggleClass('is-trailing', lead < 0);
-      row.toggleClass('is-armed', Math.abs(dx) >= SWIPE_ACT);
+      // Past the mark, letting go does it; a tick says so, and going back before letting go changes your mind.
+      const now = Math.abs(dx) >= SWIPE_ACT;
+      if (now !== armed) {
+        armed = now;
+        if (armed) haptic('tick');
+      }
+      row.toggleClass('is-armed', armed);
     });
     const finish = () => {
       if (!tracking) return;
       tracking = false;
       if (!swiping) return;
       const lead = dx * sign;
-      content.style.transform = '';
-      row.removeClass('is-swiping', 'is-armed', 'is-leading', 'is-trailing');
+      cancel();
       // The click this touch ends with is not a tap on the row.
       const swallow = (e: Event) => {
         e.stopPropagation();
@@ -3511,12 +3558,7 @@ export class TaskBoard {
       else if (lead <= -SWIPE_ACT) this.openTaskActions(task, content.getBoundingClientRect(), row);
     };
     content.addEventListener('pointerup', finish);
-    content.addEventListener('pointercancel', () => {
-      tracking = false;
-      swiping = false;
-      content.style.transform = '';
-      row.removeClass('is-swiping', 'is-armed', 'is-leading', 'is-trailing');
-    });
+    content.addEventListener('pointercancel', cancel);
   }
 
   // ── Cells, shared by rows and cards ──────────────────────────────────────
@@ -3987,6 +4029,17 @@ export class TaskBoard {
       }
       if (aside.length) this.renderHiddenColumns(end, aside, groupBy);
     }
+
+    // On a phone a finger moves the strip of columns one column at a time (see ui/strip-swipe).
+    if (this.compact) {
+      swipeStrip({
+        strip: board,
+        panels: () => Array.from(board.querySelectorAll<HTMLElement>(':scope > .taskpro-kanban__column, :scope > .taskpro-kanban__aside')),
+        offsetOf: (panel) => this.columnOffset(panel, board),
+        rtl: this.language === 'fa',
+        enabled: () => !this.bodyEl.hasClass('is-carrying'),
+      });
+    }
   }
 
   private kanbanScroll: (() => void) | null = null;
@@ -4010,11 +4063,11 @@ export class TaskBoard {
         const column = Array.from(board.querySelectorAll<HTMLElement>(':scope > .taskpro-kanban__column')).find(
           (el) => el.dataset.group === group.value
         );
-        if (column) this.scrollToColumn(column);
+        if (column) this.scrollToColumn(column, board);
       });
     }
     const mark = () => {
-      const view = this.bodyEl.getBoundingClientRect();
+      const view = board.getBoundingClientRect();
       const columns = Array.from(board.querySelectorAll<HTMLElement>(':scope > .taskpro-kanban__column'));
       const current =
         columns.find((el) => {
@@ -4027,20 +4080,25 @@ export class TaskBoard {
         tab.toggleClass('is-active', active);
       });
     };
-    if (this.kanbanScroll) this.bodyEl.removeEventListener('scroll', this.kanbanScroll);
+    // The strip of columns scrolls on a phone; the old listener belonged to a strip that has been drawn again.
     this.kanbanScroll = mark;
-    this.bodyEl.addEventListener('scroll', mark, { passive: true });
+    board.addEventListener('scroll', mark, { passive: true });
     window.requestAnimationFrame(mark);
   }
 
-  /** Brings a column to the leading edge of the board, gliding there where the system allows motion. */
-  private scrollToColumn(column: HTMLElement): void {
-    const body = this.bodyEl;
-    const view = body.getBoundingClientRect();
+  /** Where a scroller's offset puts a column at the leading edge of the board. */
+  private columnOffset(column: HTMLElement, scroller: HTMLElement): number {
+    const view = scroller.getBoundingClientRect();
     const box = column.getBoundingClientRect();
-    const pad = parseFloat(getComputedStyle(body).paddingInlineStart) || 0;
+    const pad = parseFloat(getComputedStyle(scroller).paddingInlineStart) || 0;
     const delta = this.language === 'fa' ? box.right - (view.right - pad) : box.left - (view.left + pad);
-    const target = body.scrollLeft + delta;
+    return scroller.scrollLeft + delta;
+  }
+
+  /** Brings a column to the leading edge of the board, gliding there where the system allows motion. */
+  private scrollToColumn(column: HTMLElement, scroller: HTMLElement = this.bodyEl): void {
+    const body = scroller;
+    const target = this.columnOffset(column, body);
     const still = this.el.ownerDocument.defaultView?.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
     body.scrollTo({ left: target, behavior: still ? 'auto' : 'smooth' });
     // Where a smooth scroll is not honoured, or stops short, it finishes there; unless a hand has taken over meanwhile.
@@ -4179,9 +4237,10 @@ export class TaskBoard {
           line = this.el.createDiv({ cls: 'taskpro-kanban__drop' });
         }
         const box = this.el.getBoundingClientRect();
-        const view = this.bodyEl.getBoundingClientRect();
-        if (e.clientX < view.left + 48) this.bodyEl.scrollLeft -= 16;
-        else if (e.clientX > view.right - 48) this.bodyEl.scrollLeft += 16;
+        const scroller = this.kanbanScroller() ?? this.bodyEl;
+        const view = scroller.getBoundingClientRect();
+        if (e.clientX < view.left + 48) scroller.scrollLeft -= 16;
+        else if (e.clientX > view.right - 48) scroller.scrollLeft += 16;
 
         const list = columns();
         const target = list.find((el) => {
@@ -4418,10 +4477,11 @@ export class TaskBoard {
     };
     // Near an edge the board scrolls on, a little every frame, while the finger rests there.
     const edgeScroll = () => {
-      const view = this.bodyEl.getBoundingClientRect();
+      const scroller = this.kanbanScroller() ?? this.bodyEl;
+      const view = scroller.getBoundingClientRect();
       const step = lastX < view.left + 40 ? -14 : lastX > view.right - 40 ? 14 : 0;
       if (step) {
-        this.bodyEl.scrollLeft += step;
+        scroller.scrollLeft += step;
         findColumn(lastX, lastY);
       }
       frame = window.requestAnimationFrame(edgeScroll);
