@@ -501,6 +501,8 @@ export class TaskTimeline {
     check.dataset.status = task.status;
     check.setAttribute('role', 'checkbox');
     check.setAttribute('aria-checked', task.status === '[/]' ? 'mixed' : String(task.status === '[x]'));
+    // Named for the task it ticks; its state is aria-checked's to say.
+    check.setAttribute('aria-label', displayTitle(task.text) || task.text);
     check.addEventListener('click', (event) => {
       event.stopPropagation();
       void this.ctx.host.setStatus(task, task.status === '[x]' ? '[ ]' : '[x]');

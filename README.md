@@ -314,39 +314,82 @@ time.
 
 ### On a phone
 
-On a phone, or in a pane narrower than 640px, the board rearranges itself
-for a thumb, and nothing is left out: every setting and action on the desktop
-is still there, one or two taps in.
+On a phone, or in a pane narrower than 640px, the board is rebuilt for a
+thumb, and nothing is left out: every setting and action on the desktop is
+still there, one or two taps in.
 
-- **Menus, cards and pickers rise from the bottom** as sheets, full width,
-  with a handle to drag them down by and the board dimmed behind. A submenu
-  slides in as a page of its own with a back button, instead of opening
-  beside the menu.
-- **A round + button** at the bottom corner adds a task, in a sheet with its
-  title and the note it goes into; the keyboard's Done key adds it.
-- **The table becomes a list**: each task on two lines, its title and then
-  its properties as chips. Swipe a row towards the trailing side (right, in
-  English) to tick it off, the other way for its sheet, or tap it; the circle
-  and the **⋯** do the same without a swipe, each a 44px target. **Table style** in the board's options brings back the
-  full table, which then scrolls sideways.
+**The frame.** A slim bar on top (the title, search, filters, the view's
+options and a **⋯** sheet), the layouts as **tabs along the bottom** (List,
+Board, Calendar, Timeline, with the arrow keys moving between them), and a
+round **+** above them. On the list the top bar and the tab bar step aside
+while you scroll down and come back at the first scroll up; the list never
+changes size when they go, so nothing jumps under your finger. The bottom keeps
+clear of the home indicator and of Obsidian's own floating bar.
+
+**Two fingers pulled down, anywhere, open the task board.** On a touch screen,
+from a note or from any other view: put two fingers down together and pull
+them straight down. It needs a clear move (both fingers, a good way, quickly), so
+a scroll or a pinch does not set it off. **Two-Finger Swipe Opens the Task Board**
+in the settings turns it off.
+
+**Adding a task is one line of words.** The **+** opens a sheet with a field and
+the keyboard. Type `call Sara tomorrow 9 #work !high` (or
+`خرید نان فردا ساعت ۹ #کار !بالا`) and what was understood shows under it as
+chips: a plan for tomorrow at 09:00, high priority, the tag. `remind …` /
+`یادآوری …` makes a reminder, `due …` / `مهلت …` a deadline, `in 20 minutes` /
+`۲۰ دقیقه دیگه` a reminder from now. A reading you did not mean has a **✕** that
+keeps the words in the title. Prefer to tap? Today, Tomorrow, a month to pick a
+day from, priority, tags and reminders are buttons under the field that write
+the same words into it. A task with a day goes into that day's note (as on the
+calendar), the rest into the inbox; **Add** clears the field and keeps the
+keyboard for the next one. It reads the same lines as the Telegram bot does.
+
+**Rows are light.** A task is its title and one calm line of small text under
+it (when, how urgent, its tags, how far along); only what is overdue, due today
+or urgent takes a colour. The chips are one tap in, in the task's sheet, or
+back for good with **Row style › Chips** in the board's options. The circle is
+24px with a 44px target, a swipe towards the trailing side ticks the task off
+(the other way opens its sheet), and either way a line at the foot says what
+happened with **Undo**, and the phone gives a short buzz where it can.
+
+**A task's sheet starts with what you most often do**: Today, Tomorrow, Next
+week and **Pick a date…** to plan it, and **Done** as a large button at the foot
+that stays in view while the rows scroll. Menus, cards and pickers all rise from
+the bottom with a handle to drag them down by; a submenu is a page of its own.
+
+- **The table becomes a list**, as above. **Table style** in the board's options
+  brings back the full table, which then scrolls sideways.
 - **The board shows one column at a time**, snapping from one to the next,
   with a row of tabs above it to jump between them.
-- **The calendar's week shows three days** from today and scrolls sideways
-  through the rest. The month is a grid of dots with the chosen day's tasks
-  listed under it, and the unscheduled tasks open as a sheet.
-- **A long press is the right click** (the task menu, a column's menu), and
-  anything that can be dragged, a card, a block or a bar, is picked up by
-  holding it still for a moment, so a finger that moves right away scrolls.
-- Every control is at least 44px, the header's actions are icons with
-  labels for screen readers, and the bottom of the board keeps clear of the
-  home indicator and of Obsidian's own bar.
+- **The calendar's bar is two lines**: the period with back, forward and Today,
+  and under it Month, Week, Day, Agenda, the unscheduled tasks and a **⋯** sheet
+  (Gregorian or Jalali, what to show). The month is a grid of dots with the
+  chosen day's tasks under it, and a swipe across it turns the page; the week
+  shows three days from today and scrolls sideways.
+- **A long press is the right click**, and anything that can be dragged, a card,
+  a block or a bar, is picked up by holding it still for a moment, so a finger
+  that moves right away scrolls.
+
+**For everyone.** Every control has a name a screen reader can say (a checkbox is
+named for its task and says whether it is ticked), is at least 44px (24px at the
+smallest, with a bigger touch area made around it), and shows where the keyboard
+is. A sheet shuts the board behind it away until it is closed, Tab goes round
+inside it, and Esc or a way out of its own closes it and gives the focus back.
+What happens is said aloud too: the period on the calendar, a task added, a task
+ticked off with its Undo. Text can grow with Obsidian's font size (the bars grow
+with it), more contrast and forced colours are honoured, and nothing needs a
+gesture that a button does not also do.
 
 <table>
 <tr>
-<td><img src="docs/images/task-board-phone-light.png" alt="The task board on a phone: groups of two-line rows and a round + button" width="260"></td>
-<td><img src="docs/images/task-board-phone-selection-light.png" alt="The same list with one task picked and a bar of icons over its foot" width="260"></td>
+<td><img src="docs/images/task-board-phone-light.png" alt="The task board on a phone: light rows, a round + button and the tabs along the bottom" width="200"></td>
+<td><img src="docs/images/task-board-phone-add-light.png" alt="Quick add: a line of words, and under it a plan for tomorrow at nine, a priority and a tag read from it" width="200"></td>
+<td><img src="docs/images/task-board-phone-sheet-light.png" alt="A task's sheet: Today, Tomorrow, Next week and Pick a date, its properties, and Done at the foot" width="200"></td>
+<td><img src="docs/images/task-board-phone-calendar-light.png" alt="The calendar on a phone: a two-line bar, the month as dots, and the chosen day's tasks under it" width="200"></td>
 </tr>
 </table>
+
+<img src="docs/images/task-board-phone-selection-light.png" alt="The list with one task picked and a bar of icons over its foot" width="200">
 
 The board uses the phone layout wherever it is narrow, so a sidebar pane on a
 desktop gets it too, and a touch screen keeps the larger targets at any width.
@@ -1111,7 +1154,7 @@ npm i --no-save playwright lucide-static && npx playwright install chromium
 
 npm run previews        # regenerate the images in this README
 npm run check:contrast  # measure every chip, board and tag colour against WCAG AA on every theme
-npm run test:ui         # click and drag through the board, calendar and timeline, then again with a finger on a phone-sized screen, the Reading view's chips, and the clip guard (no ring cut by the box around it, in every view)
+npm run test:ui         # click and drag through the board, calendar and timeline, then again with a finger on a phone-sized screen (and an accessibility sweep of every screen of it), the Reading view's chips, and the clip guard (no ring cut by the box around it, in every view)
 ```
 
 These need Playwright, and the board harness needs Lucide's icon set (the icons

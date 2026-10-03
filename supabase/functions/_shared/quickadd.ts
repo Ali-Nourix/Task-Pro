@@ -85,8 +85,8 @@ const WEEKDAYS: Record<string, number> = {
 };
 
 const PRIORITIES: Record<string, Priority> = {
-  highest: 'highest', urgent: 'highest', فوری: 'highest', خیلیمهم: 'highest',
-  high: 'high', بالا: 'high', مهم: 'high',
+  highest: 'highest', urgent: 'highest', فوری: 'highest', خیلیمهم: 'highest', بحرانی: 'highest',
+  high: 'high', بالا: 'high', مهم: 'high', زیاد: 'high',
   medium: 'medium', متوسط: 'medium', معمولی: 'medium',
   low: 'low', کم: 'low', پایین: 'low',
   lowest: 'lowest', خیلیکم: 'lowest',
@@ -377,7 +377,8 @@ function timeAt(tokens: Token[], i: number, afterDay = false): { start: number; 
   }
 
   const following = cursor + 1 < tokens.length ? tokens[cursor + 1].n : '';
-  const endsPhrase = !following || following === 'تا' || following === 'to' || following === '-' || PM_WORDS.has(following) || AM_WORDS.has(following);
+  const endsPhrase =
+    !following || following === 'تا' || following === 'to' || following === '-' || PM_WORDS.has(following) || AM_WORDS.has(following) || /^[#!]./.test(following);
   const first = clockFromWords(tokens[cursor].n, sure || (afterDay && endsPhrase));
   if (!first) return null;
   let length = cursor - i + 1;

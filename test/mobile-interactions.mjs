@@ -64,6 +64,8 @@ async function open(query = '', hour = 15) {
   return page;
 }
 
+/** Text without the marks that keep a name's direction apart from the words around it. */
+const plain = (text) => text.replace(/[\u2066-\u2069\u200e\u200f]/g, '').trim();
 const center = async (locator) => {
   const box = await locator.boundingBox();
   return { x: box.x + box.width / 2, y: box.y + box.height / 2, box };
@@ -79,13 +81,26 @@ try {
   eq(await page.locator('.taskpro-table').count(), 0, 'no table');
   eq(await page.locator('.taskpro-board__fab').isVisible(), true, 'a + button in thumb reach');
   const fab = await page.locator('.taskpro-board__fab').boundingBox();
-  eq(fab.y + fab.height > 844 - 100 && fab.x + fab.width > 390 - 100, true, 'at the bottom, on the trailing side');
+  const tabbar = await page.locator('.taskpro-tabbar').boundingBox();
+  eq(fab.y + fab.height <= tabbar.y && fab.x + fab.width > 390 - 100, true, 'above the tab bar, on the trailing side');
   eq(fab.width >= 44 && fab.height >= 44, true, 'at least 44 by 44');
-  for (const selector of ['.taskpro-board__bar-btn.is-layout', '.taskpro-board__bar-btn.is-filter', '.taskpro-board__properties', '.taskpro-list__more-btn']) {
+  eq(Math.round(tabbar.y + tabbar.height), 844, 'the tab bar rests on the bottom edge');
+  for (const selector of ['.taskpro-board__bar-btn.is-filter', '.taskpro-board__properties', '.taskpro-board__more', '.taskpro-list__more-btn', '.taskpro-board__bar-icon-btn >> nth=0']) {
     const box = await page.locator(selector).first().boundingBox();
     eq(box.width >= 40 && box.height >= 40, true, `${selector} fits a finger`);
   }
-  eq(await listRow(page, 'Send the quote to Acme').locator('.taskpro-list__prop.is-plan .taskpro-chip__label').textContent(), 'Today, 14:00 – 15:30', 'a row shows its plan with the hours');
+  // The tab bar is a tab list, one tab per layout, and says which one is open.
+  eq(await page.locator('.taskpro-tabbar [role="tablist"] [role="tab"]').count(), 4, 'a tab for each layout');
+  eq(await page.locator('.taskpro-tabbar__tab[aria-selected="true"]').getAttribute('data-layout'), 'table', 'the open one is marked');
+  eq(await page.locator('.taskpro-tabbar__tab[tabindex="0"]').count(), 1, 'one stop for the keyboard, arrows for the rest');
+  for (const tab of await page.locator('.taskpro-tabbar__tab').all()) {
+    const box = await tab.boundingBox();
+    eq(box.width >= 44 && box.height >= 44, true, 'a tab is at least 44 by 44');
+    eq((await tab.textContent()).trim().length > 0, true, 'a tab has a name');
+  }
+  // A row says what matters in one calm line.
+  eq(await listRow(page, 'Send the quote to Acme').locator('.taskpro-meta.is-plan .taskpro-meta__text').textContent(), 'Today, 14:00 – 15:30', 'a row shows its plan with the hours');
+  eq(await page.locator('.taskpro-list__props').count(), 0, 'and no wall of chips');
 
   // A tap opens the task's sheet; a submenu is its next page; back returns.
   await page.tap('.taskpro-list__row:has-text("Accessibility pass") .taskpro-list__title');
@@ -103,6 +118,41 @@ try {
   await page.waitForTimeout(80);
   eq((await note(page, 'Projects/Website redesign.md')).split('\n').find((l) => l.includes('Accessibility pass')).includes('@priority(high)'), true, 'chosen from the page');
   eq(await page.locator('.taskpro-menu').count(), 0, 'and the sheet closes');
+
+  // The sheet puts the days a task is moved to first, and Done at its foot.
+  await page.tap('.taskpro-list__row:has-text("Dentist appointment") .taskpro-list__title');
+  eq(await page.locator('.taskpro-menu__chips[role="group"] .taskpro-menu__chip').allTextContents().then((all) => all.map((t) => t.trim())), ['Today', 'Tomorrow', 'Next week', 'Pick a date…'], 'quick days under the title');
+  eq((await page.locator('.taskpro-menu__chip').first().boundingBox()).height >= 44, true, 'each a finger tall');
+  const footer = await page.locator('.taskpro-menu__primary').boundingBox();
+  eq(footer.height >= 48 && footer.y + footer.height <= 844, true, 'Done is a large button inside the screen, at the foot');
+  await page.locator('.taskpro-menu__chip', { hasText: 'Tomorrow' }).tap();
+  await page.waitForTimeout(120);
+  eq(await page.locator('.taskpro-menu').count(), 0, 'a day chosen, the sheet goes');
+  const planned = await page.evaluate(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    return [d.toLocaleDateString('en-CA'), Object.values(window.__notes).join('\n').split('\n').find((l) => l.includes('Dentist appointment'))];
+  });
+  eq(planned[1].includes(`@schedule(${planned[0]}`), true, 'the task is planned for tomorrow');
+  await page.tap('.taskpro-list__row:has-text("Dentist appointment") .taskpro-list__title');
+  eq(await page.locator('.taskpro-menu__chip.is-active').textContent().then((t) => t.trim()), 'Tomorrow', 'and its sheet shows the day in use');
+  await page.locator('.taskpro-menu__chip', { hasText: 'Pick a date' }).tap();
+  await page.waitForTimeout(200);
+  eq(await page.locator('.taskpro-day-sheet .taskpro-daypick__day').count() >= 28, true, 'a month for any other day');
+  await page.tap('.taskpro-qa__close');
+  await page.waitForTimeout(300);
+  await page.tap('.taskpro-list__row:has-text("Dentist appointment") .taskpro-list__title');
+  await page.tap('.taskpro-menu__primary');
+  await page.waitForTimeout(120);
+  eq((await note(page, 'Life/Home.md')).includes('- [x] Dentist appointment'), true, 'Done ticks the task off');
+  eq(plain(await page.locator('.taskpro-snackbar__text').textContent()), 'Done: Dentist appointment', 'with the line at the foot, and its Undo');
+  await page.tap('.taskpro-snackbar__action');
+  await page.waitForTimeout(150);
+  eq((await note(page, 'Life/Home.md')).includes('- [ ] Dentist appointment'), true, 'which puts it back');
+  await page.tap('.taskpro-list__row:has-text("Dentist appointment") .taskpro-list__title');
+  eq(await page.locator('.taskpro-menu__primary').textContent().then((t) => t.trim()), 'Done', 'an open task offers Done');
+  await page.tap('.taskpro-sheet-backdrop', { position: { x: 20, y: 20 } });
+  await page.waitForTimeout(300);
 
   // Moving a task: the notes to move to come as a sheet of their own, with a search field.
   await page.tap('.taskpro-list__row:has-text("Accessibility pass") .taskpro-list__title');
@@ -169,6 +219,33 @@ try {
   const groceries = await center(listRow(page, 'Groceries').locator('.taskpro-list__content'));
   await page.gesture({ x: 60, y: groceries.y }, { x: 260, y: groceries.y });
   eq((await note(page, 'Life/Home.md')).startsWith('- [x] Groceries'), true, 'a swipe to the end ticks it off');
+  eq(plain(await page.locator('.taskpro-snackbar__text').textContent()), 'Done: Groceries', 'and says so at the foot of the screen');
+  eq(await page.locator('.taskpro-live').getAttribute('aria-live'), 'polite', 'to a screen reader too');
+  await page.waitForTimeout(120);
+  eq(plain(await page.locator('.taskpro-live').textContent()).includes('Done: Groceries'), true, 'in words');
+  const snack = await page.locator('.taskpro-snackbar').boundingBox();
+  const tabs = await page.locator('.taskpro-tabbar').boundingBox();
+  eq(snack.y + snack.height <= tabs.y && snack.height >= 48, true, 'above the tab bar');
+  eq(await page.locator('.taskpro-snackbar__action').count(), 0, 'a repeating task has no Undo: its next round would stay behind');
+  // The circle is big enough to see, and a 44px target is made around it.
+  const circle = await listRow(page, 'Pick the display typeface').locator('.taskpro-board__check').boundingBox();
+  eq(circle.width >= 22 && circle.height >= 22, true, 'the checkbox is at least 22 across');
+  const edge = await page.evaluate(({ x, y }) => !!document.elementFromPoint(x, y)?.closest('.taskpro-list__row .taskpro-board__check'), { x: circle.x + circle.width + 8, y: circle.y - 8 });
+  eq(edge, true, 'and answers a touch 8px outside it');
+  eq(await listRow(page, 'Pick the display typeface').locator('.taskpro-board__check').getAttribute('role'), 'checkbox', 'it is a checkbox to a screen reader');
+  // A tap on it ticks the task off, with an Undo that puts it back.
+  await page.tap('.taskpro-list__row:has-text("Pick the display typeface") .taskpro-board__check');
+  await page.waitForTimeout(100);
+  eq((await note(page, 'Projects/Website redesign.md')).includes('- [x] Pick the display typeface'), true, 'a tap on the circle ticks it off');
+  eq((await page.locator('.taskpro-snackbar__action').boundingBox()).height >= 44, true, 'with an Undo a finger can hit');
+  await page.tap('.taskpro-snackbar__action');
+  await page.waitForTimeout(150);
+  eq((await note(page, 'Projects/Website redesign.md')).includes('- [ ] Pick the display typeface'), true, 'Undo puts it back');
+  eq(await page.locator('.taskpro-snackbar:not(.is-leaving)').count(), 0, 'and the line goes');
+  await page.tap('.taskpro-list__row:has-text("Pick the display typeface") .taskpro-board__check');
+  await page.waitForTimeout(100);
+  await page.tap('.taskpro-snackbar__close');
+  eq(await page.locator('.taskpro-snackbar:not(.is-leaving)').count(), 0, 'and it can be put away');
   const dentist = await center(listRow(page, 'Dentist appointment').locator('.taskpro-list__content'));
   await page.gesture({ x: 320, y: dentist.y }, { x: 100, y: dentist.y });
   eq(await page.locator('.taskpro-menu.is-sheet .taskpro-menu__header').textContent(), 'Dentist appointment', 'the other way opens its sheet');
@@ -185,14 +262,93 @@ try {
   await page.tap('.taskpro-sheet-backdrop', { position: { x: 20, y: 20 } });
   await page.waitForTimeout(300);
 
-  // The + adds a task from a sheet.
+  // The + opens the quick-add sheet: one line of words, read as it is typed.
   await page.tap('.taskpro-board__fab');
-  await page.locator('.taskpro-add-sheet__input').fill('Call the plumber');
-  await page.tap('.taskpro-add-sheet__add');
-  await page.waitForTimeout(80);
-  eq((await note(page, 'Inbox.md')).trim(), '- [ ] Call the plumber', 'added from the sheet');
-  await page.tap('.taskpro-sheet-backdrop', { position: { x: 20, y: 20 } });
+  await page.waitForTimeout(150);
+  eq(await page.locator('.taskpro-qa[role="dialog"][aria-modal="true"]').count(), 1, 'the quick-add sheet is a dialog');
+  eq(await page.locator('.taskpro-qa').getAttribute('aria-labelledby'), 'taskpro-qa-title', 'named by its title');
+  eq(await page.evaluate(() => document.activeElement?.classList.contains('taskpro-qa__input')), true, 'the line has the keyboard');
+  const input = page.locator('.taskpro-qa__input');
+  const inputBox = await input.boundingBox();
+  eq(inputBox.height >= 48, true, 'a line a finger can hit');
+  eq(await input.evaluate((el) => parseFloat(getComputedStyle(el).fontSize) >= 16), true, 'at a size a phone does not zoom into');
+  eq((await page.locator('.taskpro-qa__read').textContent()).includes('Try:'), true, 'an example, until something is understood');
+
+  await input.fill('Call Sara tomorrow 9 #work !high');
+  eq(await page.locator('.taskpro-qa__chip-text').allTextContents(), ['Tomorrow, 09:00', 'High', 'Work'], 'what it understood: the plan, the priority, the tag');
+  eq(await page.locator('.taskpro-qa__read').getAttribute('aria-live'), 'polite', 'announced as it changes');
+  eq(await page.locator('.taskpro-qa__chip-x').first().getAttribute('aria-label'), 'Keep as words in the title: Tomorrow, 09:00', 'each reading can be kept as words, and says so');
+  const where = (await page.locator('.taskpro-qa__dest-name').textContent()).trim();
+  eq(where.startsWith('Goes to '), true, 'and says where the task goes');
+  eq(where.includes('Inbox'), false, 'a task with a day goes into that day, not the inbox');
+  await page.tap('.taskpro-qa__add');
+  await page.waitForTimeout(100);
+  const tomorrow = await page.evaluate(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    return d.toLocaleDateString('en-CA');
+  });
+  const written = await page.evaluate(() => {
+    for (const text of Object.values(window.__notes)) {
+      const line = text.split('\n').find((l) => l.includes('Call Sara'));
+      if (line) return line;
+    }
+    return null;
+  });
+  eq(written.startsWith('- [ ] Call Sara'), true, 'written with the title alone');
+  eq([written.includes('@priority(high)'), written.includes(`@schedule(${tomorrow} 09:00`), written.includes('work')], [true, true, true], 'with its priority, its day and hour, and its tag');
+  eq(await input.inputValue(), '', 'the line is cleared for the next');
+  eq(await page.locator('.taskpro-qa').count(), 1, 'and the sheet stays open');
+  eq((await page.locator('.taskpro-qa__status').textContent()).includes('Call Sara'), true, 'what was added is said');
+  eq(await page.evaluate(() => document.activeElement?.classList.contains('taskpro-qa__input')), true, 'and the keyboard stays');
+
+  // A reading the owner did not mean is kept as words.
+  await input.fill('Pay rent friday');
+  eq(await page.locator('.taskpro-qa__chip').count(), 1, 'a weekday is read as the plan');
+  await page.tap('.taskpro-qa__chip-x');
+  eq([await page.locator('.taskpro-qa__chip').count(), await input.inputValue()], [0, 'Pay rent friday'], 'leaving it as words keeps the line as it was');
+  await page.tap('.taskpro-qa__add');
+  await page.waitForTimeout(100);
+  eq((await note(page, 'Inbox.md')).trim().endsWith('- [ ] Pay rent friday'), true, 'and the task is only words, in the inbox');
+
+  // The buttons write into the line, so the line says everything.
+  await input.fill('Water the plants');
+  await page.tap('.taskpro-qa__tool:has-text("Tomorrow")');
+  eq(await input.inputValue(), 'Water the plants tomorrow', 'a day is written in');
+  eq(await page.locator('.taskpro-qa__tool:has-text("Tomorrow")').getAttribute('aria-pressed'), 'true', 'and the button shows it is on');
+  await page.tap('.taskpro-qa__tool:has-text("Today")');
+  eq(await input.inputValue(), 'Water the plants today', 'another day replaces it');
+  await page.tap('.taskpro-qa__chip-x');
+  eq(await input.inputValue(), 'Water the plants', 'a day a button wrote is taken out of the line altogether');
+  await page.tap('.taskpro-qa__tool:has-text("Priority")');
+  await page.tap('.taskpro-qa__tool:has-text("Highest")');
+  eq(await input.inputValue(), 'Water the plants !highest', 'a priority is written in');
+  eq(await page.locator('.taskpro-qa__tool:has-text("Today")').count(), 1, 'and back at the first buttons');
+  await page.tap('.taskpro-qa__tool:has-text("Tags")');
+  await page.tap('.taskpro-qa__tool:has-text("Home")');
+  eq((await input.inputValue()).endsWith('#home'), true, 'a tag is written in');
+  eq(await page.locator('.taskpro-qa__chip.is-tag').count(), 1, 'and read');
+  eq(await page.locator('.taskpro-qa__tool:has-text("Home")').getAttribute('aria-pressed'), 'true', 'tags stay on the page, so several can be picked');
+  await page.tap('.taskpro-qa__back');
+  await page.tap('.taskpro-qa__tool:has-text("Remind")');
+  await page.tap('.taskpro-qa__tool:has-text("In 1 hour")');
+  eq((await page.locator('.taskpro-qa__chip.is-remind .taskpro-qa__chip-text').textContent()).includes('16:00'), true, 'a reminder an hour on, from the clock of 15:00');
+
+  // A day from a month.
+  await input.fill('Book the dentist');
+  await page.tap('.taskpro-qa__tool:has-text("Date")');
+  eq(await page.locator('.taskpro-daypick [role="gridcell"]').count() >= 28, true, 'a month to pick from');
+  const cell = await page.locator('.taskpro-daypick__day:not(.is-outside)').nth(14).boundingBox();
+  eq(cell.height >= 44 && cell.width >= 44, true, 'days a finger can hit');
+  eq((await page.locator('.taskpro-daypick__day.is-today').getAttribute('aria-label')).length > 10, true, 'each day is named in full');
+  const pickedDay = await page.locator('.taskpro-daypick__day:not(.is-outside)').nth(14).getAttribute('data-day');
+  await page.tap('.taskpro-daypick__day:not(.is-outside) >> nth=14');
+  eq(await input.inputValue(), `Book the dentist ${pickedDay}`, 'the picked day is written in');
+  eq(await page.locator('.taskpro-qa__chip.is-plan').count(), 1, 'and read as the plan');
+  await page.tap('.taskpro-qa__close');
   await page.waitForTimeout(300);
+  eq(await page.locator('.taskpro-qa').count(), 0, 'the sheet has a way out of its own');
+  eq(await page.evaluate(() => document.activeElement?.classList.contains('taskpro-board__fab')), true, 'and the focus goes back to the +');
 
   // Filters as switches that stay open.
   await page.tap('.taskpro-board__bar-btn.is-filter');
@@ -206,6 +362,43 @@ try {
   eq(page.errors, [], 'no page errors in the list');
   await page.context().close();
 
+  // ── The bars: the top bar and the tab bar step aside, and the list never moves for it ──
+  page = await open();
+  eq(await page.locator('.taskpro-board.is-chrome-collapsible').count(), 1, 'the list lets its bars go');
+  const listHeight = () => page.locator('.taskpro-board__body').evaluate((el) => Math.round(el.getBoundingClientRect().height));
+  const heightBefore = await listHeight();
+  await page.locator('.taskpro-board__body').evaluate((el) => (el.scrollTop = 260));
+  await page.waitForTimeout(350);
+  eq(await page.locator('.taskpro-board.is-chrome-hidden').count(), 1, 'scrolled down, the bars go');
+  eq(await listHeight(), heightBefore, 'and the list is the size it was');
+  eq((await page.locator('.taskpro-tabbar').boundingBox()).y >= 844, true, 'the tab bar is below the screen');
+  eq((await page.locator('.taskpro-board__header').boundingBox()).y + (await page.locator('.taskpro-board__header').boundingBox()).height <= 1, true, 'the top bar is above it');
+  const stuck = await page.locator('.taskpro-list__group').first().boundingBox();
+  eq(stuck.y <= 0, true, 'a group title rises to the top while the bar is away');
+  await page.locator('.taskpro-board__body').evaluate((el) => (el.scrollTop = 180));
+  await page.waitForTimeout(350);
+  eq(await page.locator('.taskpro-board.is-chrome-hidden').count(), 0, 'a scroll back up brings them back');
+  await page.locator('.taskpro-board__body').evaluate((el) => (el.scrollTop = 0));
+  eq(await page.locator('.taskpro-tabbar').isVisible(), true, 'and at the top they are there');
+
+  // Each thing the bar on top does not carry is in the "more" sheet.
+  await page.tap('.taskpro-board__more');
+  eq(await page.locator('.taskpro-menu.is-sheet .taskpro-menu__header').textContent(), 'More options', 'the more sheet');
+  const moreItems = (await page.locator('.taskpro-menu__item').allTextContents()).map((t) => t.trim().replace(/\s+/g, ' '));
+  eq([moreItems[0].startsWith('Views'), moreItems.includes('Manage tags'), moreItems.includes('Rescan notes')], [true, true, true], 'its entries: the views, the tags, a refresh');
+  await page.tap('.taskpro-sheet-backdrop', { position: { x: 20, y: 20 } });
+  await page.waitForTimeout(300);
+
+  // Rows are light by default; the chips are one choice away.
+  eq(await page.locator('.taskpro-list__meta').count() > 0, true, 'a row has one calm line under its title');
+  await page.tap('.taskpro-board__properties');
+  await page.tap('.taskpro-menu__item:has-text("Row style")');
+  await page.tap('.taskpro-menu__item:has-text("Chips")');
+  await page.tap('.taskpro-sheet-backdrop', { position: { x: 20, y: 20 } });
+  await page.waitForTimeout(300);
+  eq([await page.locator('.taskpro-list__meta').count(), (await page.locator('.taskpro-list__props').count()) > 0], [0, true], 'chips for whoever wants them');
+  await page.context().close();
+
   // ── View options, the full table, and the board ────────────────────────
   page = await open();
   await page.tap('.taskpro-board__properties');
@@ -215,9 +408,9 @@ try {
   await page.waitForTimeout(300);
   eq(await page.locator('.taskpro-table').count(), 1, 'the full table, when asked for');
   eq(await page.locator('.taskpro-table th.taskpro-table__task').evaluate((el) => getComputedStyle(el).position), 'sticky', 'its title column stays in view');
-  await page.tap('.taskpro-board__bar-btn.is-layout');
-  await page.tap('.taskpro-menu__item:has-text("Board")');
+  await page.tap('.taskpro-tabbar__tab[data-layout="board"]');
   await page.waitForTimeout(150);
+  eq(await page.locator('.taskpro-tabbar__tab[aria-selected="true"]').getAttribute('data-layout'), 'board', 'the tab bar follows');
   eq(await page.locator('.taskpro-kanban-tabs__tab').count(), 4, 'a tab for each column');
   const column = await page.locator('.taskpro-kanban__column').first().boundingBox();
   eq(column.width > 300 && column.width < 360, true, 'a column fills most of the screen');
@@ -251,6 +444,42 @@ try {
   page = await open('&layout=calendar&cal=month');
   eq(await page.locator('.taskpro-cal__month.is-dots').count(), 1, 'the month as dots');
   eq(await page.locator('.taskpro-cal__day-list .taskpro-cal__agenda-item').count() > 0, true, "today's tasks listed below it");
+  // The + floats over the calendar: no band is kept free for it, the calendar runs down to the tab bar.
+  const calendarEnd = await page.locator('.taskpro-cal').evaluate((el) => el.getBoundingClientRect().bottom);
+  const barTop = await page.locator('.taskpro-tabbar').evaluate((el) => el.getBoundingClientRect().top);
+  eq(barTop - calendarEnd <= 16, true, 'the calendar fills the screen down to the tab bar');
+  // The bar is two lines: the period with its arrows, and the views.
+  const navBox = await page.locator('.taskpro-cal-nav.is-phone').boundingBox();
+  eq(navBox.height <= 110, true, 'the calendar bar takes two lines, not three');
+  eq(await page.locator('.taskpro-cal-nav__title').getAttribute('aria-live'), 'polite', 'the period is announced as it changes');
+  for (const selector of ['.taskpro-cal-nav__today', '.taskpro-cal-nav__free', '.taskpro-cal-nav__more', '.taskpro-cal-nav__top .taskpro-board__icon-btn']) {
+    const box = await page.locator(selector).first().boundingBox();
+    eq(box.width >= 40 && box.height >= 40, true, `${selector} fits a finger`);
+  }
+  const monthTitle = async () => plain(await page.locator('.taskpro-cal-nav__title').textContent());
+  const thisMonth = await monthTitle();
+  // A swipe across the month turns its page, and the arrows do the same.
+  await page.gesture({ x: 320, y: 420 }, { x: 60, y: 420 });
+  const nextMonth = await monthTitle();
+  eq(nextMonth !== thisMonth, true, 'a swipe toward the start turns to the next month');
+  await page.gesture({ x: 60, y: 420 }, { x: 320, y: 420 });
+  eq(await monthTitle(), thisMonth, 'and back');
+  await page.tap('.taskpro-cal-nav__top .taskpro-board__icon-btn >> nth=1');
+  eq((await monthTitle()) === nextMonth, true, 'the forward arrow, for anyone who does not swipe');
+  await page.tap('.taskpro-cal-nav__today');
+  eq(await monthTitle(), thisMonth, 'Today comes back');
+  // What the bar does not carry is in its sheet, whose switches stay open.
+  await page.tap('.taskpro-cal-nav__more');
+  eq(await page.locator('.taskpro-menu.is-sheet .taskpro-menu__header').textContent(), 'View options', 'the calendar’s sheet');
+  await page.tap('.taskpro-menu__item:has-text("Jalali")');
+  eq(await page.locator('.taskpro-menu').count(), 1, 'a switch leaves the sheet open');
+  await page.tap('.taskpro-sheet-backdrop', { position: { x: 20, y: 20 } });
+  await page.waitForTimeout(300);
+  eq((await monthTitle()) !== thisMonth, true, 'and the bar follows the calendar chosen');
+  await page.tap('.taskpro-cal-nav__more');
+  await page.tap('.taskpro-menu__item:has-text("Gregorian")');
+  await page.tap('.taskpro-sheet-backdrop', { position: { x: 20, y: 20 } });
+  await page.waitForTimeout(300);
   await page.tap('.taskpro-cal__cell[data-day] >> nth=10');
   await page.waitForTimeout(100);
   eq(await page.locator('.taskpro-cal__cell.is-selected').count(), 1, 'a tapped day is chosen');
@@ -318,6 +547,11 @@ try {
   page = await open('&layout=timeline&lang=fa');
   eq(await page.locator('.taskpro-tl__row').first().evaluate((el) => el.getBoundingClientRect().height), 44, 'rows a finger can hit');
   eq(await page.locator('.taskpro-tl__today').isVisible(), true, 'today in view');
+  eq(
+    await page.evaluate(() => document.querySelector('.taskpro-tabbar').getBoundingClientRect().top - document.querySelector('.taskpro-tl').getBoundingClientRect().bottom <= 16),
+    true,
+    'the timeline fills the screen down to the tab bar, the + floating over it'
+  );
   const bar = await center(page.locator('.taskpro-tl__row').filter({ has: page.locator('.taskpro-tl__title', { hasText: 'گزارش ماهانه' }) }).locator('.taskpro-tl__bar'));
   await page.gesture({ x: bar.x, y: bar.y }, { x: bar.x - 80, y: bar.y }, { hold: 600, steps: 10 });
   eq((await note(page, 'Planner/Focus.md')).split('\n').find((l) => l.includes('گزارش ماهانه')).includes('14:00-16:00'), true, 'a held bar moves, keeping its time');
@@ -329,13 +563,39 @@ try {
   // ── The list in Persian: the swipe is mirrored ─────────────────────────
   // A tap while the chart still glides only stops it, as on any phone.
   await page.waitForTimeout(1200);
-  await page.tap('.taskpro-board__bar-btn.is-layout');
-  await page.tap('.taskpro-menu__item:has-text("جدول")');
+  await page.tap('.taskpro-tabbar__tab[data-layout="table"]');
   await page.waitForTimeout(150);
   const faRow = await center(page.locator('.taskpro-list__row').filter({ has: page.locator('.taskpro-list__title', { hasText: 'خرید هفتگی' }) }).locator('.taskpro-list__content'));
   await page.gesture({ x: 330, y: faRow.y }, { x: 120, y: faRow.y });
   eq((await note(page, 'Life/Home.md')).startsWith('- [x] خرید هفتگی'), true, 'RTL: a swipe toward the left ticks it off');
   eq(page.errors, [], 'no page errors in Persian');
+  await page.context().close();
+  // ── Quick add, in Persian ──────────────────────────────────────────────
+  page = await open('&lang=fa');
+  await page.tap('.taskpro-board__fab');
+  await page.waitForTimeout(150);
+  await page.locator('.taskpro-qa__input').fill('خرید نان فردا ساعت ۹ #کار !بالا');
+  eq(await page.locator('.taskpro-qa__chip').count(), 3, 'RTL: the plan, the priority and the tag are read from Persian words');
+  eq(await page.locator('.taskpro-qa__chip.is-priority .taskpro-qa__chip-text').textContent(), 'زیاد', 'RTL: the priority, under the name the plugin gives it');
+  const firstTool = await page.locator('.taskpro-qa__tool').first().boundingBox();
+  const lastTool = await page.locator('.taskpro-qa__tool').last().boundingBox();
+  eq(firstTool.x > lastTool.x, true, 'RTL: the first button is on the right');
+  await page.tap('.taskpro-qa__add');
+  await page.waitForTimeout(100);
+  const faTomorrow = await page.evaluate(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    return d.toLocaleDateString('en-CA');
+  });
+  const faLine = await page.evaluate(() => {
+    for (const text of Object.values(window.__notes)) {
+      const line = text.split('\n').find((l) => l.includes('خرید نان') && l.includes('@schedule'));
+      if (line) return line;
+    }
+    return null;
+  });
+  eq(faLine !== null && faLine.includes('@priority(high)') && faLine.includes(`@schedule(${faTomorrow} 09:00`), true, 'RTL: written for tomorrow at nine, high priority');
+  eq(page.errors, [], 'no page errors adding in Persian');
   await page.context().close();
 } finally {
   await browser.close();

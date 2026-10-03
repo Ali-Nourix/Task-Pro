@@ -73,6 +73,8 @@ const now = { today: '2026-10-02', minutes: 15 * 60 };
 const parse = (text) => parseQuickAdd(text, now);
 eq(parse('Buy bread'), { title: 'Buy bread', tags: [] }, 'plain words are the title');
 eq(parse('Buy bread tomorrow 9'), { title: 'Buy bread', tags: [], plan: { date: '2026-10-03', start: '09:00' } }, 'a bare hour straight after a day ending the line is a time');
+eq(parse('Buy bread tomorrow 9 #home !high'), { title: 'Buy bread', tags: ['home'], priority: 'high', plan: { date: '2026-10-03', start: '09:00' } }, 'a tag or a priority after the hour ends the phrase too');
+eq(parse('تحویل فردا ساعت ۹ !زیاد').priority, 'high', 'the plugin’s own Persian name for high is read as well');
 eq(parse('Buy bread tomorrow 9 apples'), { title: 'Buy bread 9 apples', tags: [], plan: { date: '2026-10-03' } }, 'but not in the middle of the title');
 eq(parse('Buy bread tomorrow at 9'), { title: 'Buy bread', tags: [], plan: { date: '2026-10-03', start: '09:00' } }, '“at” makes it one');
 eq(parse('Buy bread tomorrow 9:30'), { title: 'Buy bread', tags: [], plan: { date: '2026-10-03', start: '09:30' } }, 'a clock with a colon is a time');

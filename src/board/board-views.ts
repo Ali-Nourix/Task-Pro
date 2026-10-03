@@ -43,6 +43,7 @@ export const VIEW_KEYS = [
   'timelineZoom',
   'timelineUndated',
   'compactTable',
+  'rowStyle',
 ] as const satisfies readonly (keyof BoardPreferences)[];
 
 type ViewKey = (typeof VIEW_KEYS)[number];

@@ -483,6 +483,16 @@ export class TaskProSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings();
         }));
 
+    new Setting(containerEl)
+      .setName('Two-Finger Swipe Opens the Task Board')
+      .setDesc('On a touch screen, put two fingers down together anywhere in Obsidian and pull them down to go straight to the task board.')
+      .addToggle(toggle => toggle
+        .setValue(this.plugin.settings.boardGesture)
+        .onChange(async (value) => {
+          this.plugin.settings.boardGesture = value;
+          await this.plugin.saveSettings();
+        }));
+
     this.renderSectionHeader(
       containerEl,
       'paintbrush',

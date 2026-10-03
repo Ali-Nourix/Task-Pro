@@ -52,6 +52,8 @@ export interface CalendarLabels {
   note: string;
   editTitle: string;
   viewOptions: string;
+  calendarSystem: string;
+  showOnCalendar: string;
   showDeadlines: string;
   showDailyNotes: string;
   showDone: string;
@@ -112,6 +114,8 @@ const EN: CalendarLabels = {
   note: 'Note',
   editTitle: 'Click to edit',
   viewOptions: 'View options',
+  calendarSystem: 'Calendar',
+  showOnCalendar: 'Show on the calendar',
   showDeadlines: 'Show deadlines',
   showDailyNotes: 'Show tasks from daily notes',
   showDone: 'Show done tasks',
@@ -172,6 +176,8 @@ const FA: CalendarLabels = {
   note: 'یادداشت',
   editTitle: 'برای ویرایش کلیک کنید',
   viewOptions: 'گزینه‌های نمایش',
+  calendarSystem: 'تقویم',
+  showOnCalendar: 'نمایش روی تقویم',
   showDeadlines: 'نمایش سررسیدها',
   showDailyNotes: 'نمایش تسک‌های یادداشت روزانه',
   showDone: 'نمایش تسک‌های انجام‌شده',
