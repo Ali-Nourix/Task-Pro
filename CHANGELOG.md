@@ -10,6 +10,20 @@
   scroll up, without the list changing size.
 - **A gesture to the task board from anywhere**: two fingers put down together and
   pulled straight down, from a note or any other view (a setting turns it off).
+  It acts **on release**: a pill follows the pull and says *Release to open the
+  Task Board*, a buzz tells you it is armed, and nothing changes until both
+  fingers are up. Two fingers on the list no longer tick or open the tasks under
+  them (a second finger cancels a row's swipe, its long press and a carried card).
+- **The back gesture goes back**: the board opens in your pane as a step of its
+  history, so the phone's back closes it and returns to the note; a sheet, menu or
+  quick-add field takes the first back and closes.
+- **Moving between the board's columns is steadier**: the finger moves the strip,
+  one column per swipe, with a buzz where it settles; each column keeps its own
+  scroll; a tap that ends a swipe is ignored; the strip no longer depends on
+  how a browser chains a sideways pan out of a column that scrolls up and down
+  (newer engines drop it).
+- **A swipe on a row can be taken back**: it buzzes once when it is far enough to
+  count, and dragging back before letting go cancels it.
 - **Quick add reads a line of words**: `call Sara tomorrow 9 #work !high` becomes
   a task for tomorrow at nine, tagged and urgent, with what was understood shown
   as chips under the field (each can be left as words). English and Persian;

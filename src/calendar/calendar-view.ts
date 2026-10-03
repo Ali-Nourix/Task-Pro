@@ -14,6 +14,7 @@
 
 import { Menu, setIcon } from 'obsidian';
 import { haptic } from '../ui/haptics';
+import { fingersDown } from '../ui/touch';
 import {
   BoardPreferences,
   CHIP_ICON_NAMES,
@@ -927,6 +928,11 @@ export class TaskCalendar {
     let at = 0;
     el.addEventListener('pointerdown', (event) => {
       if (event.pointerType !== 'touch') return;
+      // Two fingers are a gesture of their own (the pull to the board): not a swipe across the month.
+      if (!event.isPrimary || fingersDown() > 1) {
+        id = -1;
+        return;
+      }
       id = event.pointerId;
       x = event.clientX;
       y = event.clientY;

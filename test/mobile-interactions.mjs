@@ -45,15 +45,26 @@ async function open(query = '', hour = 15) {
   const touch = (type, x, y) =>
     cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x: Math.round(x), y: Math.round(y) }] });
   /** A finger from one point to another, optionally resting first. */
-  page.gesture = async (from, to, { hold = 0, steps = 12 } = {}) => {
+  page.gesture = async (from, to, { hold = 0, steps = 12, pause = 12 } = {}) => {
     await touch('touchStart', from.x, from.y);
     if (hold) await page.waitForTimeout(hold);
     for (let i = 1; i <= steps; i++) {
       await touch('touchMove', from.x + ((to.x - from.x) * i) / steps, from.y + ((to.y - from.y) * i) / steps);
-      await page.waitForTimeout(12);
+      await page.waitForTimeout(pause);
     }
     await touch('touchEnd');
     await page.waitForTimeout(120);
+  };
+  /** Two fingers, together, from one pair of points to another. */
+  page.twoFingers = async (from, to, { steps = 10 } = {}) => {
+    const points = (t) => from.map((p, i) => ({ x: Math.round(p.x + (to[i].x - p.x) * t), y: Math.round(p.y + (to[i].y - p.y) * t), id: i + 1 }));
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: points(0) });
+    for (let i = 1; i <= steps; i++) {
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: points(i / steps) });
+      await page.waitForTimeout(12);
+    }
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await page.waitForTimeout(150);
   };
   page.longPress = async (at, ms = 650) => {
     await touch('touchStart', at.x, at.y);
@@ -214,6 +225,32 @@ try {
   await page.gesture(grabber, { x: grabber.x, y: grabber.y + 220 }, { steps: 8 });
   eq(await page.locator('.taskpro-menu').count(), 0, 'dragged down, the sheet closes');
   await page.waitForTimeout(300);
+
+  // Two fingers are a gesture of their own: whatever is under them is left alone, until and after they lift.
+  const homeBefore = await note(page, 'Life/Home.md');
+  const rowY = (await center(listRow(page, 'Groceries').locator('.taskpro-list__content'))).y;
+  await page.twoFingers([{ x: 60, y: rowY }, { x: 90, y: rowY + 8 }], [{ x: 280, y: rowY }, { x: 310, y: rowY + 8 }]);
+  eq([await note(page, 'Life/Home.md') === homeBefore, await page.locator('.taskpro-menu').count(), await page.locator('.taskpro-snackbar').count()], [true, 0, 0], 'two fingers dragged across a row do not tick it or open it');
+  await page.twoFingers([{ x: 150, y: rowY }, { x: 250, y: rowY }], [{ x: 150, y: rowY + 300 }, { x: 250, y: rowY + 300 }]);
+  eq([await note(page, 'Life/Home.md') === homeBefore, await page.locator('.taskpro-menu').count(), await page.locator('.taskpro-board.is-chrome-hidden').count()], [true, 0, 0], 'nor two fingers pulled down over the list');
+  eq(await page.locator('.taskpro-list__row.is-swiping, .taskpro-list__row.is-armed').count(), 0, 'and no row is left half way');
+  // The phone's back button closes what is open, sheet by sheet, before it leaves the page.
+  await page.tap('.taskpro-list__row:has-text("Groceries") .taskpro-list__title');
+  eq(await page.locator('.taskpro-menu.is-sheet').count(), 1, 'a sheet is open');
+  eq(await page.evaluate(() => window.__pressBack()), true, 'the back button has something to close');
+  await page.waitForTimeout(300);
+  eq([await page.locator('.taskpro-menu').count(), await page.locator('[inert]').count()], [0, 0], 'back closes the sheet, and the board is live again');
+  eq(await page.evaluate(() => window.__pressBack()), false, 'with nothing open, back is left to the phone: it goes on to the previous page');
+  await page.tap('.taskpro-board__fab');
+  await page.waitForTimeout(150);
+  await page.evaluate(() => window.__pressBack());
+  await page.waitForTimeout(300);
+  eq(await page.locator('.taskpro-qa').count(), 0, 'back closes quick add too');
+  await page.tap('.taskpro-board__fab');
+  await page.waitForTimeout(150);
+  await page.tap('.taskpro-qa__close');
+  await page.waitForTimeout(300);
+  eq(await page.evaluate(() => window.__pressBack()), false, 'a sheet closed another way leaves nothing behind for back to close');
 
   // Swipe toward the trailing side to tick a task off, the other way for its sheet.
   const groceries = await center(listRow(page, 'Groceries').locator('.taskpro-list__content'));
@@ -427,7 +464,7 @@ try {
   // A quick swipe across a card scrolls the board instead. A finger that rests 420ms is a hold, so on a
   // machine too busy to deliver the first move in time the swipe is tried once more, from a quiet page.
   eq(await page.locator('.taskpro-menu').count(), 0, 'carrying a card does not open its menu too');
-  const scrollLeft = () => page.locator('.taskpro-board__body').evaluate((el) => el.scrollLeft);
+  const scrollLeft = () => page.locator('.taskpro-kanban').evaluate((el) => el.scrollLeft);
   let swiped = false;
   for (let attempt = 0; attempt < 2 && !swiped; attempt++) {
     await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
@@ -438,6 +475,81 @@ try {
   }
   eq(swiped, true, 'a swipe scrolls between columns');
   eq(page.errors, [], 'no page errors on the board');
+  await page.context().close();
+
+  // ── The board: a column to a screen, each scrolling by itself ──────────
+  page = await open('&layout=board');
+  const strip = () =>
+    page.evaluate(() => {
+      const el = document.querySelector('.taskpro-kanban');
+      const columns = [...document.querySelectorAll('.taskpro-kanban__column')];
+      return { left: Math.round(el.scrollLeft), tops: columns.map((c) => Math.round(c.scrollTop)), active: document.querySelector('.taskpro-kanban-tabs__tab.is-active')?.dataset.group, width: columns[0].getBoundingClientRect().width };
+    });
+  eq(await page.locator('.taskpro-board__body').evaluate((el) => el.scrollHeight <= el.clientHeight + 1), true, 'the board page itself does not scroll up and down');
+  const heights = await page.locator('.taskpro-kanban__column').evaluateAll((els) => els.map((el) => Math.round(el.getBoundingClientRect().height)));
+  eq(new Set(heights).size, 1, 'the columns are as tall as the screen allows, all alike');
+  await page.gesture({ x: 200, y: 700 }, { x: 200, y: 200 }, { steps: 12 });
+  await page.waitForTimeout(300);
+  const scrolledFirst = await strip();
+  eq(scrolledFirst.tops[0] > 0 && scrolledFirst.tops[1] === 0, true, 'a column scrolls by itself');
+  const columnWidth = scrolledFirst.width;
+  await page.gesture({ x: 330, y: 500 }, { x: 60, y: 500 }, { steps: 5 });
+  await page.waitForTimeout(500);
+  const next = await strip();
+  eq(Math.abs(next.left - (columnWidth + 12)) < 30, true, 'a quick flick moves one column and no further');
+  eq(next.tops[1], 0, 'the next column is at its top, not where the last one was left');
+  eq(next.active, '[/]', 'and its tab is the marked one');
+  await page.gesture({ x: 60, y: 500 }, { x: 330, y: 500 }, { steps: 5 });
+  await page.waitForTimeout(500);
+  const back = await strip();
+  eq(back.left, 0, 'a flick back returns to the first');
+  eq(back.tops[0], scrolledFirst.tops[0], 'where it was left, as it was');
+  const titleBox = await page.locator('.taskpro-kanban__column').first().locator('.taskpro-kanban__header').boundingBox();
+  const firstColumn = await page.locator('.taskpro-kanban__column').first().boundingBox();
+  eq(titleBox.y - firstColumn.y < 12, true, 'a column keeps its title at its top while it scrolls');
+
+  // The strip is moved by the finger itself, one column at a time, and settles where the swipe pointed.
+  await page.evaluate(() => document.querySelectorAll('.taskpro-kanban__column').forEach((c) => (c.scrollTop = 0)));
+  await page.gesture({ x: 300, y: 520 }, { x: 250, y: 520 }, { steps: 5, pause: 50 });
+  await page.waitForTimeout(600);
+  eq((await strip()).left, 0, 'a short, slow drag lets go of nothing: the column comes back');
+  eq(await page.locator('.taskpro-menu').count(), 0, 'and it is not a tap on the card under the finger');
+  await page.gesture({ x: 340, y: 520 }, { x: 190, y: 520 }, { steps: 15, pause: 50 });
+  await page.waitForTimeout(600);
+  const slow = await strip();
+  eq(Math.abs(slow.left - (columnWidth + 12)) < 30 && slow.active === '[/]', true, 'a slow drag past a fifth of the screen turns one column');
+  await page.gesture({ x: 340, y: 520 }, { x: 20, y: 520 }, { steps: 30, pause: 30 });
+  await page.waitForTimeout(600);
+  const long = await strip();
+  eq(Math.abs(long.left - 2 * (columnWidth + 12)) < 40 && long.active === '[!]', true, 'a long drag still stops at the next column, never past it');
+  await page.gesture({ x: 200, y: 600 }, { x: 150, y: 200 }, { steps: 12 });
+  await page.waitForTimeout(500);
+  const upward = await strip();
+  eq(upward.left, long.left, 'a stroke that is mostly up and down leaves the strip where it is');
+  eq(upward.tops[2] >= 0, true, 'and scrolls the column');
+  await page.gesture({ x: 60, y: 500 }, { x: 330, y: 500 }, { steps: 5 });
+  await page.gesture({ x: 60, y: 500 }, { x: 330, y: 500 }, { steps: 5 });
+  await page.waitForTimeout(600);
+  eq((await strip()).left, 0, 'two flicks back, the first column');
+  // A second finger takes the touch away from the strip: it comes to rest on a column.
+  await page.twoFingers([{ x: 300, y: 500 }, { x: 340, y: 500 }], [{ x: 200, y: 500 }, { x: 240, y: 500 }]);
+  await page.waitForTimeout(600);
+  const rested = await strip();
+  eq(rested.left === 0 || Math.abs(rested.left - (columnWidth + 12)) < 30, true, 'two fingers do not leave the strip between two columns');
+  eq(page.errors, [], 'no page errors on the board');
+  await page.context().close();
+
+  // The same in Persian, where the columns run from the right.
+  page = await open('&layout=board&lang=fa');
+  const stripFa = () => page.evaluate(() => ({ left: Math.round(document.querySelector('.taskpro-kanban').scrollLeft), active: document.querySelector('.taskpro-kanban-tabs__tab.is-active')?.dataset.group }));
+  await page.gesture({ x: 60, y: 500 }, { x: 330, y: 500 }, { steps: 5 });
+  await page.waitForTimeout(600);
+  const faNext = await stripFa();
+  eq(faNext.left < -200 && faNext.active === '[/]', true, 'in Persian a swipe to the right turns to the next column');
+  await page.gesture({ x: 330, y: 500 }, { x: 60, y: 500 }, { steps: 5 });
+  await page.waitForTimeout(600);
+  eq((await stripFa()).left, 0, 'and a swipe to the left comes back');
+  eq(page.errors, [], 'no page errors on the Persian board');
   await page.context().close();
 
   // ── The calendar ───────────────────────────────────────────────────────

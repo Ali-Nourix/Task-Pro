@@ -52,18 +52,31 @@ export function onContextPress(el: HTMLElement, open: (at: { x: number; y: numbe
       open({ x, y });
     }, HOLD_MS);
     const onMove = (e: PointerEvent) => {
-      if (Math.hypot(e.clientX - x, e.clientY - y) > SLOP) cleanup();
+      if (Math.hypot(e.clientX - x, e.clientY - y) > SLOP || fingers > 1) cleanup();
     };
     const cleanup = () => {
       window.clearTimeout(timer);
       doc.removeEventListener('pointermove', onMove, true);
       doc.removeEventListener('pointerup', cleanup, true);
       doc.removeEventListener('pointercancel', cleanup, true);
+      doc.removeEventListener('pointerdown', second, true);
+    };
+    // A second finger is not a long press.
+    const second = (e: PointerEvent) => {
+      if (!e.isPrimary) cleanup();
     };
     doc.addEventListener('pointermove', onMove, true);
     doc.addEventListener('pointerup', cleanup, true);
     doc.addEventListener('pointercancel', cleanup, true);
+    doc.addEventListener('pointerdown', second, true);
   });
+}
+
+/** How many fingers are on the screen. Two fingers are a gesture of their own, and what a finger is doing alone stops. */
+let fingers = 0;
+
+export function fingersDown(): number {
+  return fingers;
 }
 
 /** How many things a finger is carrying: while there is one, the page does not scroll under it. */
@@ -81,6 +94,12 @@ const ready = new WeakSet<Document>();
 export function readyToCarry(doc: Document): void {
   if (ready.has(doc)) return;
   ready.add(doc);
+  const count = (event: TouchEvent) => {
+    fingers = event.touches.length;
+  };
+  doc.addEventListener('touchstart', count, { capture: true, passive: true });
+  doc.addEventListener('touchend', count, { capture: true, passive: true });
+  doc.addEventListener('touchcancel', () => (fingers = 0), { capture: true, passive: true });
   doc.addEventListener(
     'touchmove',
     (event) => {
@@ -139,15 +158,21 @@ export function holdToDrag(event: PointerEvent, start: () => void): void {
     start();
   }, HOLD_MS);
   const onMove = (e: PointerEvent) => {
-    if (Math.hypot(e.clientX - x, e.clientY - y) > SLOP) cleanup();
+    if (Math.hypot(e.clientX - x, e.clientY - y) > SLOP || fingers > 1) cleanup();
   };
   const cleanup = () => {
     window.clearTimeout(timer);
     doc.removeEventListener('pointermove', onMove, true);
     doc.removeEventListener('pointerup', cleanup, true);
     doc.removeEventListener('pointercancel', cleanup, true);
+    doc.removeEventListener('pointerdown', second, true);
+  };
+  // A second finger is not a pick-up.
+  const second = (e: PointerEvent) => {
+    if (!e.isPrimary) cleanup();
   };
   doc.addEventListener('pointermove', onMove, true);
   doc.addEventListener('pointerup', cleanup, true);
   doc.addEventListener('pointercancel', cleanup, true);
+  doc.addEventListener('pointerdown', second, true);
 }
