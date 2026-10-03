@@ -2758,9 +2758,9 @@ button.taskpro-chip:focus-visible {
   display: inline-block;
   flex: 0 0 auto;
   box-sizing: border-box;
-  width: 16px;
-  min-width: 16px;
-  height: 16px;
+  width: var(--taskpro-check-size, 16px);
+  min-width: var(--taskpro-check-size, 16px);
+  height: var(--taskpro-check-size, 16px);
   min-height: 0;
   margin: 0;
   padding: 0;
@@ -6556,9 +6556,93 @@ button.taskpro-chip:focus-visible {
   background: var(--taskpro-board-surface);
 }
 
+/* A task's sheet on a phone: the days it is most often moved to, in a row
+   under its name, and Done as a large button at the foot that stays in view
+   while the rows scroll. Both are the sheet's first page only. */
+.taskpro-board .taskpro-menu__chips,
+.taskpro-board .taskpro-menu__footer {
+  display: none;
+}
+.taskpro-board .taskpro-menu.is-sheet:not(.is-paged) .taskpro-menu__chips {
+  display: flex;
+  flex: 0 0 auto;
+  gap: var(--taskpro-space-4);
+  padding: var(--taskpro-space-3) var(--taskpro-space-6) var(--taskpro-space-5);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.taskpro-board .taskpro-menu__chips::-webkit-scrollbar {
+  display: none;
+}
+.taskpro-board button.taskpro-menu__chip {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--taskpro-space-3);
+  height: 44px;
+  padding: 0 var(--taskpro-space-7);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 22px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-medium);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.taskpro-board button.taskpro-menu__chip.is-active {
+  border-color: color-mix(in srgb, var(--interactive-accent) 55%, transparent);
+  background: color-mix(in srgb, var(--interactive-accent) 14%, transparent);
+  color: var(--text-accent);
+}
+.taskpro-board button.taskpro-menu__chip:active {
+  background: var(--background-modifier-hover);
+}
+.taskpro-board .taskpro-menu__chip-icon,
+.taskpro-board .taskpro-menu__primary-icon {
+  display: inline-flex;
+}
+.taskpro-board .taskpro-menu__chip-icon .svg-icon {
+  width: 16px;
+  height: 16px;
+}
+.taskpro-board .taskpro-menu.is-sheet:not(.is-paged) .taskpro-menu__footer {
+  display: block;
+  flex: 0 0 auto;
+  padding: var(--taskpro-space-5) var(--taskpro-space-2) 0;
+  border-top: 1px solid var(--background-modifier-border);
+}
+.taskpro-board button.taskpro-menu__primary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--taskpro-space-4);
+  width: 100%;
+  height: 52px;
+  padding: 0 var(--taskpro-space-8);
+  border-radius: 26px;
+  font-size: var(--font-ui-medium);
+  font-weight: var(--font-semibold);
+}
+.taskpro-board .taskpro-menu__primary-icon .svg-icon {
+  width: 20px;
+  height: 20px;
+}
+.taskpro-board button.taskpro-menu__chip:focus-visible,
+.taskpro-board button.taskpro-menu__primary:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+}
+.taskpro-board .taskpro-day-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: var(--taskpro-space-4);
+}
+
 /* A menu as a sheet: rows a finger can hit, and a submenu as the next page. */
 .taskpro-board .taskpro-menu.is-sheet .taskpro-menu__header {
-  padding: var(--taskpro-space-1) var(--taskpro-space-6) var(--taskpro-space-4);
+  padding: var(--taskpro-space-1) var(--taskpro-space-6) var(--taskpro-space-5);
   color: var(--text-normal);
   font-size: var(--font-ui-medium);
   font-weight: var(--font-semibold);
@@ -6651,23 +6735,35 @@ button.taskpro-chip:focus-visible {
   gap: var(--taskpro-space-5);
   padding: var(--taskpro-space-6) var(--taskpro-board-gutter) var(--taskpro-space-4);
 }
+/* The title and the buttons share a row; what the list adds up to has the
+   whole width under them, so a longer language never cuts it short. */
 .taskpro-board .taskpro-board__header.is-compact .taskpro-board__heading {
+  display: grid;
+  grid-template-areas: 'title actions' 'summary summary';
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
+  row-gap: 0;
 }
 .taskpro-board .taskpro-board__titles {
-  display: flex;
-  flex: 1 1 auto;
-  flex-direction: column;
-  min-width: 0;
+  display: contents;
 }
 .taskpro-board .taskpro-board__header.is-compact .taskpro-board__title-text {
+  grid-area: title;
+  min-width: 0;
   font-size: 1.35em;
 }
 .taskpro-board .taskpro-board__header.is-compact .taskpro-board__summary {
+  grid-area: summary;
+  min-width: 0;
+  margin-top: -2px;
   overflow: hidden;
+  color: var(--text-muted);
   font-size: var(--font-ui-smaller);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.taskpro-board .taskpro-board__header.is-compact .taskpro-board__heading-actions {
+  grid-area: actions;
 }
 .taskpro-board .taskpro-board__header.is-compact .taskpro-board__heading-actions {
   gap: var(--taskpro-space-1);
@@ -6774,7 +6870,7 @@ button.taskpro-chip:focus-visible {
    stretched a task's circle into an oval and a day's number into a pill.
    The sizes that must hold are said again here, at a weight that wins. */
 body.is-mobile .taskpro-board.taskpro-board button.taskpro-board__check {
-  height: 16px;
+  height: var(--taskpro-check-size, 16px);
 }
 body.is-mobile .taskpro-board.taskpro-board button.taskpro-board__check.taskpro-cal__check {
   height: 13px;
@@ -6790,15 +6886,143 @@ body.is-mobile .taskpro-board.taskpro-board button.taskpro-tl__undated-toggle {
   height: auto;
 }
 
+/* ── The tab bar along the foot, and bars that step aside ─────────────── */
+.taskpro-board {
+  --taskpro-tabbar-h: 0px;
+}
+.taskpro-board.is-compact {
+  --taskpro-tabbar-h: 58px;
+}
+.taskpro-board .taskpro-tabbar {
+  display: none;
+}
+.taskpro-board.is-compact .taskpro-tabbar {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: 25;
+  display: block;
+  padding-bottom: var(--taskpro-bottom-inset);
+  border-top: 1px solid var(--background-modifier-border);
+  background: var(--taskpro-board-surface, var(--background-primary));
+  transition: transform var(--taskpro-base, 200ms) var(--taskpro-ease, ease);
+}
+.taskpro-board .taskpro-tabbar__list {
+  display: flex;
+  align-items: stretch;
+  height: var(--taskpro-tabbar-h);
+}
+.taskpro-board button.taskpro-tabbar__tab {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-width: 0;
+  height: 100%;
+  padding: 6px 4px 4px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-medium);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.taskpro-board .taskpro-tabbar__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 28px;
+  border-radius: 14px;
+  transition: background-color var(--taskpro-fast, 120ms) var(--taskpro-ease, ease);
+}
+.taskpro-board .taskpro-tabbar__icon .svg-icon {
+  width: 22px;
+  height: 22px;
+}
+.taskpro-board button.taskpro-tabbar__tab.is-active {
+  color: var(--text-accent);
+}
+.taskpro-board button.taskpro-tabbar__tab.is-active .taskpro-tabbar__icon {
+  background: color-mix(in srgb, var(--interactive-accent) 18%, transparent);
+}
+.taskpro-board button.taskpro-tabbar__tab.is-active .taskpro-tabbar__label {
+  font-weight: var(--font-semibold);
+}
+.taskpro-board button.taskpro-tabbar__tab:active .taskpro-tabbar__icon {
+  background: var(--background-modifier-hover);
+}
+.taskpro-board button.taskpro-tabbar__tab:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: -3px;
+}
+.taskpro-board .taskpro-tabbar__label {
+  max-width: 100%;
+  overflow: hidden;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The bars give way while a list is scrolled down. The bar on top floats over
+   the list instead of sitting above it, so the list never changes size, and
+   nothing under a finger jumps when the bar goes. The list begins below it
+   (the padding), keeps what it scrolls to clear of it, and its group titles
+   stick just under it while it shows and at the top once it has gone. */
+.taskpro-board.is-chrome-collapsible {
+  --taskpro-head-shown: var(--taskpro-head-h, 64px);
+}
+.taskpro-board.is-chrome-collapsible.is-chrome-hidden {
+  --taskpro-head-shown: 0px;
+}
+.taskpro-board.is-chrome-collapsible .taskpro-board__header.is-compact {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline: 0;
+  z-index: 24;
+  background: var(--taskpro-board-surface);
+  transition: transform var(--taskpro-base, 200ms) var(--taskpro-ease, ease);
+}
+.taskpro-board.is-chrome-collapsible .taskpro-board__body {
+  padding-top: var(--taskpro-head-h, 64px);
+  scroll-padding-block: var(--taskpro-head-shown) calc(var(--taskpro-tabbar-h) + var(--taskpro-bottom-inset));
+}
+/* A sticky box measures from inside the scroller's padding, so with the bar
+   shown it sticks where it already is, and once the bar has gone it rises by
+   the bar's height to the top. */
+.taskpro-board.is-chrome-collapsible button.taskpro-list__group {
+  top: calc(var(--taskpro-head-shown) - var(--taskpro-head-h, 64px) - 6px);
+}
+.taskpro-board.is-chrome-collapsible.is-chrome-hidden .taskpro-board__header.is-compact {
+  transform: translateY(-100%);
+}
+.taskpro-board.is-compact.is-chrome-hidden .taskpro-tabbar {
+  transform: translateY(100%);
+}
+.taskpro-board.is-compact.has-selection .taskpro-tabbar {
+  display: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .taskpro-board .taskpro-tabbar,
+  .taskpro-board.is-chrome-collapsible .taskpro-board__header.is-compact {
+    transition: none;
+  }
+}
+
 /* ── New task: a round button, and its sheet ───────────────────────────── */
 .taskpro-board .taskpro-board__fab {
   display: none;
 }
 .taskpro-board.is-compact button.taskpro-board__fab {
   position: absolute;
-  bottom: calc(18px + var(--taskpro-bottom-inset));
-  inset-inline-end: 18px;
+  bottom: calc(14px + var(--taskpro-tabbar-h) + var(--taskpro-bottom-inset));
+  inset-inline-end: 16px;
   z-index: 20;
+  transition: bottom var(--taskpro-base, 200ms) var(--taskpro-ease, ease);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -6821,36 +7045,319 @@ body.is-mobile .taskpro-board.taskpro-board button.taskpro-tl__undated-toggle {
   stroke-width: 2.2;
 }
 .taskpro-board.is-compact .taskpro-board__body {
-  padding-bottom: calc(96px + var(--taskpro-bottom-inset));
+  padding-bottom: calc(96px + var(--taskpro-tabbar-h) + var(--taskpro-bottom-inset));
 }
-.taskpro-board .taskpro-add-sheet {
-  gap: var(--taskpro-space-6);
+/* The calendar and the timeline fill the screen down to the tab bar, and the
+   + floats over them: it reserves no band of its own. What scrolls inside
+   them has room at its end, so its last rows can be lifted clear of the +. */
+.taskpro-board.is-compact .taskpro-board__body.is-calendar,
+.taskpro-board.is-compact .taskpro-board__body.is-timeline {
+  padding-bottom: calc(var(--taskpro-tabbar-h) + var(--taskpro-bottom-inset) + var(--taskpro-space-3));
 }
-.taskpro-board .taskpro-add-sheet__title {
+.taskpro-board.is-compact .taskpro-cal--month.is-compact-month,
+.taskpro-board.is-compact .taskpro-cal--agenda,
+.taskpro-board.is-compact .taskpro-cal__scroller,
+.taskpro-board.is-compact .taskpro-tl {
+  padding-bottom: 84px;
+}
+.taskpro-board.is-compact .taskpro-tl__corner {
+  padding-inline: var(--taskpro-space-7);
+}
+.taskpro-board.is-compact .taskpro-tl__cell {
+  padding-inline-start: calc(var(--taskpro-space-7) + var(--depth, 0) * 18px);
+}
+.taskpro-board.is-compact.is-chrome-hidden button.taskpro-board__fab {
+  bottom: calc(18px + var(--taskpro-bottom-inset));
+}
+.taskpro-board.is-compact.has-selection button.taskpro-board__fab {
+  display: none;
+}
+/* ── A line at the foot that says what happened, and takes it back ─────── */
+.taskpro-board .taskpro-live {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.taskpro-board .taskpro-snackbar {
+  position: absolute;
+  inset-inline: var(--taskpro-space-6);
+  bottom: calc(var(--taskpro-tabbar-h) + var(--taskpro-bottom-inset) + var(--taskpro-space-6));
+  z-index: 26;
+  display: flex;
+  align-items: center;
+  gap: var(--taskpro-space-2);
+  min-height: 52px;
+  padding-inline: var(--taskpro-space-7) var(--taskpro-space-2);
+  border-radius: 14px;
+  background: var(--background-primary-alt, var(--taskpro-board-surface));
+  box-shadow: 0 0 0 1px var(--taskpro-panel-edge), 0 10px 30px -8px color-mix(in srgb, var(--taskpro-shadow-ink) 55%, transparent);
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  animation: taskpro-snack-in var(--taskpro-base) var(--taskpro-ease);
+}
+.taskpro-board .taskpro-snackbar.is-leaving {
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity var(--taskpro-fast) var(--taskpro-ease), transform var(--taskpro-fast) var(--taskpro-ease);
+}
+@keyframes taskpro-snack-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+.taskpro-board .taskpro-snackbar__text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.taskpro-board button.taskpro-snackbar__action,
+.taskpro-board button.taskpro-snackbar__close {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  height: 44px;
+  padding: 0 var(--taskpro-space-6);
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-accent);
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-semibold);
+  cursor: pointer;
+}
+.taskpro-board button.taskpro-snackbar__close {
+  padding: 0;
+  color: var(--text-muted);
+}
+.taskpro-board button.taskpro-snackbar__action:active,
+.taskpro-board button.taskpro-snackbar__close:active {
+  background: var(--background-modifier-hover);
+}
+.taskpro-board button.taskpro-snackbar__action:focus-visible,
+.taskpro-board button.taskpro-snackbar__close:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: -2px;
+}
+/* The + steps up while the line is there, so neither covers the other. */
+.taskpro-board.is-compact.has-snackbar button.taskpro-board__fab {
+  bottom: calc(14px + 52px + var(--taskpro-space-6) + var(--taskpro-space-4) + var(--taskpro-tabbar-h) + var(--taskpro-bottom-inset));
+}
+@media (prefers-reduced-motion: reduce) {
+  .taskpro-board .taskpro-snackbar {
+    animation: none;
+  }
+  .taskpro-board .taskpro-snackbar.is-leaving {
+    transition: none;
+  }
+}
+
+/* ── Quick add: one line of words, and what was understood ─────────────── */
+.taskpro-board .taskpro-qa {
+  display: flex;
+  flex-direction: column;
+  gap: var(--taskpro-space-5);
+}
+.taskpro-board .taskpro-qa__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 44px;
+}
+.taskpro-board .taskpro-qa__title {
+  margin: 0;
   font-size: var(--font-ui-medium);
   font-weight: var(--font-semibold);
 }
-.taskpro-board input.taskpro-add-sheet__input {
-  width: 100%;
-  height: 46px;
-  padding: 0 var(--taskpro-space-6);
+.taskpro-board button.taskpro-qa__close,
+.taskpro-board button.taskpro-qa__back,
+.taskpro-board button.taskpro-daypick__arrow {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
   border-radius: var(--taskpro-radius-touch);
-  font-size: 16px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+  cursor: pointer;
 }
-.taskpro-board .taskpro-add-sheet__row {
+.taskpro-board button.taskpro-qa__close:active,
+.taskpro-board button.taskpro-qa__back:active,
+.taskpro-board button.taskpro-daypick__arrow:active {
+  background: var(--background-modifier-hover);
+}
+.taskpro-board input.taskpro-qa__input {
+  width: 100%;
+  height: 52px;
+  padding: 0 var(--taskpro-space-7);
+  border: 0;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--text-normal) 6%, transparent);
+  box-shadow: none;
+  font-size: 18px;
+}
+.taskpro-board input.taskpro-qa__input:focus {
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--interactive-accent) 70%, transparent);
+}
+.taskpro-board .taskpro-qa__read {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--taskpro-space-3);
+  align-items: center;
+  min-height: 36px;
+}
+.taskpro-board .taskpro-qa__read-hint {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+.taskpro-board .taskpro-qa__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--taskpro-space-3);
+  max-width: 100%;
+  height: 36px;
+  padding-inline-start: var(--taskpro-space-6);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--interactive-accent) 14%, transparent);
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+}
+.taskpro-board .taskpro-qa__chip.is-tag {
+  background: color-mix(in srgb, var(--text-normal) 8%, transparent);
+}
+.taskpro-board .taskpro-qa__chip.is-due,
+.taskpro-board .taskpro-qa__chip.is-remind {
+  background: color-mix(in srgb, var(--color-orange, #e08a2c) 16%, transparent);
+}
+.taskpro-board .taskpro-qa__chip.is-priority {
+  background: color-mix(in srgb, var(--color-red, #e03e3e) 14%, transparent);
+}
+.taskpro-board .taskpro-qa__chip-icon,
+.taskpro-board .taskpro-qa__tool-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+.taskpro-board .taskpro-qa__chip-icon .svg-icon,
+.taskpro-board .taskpro-qa__tool-icon .svg-icon {
+  width: 16px;
+  height: 16px;
+}
+.taskpro-board .taskpro-qa__chip-dot {
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--taskpro-dot, var(--text-muted));
+}
+.taskpro-board .taskpro-qa__chip-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.taskpro-board button.taskpro-qa__chip-x {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.taskpro-board button.taskpro-qa__chip-x .svg-icon {
+  width: 14px;
+  height: 14px;
+}
+.taskpro-board .taskpro-qa__tools {
+  display: flex;
+  align-items: center;
+  gap: var(--taskpro-space-4);
+  padding-block: 2px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.taskpro-board .taskpro-qa__tools::-webkit-scrollbar {
+  display: none;
+}
+.taskpro-board .taskpro-qa__tools.is-wrap {
+  flex-wrap: wrap;
+  overflow: visible;
+}
+.taskpro-board .taskpro-qa__tools.is-sub {
+  margin-top: calc(-1 * var(--taskpro-space-2));
+}
+.taskpro-board button.taskpro-qa__tool {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--taskpro-space-3);
+  height: 44px;
+  padding: 0 var(--taskpro-space-7);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 22px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-medium);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.taskpro-board button.taskpro-qa__tool:active {
+  background: var(--background-modifier-hover);
+}
+.taskpro-board button.taskpro-qa__tool.is-active {
+  border-color: color-mix(in srgb, var(--interactive-accent) 55%, transparent);
+  background: color-mix(in srgb, var(--interactive-accent) 14%, transparent);
+  color: var(--text-accent);
+}
+.taskpro-board .taskpro-qa__none {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+.taskpro-board .taskpro-qa__status {
+  min-height: 18px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+.taskpro-board .taskpro-qa__status.is-error {
+  color: var(--text-error, var(--color-red));
+}
+.taskpro-board .taskpro-qa__foot {
   display: flex;
   align-items: center;
   gap: var(--taskpro-space-4);
 }
-.taskpro-board button.taskpro-add-sheet__target {
+.taskpro-board button.taskpro-qa__dest {
   display: inline-flex;
   flex: 1 1 auto;
   align-items: center;
   gap: var(--taskpro-space-3);
   min-width: 0;
-  height: 40px;
+  height: 48px;
   padding: 0 var(--taskpro-space-6);
-  border: 1px solid var(--background-modifier-border);
+  border: 0;
   border-radius: var(--taskpro-radius-touch);
   background: transparent;
   box-shadow: none;
@@ -6858,21 +7365,93 @@ body.is-mobile .taskpro-board.taskpro-board button.taskpro-tl__undated-toggle {
   font-size: var(--font-ui-small);
   cursor: pointer;
 }
-.taskpro-board .taskpro-add-sheet__target-icon {
+.taskpro-board button.taskpro-qa__dest.is-fixed {
+  cursor: default;
+}
+.taskpro-board .taskpro-qa__dest-icon {
   display: inline-flex;
   flex: 0 0 auto;
 }
-.taskpro-board .taskpro-add-sheet__target-name {
+.taskpro-board .taskpro-qa__dest-name {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.taskpro-board button.taskpro-add-sheet__add {
+.taskpro-board button.taskpro-qa__add {
   flex: 0 0 auto;
-  height: 40px;
-  padding: 0 20px;
+  min-width: 104px;
+  height: 48px;
+  padding: 0 var(--taskpro-space-8);
+  border-radius: 24px;
+  font-size: var(--font-ui-medium);
+  font-weight: var(--font-semibold);
+}
+.taskpro-board button.taskpro-qa__add.is-idle {
+  opacity: 0.5;
+}
+
+/* ── A month to pick a day from ────────────────────────────────────────── */
+.taskpro-board .taskpro-daypick {
+  display: flex;
+  flex-direction: column;
+  gap: var(--taskpro-space-2);
+}
+.taskpro-board .taskpro-daypick__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.taskpro-board .taskpro-daypick__title {
+  font-weight: var(--font-semibold);
+}
+.taskpro-board .taskpro-daypick__row {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+.taskpro-board .taskpro-daypick__weekday {
+  padding: var(--taskpro-space-3) 0;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  text-align: center;
+}
+.taskpro-board button.taskpro-daypick__day {
+  height: 44px;
+  padding: 0;
+  border: 0;
   border-radius: var(--taskpro-radius-touch);
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-normal);
+  font-size: var(--font-ui-medium);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+.taskpro-board button.taskpro-daypick__day.is-outside {
+  color: var(--text-faint);
+}
+.taskpro-board button.taskpro-daypick__day.is-today {
+  box-shadow: inset 0 0 0 1.5px var(--interactive-accent);
+}
+.taskpro-board button.taskpro-daypick__day.is-selected {
+  background: var(--interactive-accent);
+  box-shadow: none;
+  color: var(--text-on-accent, #fff);
+  font-weight: var(--font-semibold);
+}
+.taskpro-board button.taskpro-daypick__day:active {
+  background: var(--background-modifier-hover);
+}
+.taskpro-board button.taskpro-daypick__day:focus-visible,
+.taskpro-board button.taskpro-qa__tool:focus-visible,
+.taskpro-board button.taskpro-qa__chip-x:focus-visible,
+.taskpro-board button.taskpro-qa__add:focus-visible,
+.taskpro-board button.taskpro-qa__dest:focus-visible,
+.taskpro-board button.taskpro-qa__close:focus-visible,
+.taskpro-board button.taskpro-qa__back:focus-visible,
+.taskpro-board button.taskpro-daypick__arrow:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 1px;
 }
 
 /* ── The table as a list ───────────────────────────────────────────────── */
@@ -6963,11 +7542,22 @@ body.is-mobile .taskpro-board.taskpro-board button.taskpro-tl__undated-toggle {
 .taskpro-board .taskpro-list__content > .taskpro-board__check {
   margin: 3px var(--taskpro-space-2) 0;
 }
-/* A 44px target around the 16px circle. */
-.taskpro-board .taskpro-list__content > .taskpro-board__check::before {
+/* The circle is 24px on a phone, and a 44px target is made around it. */
+.taskpro-board.is-compact .taskpro-list__content,
+.taskpro-board.is-compact .taskpro-card__top {
+  --taskpro-check-size: 24px;
+}
+.taskpro-board.is-compact .taskpro-list__content > .taskpro-board__check {
+  margin-top: 0;
+}
+.taskpro-board.is-compact .taskpro-card__top .taskpro-board__check {
+  --taskpro-check-size: 22px;
+}
+.taskpro-board .taskpro-list__content > .taskpro-board__check::before,
+.taskpro-board.is-compact .taskpro-card__top .taskpro-board__check::before {
   content: "";
   position: absolute;
-  inset: -14px;
+  inset: calc((var(--taskpro-check-size, 16px) - 44px) / 2);
 }
 .taskpro-board .taskpro-list__main {
   display: flex;
@@ -7032,6 +7622,107 @@ body.is-mobile .taskpro-board.taskpro-board button.taskpro-tl__undated-toggle {
 .taskpro-board .taskpro-list__prop .taskpro-board__deadline .taskpro-board__date {
   display: none;
 }
+/* A row's properties as one calm line: small text, no chips; only what is
+   overdue, due today or urgent takes a colour. */
+.taskpro-board .taskpro-list__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px var(--taskpro-space-6);
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  line-height: 1.5;
+}
+.taskpro-board .taskpro-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 100%;
+}
+.taskpro-board .taskpro-meta__icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+.taskpro-board .taskpro-meta__icon .svg-icon {
+  width: 13px;
+  height: 13px;
+}
+.taskpro-board .taskpro-meta__text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.taskpro-board .taskpro-meta.is-note {
+  color: var(--text-faint);
+}
+.taskpro-board .taskpro-meta.is-note .taskpro-meta__text {
+  max-width: 14ch;
+}
+.taskpro-board .taskpro-meta.is-tags {
+  gap: var(--taskpro-space-4);
+}
+.taskpro-board .taskpro-meta__tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.taskpro-board .taskpro-meta__dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--taskpro-dot, var(--text-faint));
+}
+.taskpro-board .taskpro-meta__tag .taskpro-meta__text {
+  max-width: 11ch;
+}
+.taskpro-board .taskpro-meta__more {
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+.taskpro-board .taskpro-meta[data-state="overdue"],
+.taskpro-board .taskpro-meta[data-state="missed"],
+.taskpro-board .taskpro-meta[data-state="past"],
+.taskpro-board .taskpro-meta[data-state="failed"] {
+  color: var(--taskpro-accent-overdue);
+  font-weight: var(--font-medium);
+}
+.taskpro-board .taskpro-meta[data-state="today"] {
+  color: var(--taskpro-accent-today);
+  font-weight: var(--font-medium);
+}
+.taskpro-board .taskpro-meta[data-state="doing"] {
+  color: var(--text-accent);
+}
+.taskpro-board .taskpro-meta[data-priority="highest"] {
+  color: var(--color-red, #c0392b);
+}
+.taskpro-board .taskpro-meta[data-priority="high"] {
+  color: var(--color-orange, #c1741f);
+}
+.taskpro-board .taskpro-meta__bar {
+  display: inline-block;
+  width: 36px;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--background-modifier-border);
+}
+.taskpro-board .taskpro-meta__fill {
+  display: block;
+  width: var(--taskpro-progress, 0%);
+  height: 100%;
+  border-radius: inherit;
+  background: var(--taskpro-accent-progress, var(--interactive-accent));
+}
+.taskpro-board .taskpro-list__row[data-status="[x]"] .taskpro-list__meta {
+  opacity: 0.6;
+}
+
 .taskpro-board button.taskpro-board__icon-btn.taskpro-list__more-btn {
   flex: 0 0 auto;
   width: 40px;
@@ -7163,9 +7854,11 @@ body.is-mobile .taskpro-board.taskpro-board button.taskpro-tl__undated-toggle {
   flex-direction: column;
   overflow-y: auto;
   overscroll-behavior: contain;
+  touch-action: pan-y;
 }
 .taskpro-board .taskpro-cal.is-compact-month .taskpro-cal__month.is-dots {
   flex: 0 0 auto;
+  touch-action: pan-y;
   grid-template-rows: repeat(var(--taskpro-cal-rows), 54px);
 }
 .taskpro-board .taskpro-cal__month.is-dots button.taskpro-cal__cell {
@@ -7229,19 +7922,34 @@ body.is-mobile .taskpro-board.taskpro-board button.taskpro-tl__undated-toggle {
   font-size: 9px;
   line-height: 1;
 }
+/* What is written inside the month's frame keeps one margin from it: 16px,
+   the width of the board's own gutter. The day's list is inset 8px and its
+   rows another 8px, so the date above it and the tasks under it start on one
+   line, and a row's highlight still has room around its words. */
+.taskpro-board .taskpro-cal.is-compact-month .taskpro-cal__weekday {
+  padding: var(--taskpro-space-5) 0;
+  text-align: center;
+}
 .taskpro-board .taskpro-cal__day-list {
   display: flex;
   flex-direction: column;
-  gap: var(--taskpro-space-1);
+  gap: var(--taskpro-space-2);
   margin-top: var(--taskpro-space-3);
-  padding: var(--taskpro-space-5) 0 var(--taskpro-space-4);
+  padding: var(--taskpro-space-6) var(--taskpro-space-4) var(--taskpro-space-4);
   border-top: 1px solid var(--background-modifier-border);
+}
+.taskpro-board .taskpro-cal__day-list .taskpro-cal__agenda-item {
+  /* The times column is as wide as a time is, whatever the text size. */
+  grid-template-columns: calc(var(--font-ui-smaller) * 7.8) 3px auto minmax(0, 1fr) auto;
+  min-height: 44px;
+  padding: var(--taskpro-space-3) var(--taskpro-space-4);
 }
 .taskpro-board .taskpro-cal__day-list-head {
   display: flex;
   align-items: center;
   gap: var(--taskpro-space-4);
-  padding: 0 var(--taskpro-space-1) var(--taskpro-space-3);
+  min-height: 44px;
+  padding: 0 var(--taskpro-space-4) var(--taskpro-space-2);
 }
 .taskpro-board .taskpro-cal__day-list-title {
   flex: 1 1 auto;
@@ -7705,6 +8413,59 @@ kbd.taskpro-shortcuts__key {
   white-space: nowrap;
 }
 
+/* The calendar's bar on a phone: the period with back, forward and today on
+   one line, and under it the views (as wide as the screen, so each is an
+   easy target), the unscheduled tasks, and the sheet of the rest. */
+.taskpro-board.is-compact .taskpro-cal-nav.is-phone {
+  display: flex;
+  flex-direction: column;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  gap: var(--taskpro-space-4);
+  padding: 0 var(--taskpro-board-gutter) var(--taskpro-space-5);
+}
+.taskpro-board .taskpro-cal-nav__top,
+.taskpro-board .taskpro-cal-nav__bottom {
+  display: flex;
+  align-items: center;
+  gap: var(--taskpro-space-1);
+  min-width: 0;
+}
+/* With large text the four views no longer fit beside the two buttons: the
+   buttons go to the next line rather than the names being cut short. */
+.taskpro-board .taskpro-cal-nav__bottom {
+  flex-wrap: wrap;
+}
+.taskpro-board .taskpro-cal-nav.is-phone .taskpro-cal-nav__title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 18px;
+  text-overflow: ellipsis;
+}
+.taskpro-board .taskpro-cal-nav.is-phone button.taskpro-cal-nav__today {
+  height: 40px;
+  margin-inline-start: var(--taskpro-space-3);
+  padding: 0 var(--taskpro-space-7);
+  border-radius: 20px;
+}
+.taskpro-board .taskpro-cal-nav.is-phone .taskpro-segmented.taskpro-cal-nav__views {
+  display: flex;
+  flex: 1 1 calc(var(--font-ui-small) * 17);
+  margin-inline-end: var(--taskpro-space-2);
+  padding: var(--taskpro-space-1);
+  border-radius: 12px;
+}
+.taskpro-board .taskpro-cal-nav.is-phone button.taskpro-segmented__item {
+  flex: 1 1 0;
+  justify-content: center;
+  height: 38px;
+  min-width: 0;
+  padding: 0 var(--taskpro-space-2);
+  border-radius: 10px;
+  font-size: var(--font-ui-small);
+}
+
 /* ── Motion ─────────────────────────────────────────────────────────────────
    Nothing here moves for its own sake. Each animation says what just
    happened: a view came in, a page turned, a task arrived, a task was ticked
@@ -8111,4 +8872,185 @@ body.theme-light .taskpro-board .taskpro-cal-inspector input[type="date"] {
 .taskpro-board .taskpro-cal__chip.is-done {
   background: color-mix(in srgb, var(--taskpro-cal-accent) 7%, var(--taskpro-board-surface));
   color: var(--text-muted);
+}
+
+/* ==========================================================================
+   Using it on a phone: for everyone
+   Targets a finger can hit, a ring wherever the keyboard or a switch lands,
+   text that can grow without the bars clipping it, and a plainer drawing for
+   anyone who has asked their phone for more contrast or forced its colours.
+   ========================================================================== */
+
+/* The bars follow the text size: a taller label makes a taller tab bar, and
+   what is reserved for it (the list's end, the +) grows with it. */
+.taskpro-board.is-compact {
+  --taskpro-tabbar-h: calc(44px + 1.2 * var(--font-ui-smaller));
+}
+.taskpro-board.is-compact .taskpro-tabbar__list {
+  height: auto;
+  min-height: var(--taskpro-tabbar-h);
+}
+.taskpro-board.is-compact button.taskpro-tabbar__tab {
+  height: auto;
+}
+
+/* What the keyboard or a switch moves to is never covered by a bar. */
+.taskpro-board.is-compact .taskpro-board__body {
+  scroll-padding-bottom: calc(var(--taskpro-tabbar-h) + var(--taskpro-bottom-inset) + var(--taskpro-space-7));
+}
+
+/* A ring for whatever has none of its own. Controls that draw a ring or an
+   outline of their own (the tabs, the segmented switches) keep it. */
+.taskpro-board.is-compact :is(button, input, [role="button"], [role="tab"], [role="checkbox"], [tabindex="0"]):focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  /* Inside the control, where no box around it can cut the ring off. */
+  outline-offset: -2px;
+}
+.taskpro-board.is-compact .taskpro-board__body:focus-visible {
+  outline: none;
+}
+
+/* Small things made big enough: a circle's touch area reaches past its edge,
+   and a chip, a note link or a bar that opens something is a finger tall. */
+.taskpro-board.is-compact button.taskpro-cal__check::before,
+.taskpro-board.is-compact .taskpro-tl__cell > button.taskpro-board__check::before {
+  content: "";
+  position: absolute;
+  inset: -9px;
+}
+.taskpro-board.is-compact .taskpro-tl__cell > button.taskpro-board__check::before {
+  inset: -14px;
+}
+.taskpro-board.is-compact .taskpro-cal__chip {
+  height: 28px;
+}
+.taskpro-board.is-compact button.taskpro-cal__add {
+  width: 36px;
+  height: 36px;
+  opacity: 1;
+}
+.taskpro-board.is-compact button.taskpro-board__note,
+.taskpro-board.is-compact button.taskpro-board__progress {
+  min-height: 32px;
+}
+.taskpro-board.is-compact .taskpro-tl__milestone {
+  width: 32px;
+  inset-inline-start: calc(var(--x) * var(--tl-day) - 16px);
+}
+.taskpro-board.is-compact .taskpro-tl__milestone-label {
+  inset-inline-start: calc(100% - 8px);
+}
+.taskpro-board.is-compact .taskpro-tl__title {
+  align-self: stretch;
+  line-height: calc(var(--tl-row, 44px) - 2px);
+}
+
+/* More contrast: lines and quiet text are drawn plainer. */
+@media (prefers-contrast: more) {
+  .taskpro-board {
+    --taskpro-board-row-line: var(--text-muted);
+    --taskpro-cal-line: var(--text-muted);
+    --text-faint: var(--text-muted);
+  }
+  .taskpro-board button.taskpro-board__check {
+    border-width: 2px;
+    border-color: var(--text-normal);
+  }
+  .taskpro-board.is-compact .taskpro-tabbar,
+  .taskpro-board.is-compact .taskpro-snackbar {
+    border-top-color: var(--text-normal);
+    box-shadow: 0 0 0 2px var(--text-normal);
+  }
+  .taskpro-board button.taskpro-qa__tool,
+  .taskpro-board button.taskpro-menu__chip {
+    border-color: var(--text-muted);
+  }
+}
+
+/* Colours forced by the system: only its palette is drawn, so every control
+   needs a line of its own and the state a fill carried is told another way. */
+@media (forced-colors: active) {
+  .taskpro-board button,
+  .taskpro-board input {
+    forced-color-adjust: auto;
+  }
+  .taskpro-board button.taskpro-board__check {
+    border: 2px solid ButtonText;
+    background-color: Canvas;
+    color: ButtonText;
+  }
+  .taskpro-board button.taskpro-board__check[data-status="[x]"],
+  .taskpro-board button.taskpro-board__check[data-status="[/]"] {
+    border-color: Highlight;
+    background-image: none;
+    background-color: Highlight;
+    color: HighlightText;
+  }
+  .taskpro-board button.taskpro-board__check[data-status="[/]"]::after {
+    content: "";
+    position: absolute;
+    inset: 4px;
+    background: HighlightText;
+    -webkit-mask: none;
+    mask: none;
+  }
+  .taskpro-board.is-compact .taskpro-tabbar {
+    border-top: 2px solid CanvasText;
+  }
+  .taskpro-board button.taskpro-tabbar__tab.is-active .taskpro-tabbar__icon {
+    outline: 2px solid Highlight;
+  }
+  .taskpro-board.is-compact button.taskpro-board__fab,
+  .taskpro-board button.taskpro-qa__add,
+  .taskpro-board button.taskpro-menu__primary {
+    border: 2px solid ButtonText;
+  }
+  .taskpro-board button.taskpro-qa__tool,
+  .taskpro-board button.taskpro-menu__chip,
+  .taskpro-board button.taskpro-daypick__day.is-today {
+    border: 1px solid ButtonText;
+  }
+  .taskpro-board button.taskpro-qa__tool.is-active,
+  .taskpro-board button.taskpro-menu__chip.is-active,
+  .taskpro-board button.taskpro-daypick__day.is-selected {
+    border: 2px solid Highlight;
+  }
+  .taskpro-board .taskpro-snackbar,
+  .taskpro-board .taskpro-menu.is-sheet,
+  .taskpro-board .taskpro-cal-popover.is-sheet {
+    border: 2px solid CanvasText;
+  }
+}
+
+/* Some themes give every button without an icon in it one height on a phone
+   (Bookcloth: 40px, from body.is-mobile button:not(.clickable-icon)...). The
+   heights of the phone's own buttons are said again here, at a weight that wins. */
+body.is-mobile .taskpro-board.taskpro-board button.taskpro-tabbar__tab {
+  height: auto;
+}
+body.is-mobile .taskpro-board.taskpro-board button.taskpro-qa__tool,
+body.is-mobile .taskpro-board.taskpro-board button.taskpro-menu__chip,
+body.is-mobile .taskpro-board.taskpro-board button.taskpro-daypick__day,
+body.is-mobile .taskpro-board.taskpro-board button.taskpro-snackbar__action {
+  height: 44px;
+}
+body.is-mobile .taskpro-board.taskpro-board button.taskpro-qa__dest,
+body.is-mobile .taskpro-board.taskpro-board button.taskpro-qa__add {
+  height: 48px;
+}
+body.is-mobile .taskpro-board.taskpro-board button.taskpro-menu__primary {
+  height: 52px;
+}
+body.is-mobile .taskpro-board.taskpro-board button.taskpro-qa__chip-x {
+  height: 36px;
+}
+body.is-mobile .taskpro-board.taskpro-board button.taskpro-cal-nav__today {
+  height: 40px;
+}
+body.is-mobile .taskpro-board.taskpro-board .taskpro-cal-nav.is-phone button.taskpro-segmented__item {
+  height: 38px;
+}
+body.is-mobile .taskpro-board.taskpro-board.is-compact button.taskpro-kanban-tabs__tab,
+body.is-mobile .taskpro-board.taskpro-board button.taskpro-board__bar-btn {
+  min-height: 40px;
 }

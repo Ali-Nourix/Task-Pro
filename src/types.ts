@@ -444,6 +444,8 @@ export interface BoardPreferences {
   timelineUndated?: boolean;
   /** On a phone, the table as a list of rows (the default) or as the full table. */
   compactTable?: 'list' | 'table';
+  /** On a phone, a row's properties as one calm line (the default) or as chips. */
+  rowStyle?: 'light' | 'chips';
   /** Rows and cards tight, as drawn, or roomy. */
   density?: BoardDensity;
   /** Titles run over as many lines as they need, rather than ending in an ellipsis. */
@@ -559,6 +561,8 @@ export interface TaskProSettings {
   showWaitingBadges: boolean;
   /** Typing `@` on a task line lists the properties it can be given. */
   propertySuggest: boolean;
+  /** On a touch screen, two fingers pulled down anywhere in Obsidian open the task board. */
+  boardGesture: boolean;
   /** User-defined tags: key written into notes, name and colour kept here. */
   tags: TaskTag[];
   /** How the all-tasks board was last left. */
@@ -605,6 +609,7 @@ export const DEFAULT_SETTINGS: TaskProSettings = {
   showSubtaskProgress: true,
   showWaitingBadges: true,
   propertySuggest: true,
+  boardGesture: true,
   tags: [],
   board: DEFAULT_BOARD_PREFERENCES,
   calendar: DEFAULT_CALENDAR_SETTINGS,

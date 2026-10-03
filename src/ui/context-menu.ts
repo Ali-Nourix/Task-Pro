@@ -52,6 +52,22 @@ export interface MenuSection {
   reorder?: (from: number, before: number) => unknown;
 }
 
+/** A quick choice above a sheet's rows: a day to plan the task for. */
+export interface MenuChip {
+  label: string;
+  icon?: string;
+  /** Drawn as the one in use. */
+  checked?: boolean;
+  onSelect: () => unknown;
+}
+
+/** The one thing a sheet is mostly opened for, as a large button at its foot. */
+export interface MenuFooter {
+  label: string;
+  icon?: string;
+  onSelect: () => unknown;
+}
+
 export interface ContextMenuOptions {
   /** Positioned ancestor the menu is placed in; the board's root. */
   container: HTMLElement;
@@ -63,6 +79,11 @@ export interface ContextMenuOptions {
   header?: string;
   /** A placeholder turns the search field on. */
   searchPlaceholder?: string;
+  /** On a phone's sheet: quick choices in a row under the title, and what they are for. */
+  chips?: MenuChip[];
+  chipsLabel?: string;
+  /** On a phone's sheet: a large button at the foot, which stays in view while the rows scroll. */
+  footer?: MenuFooter;
   /**
    * What shows while the search field is empty, when that is not everything
    * the search can find: a picker of every task shows the nearest few.
@@ -133,6 +154,8 @@ export function openContextMenu(options: ContextMenuOptions): ContextMenuHandle 
 
   const rootEl = container.createDiv({ cls: 'taskpro-menu' });
   rootEl.setAttribute('role', 'menu');
+  const name = options.header ?? options.searchPlaceholder;
+  if (name) rootEl.setAttribute('aria-label', name);
   rootEl.dir = rtl ? 'rtl' : 'ltr';
   rootEl.tabIndex = -1;
 
@@ -157,6 +180,23 @@ export function openContextMenu(options: ContextMenuOptions): ContextMenuHandle 
     });
     pageTitle = pageHead.createSpan({ cls: 'taskpro-menu__page-title', attr: { dir: 'auto' } });
   }
+  // Quick choices and the foot button only make sense on a sheet, and only on its first page.
+  if (sheet && options.chips?.length) {
+    const chipsEl = rootEl.createDiv({ cls: 'taskpro-menu__chips', attr: { role: 'group', 'aria-label': options.chipsLabel ?? '' } });
+    for (const chip of options.chips) {
+      const button = chipsEl.createEl('button', { cls: 'taskpro-menu__chip' });
+      button.type = 'button';
+      button.toggleClass('is-active', !!chip.checked);
+      if (chip.checked !== undefined) button.setAttribute('aria-pressed', String(!!chip.checked));
+      if (chip.icon) setIcon(button.createSpan({ cls: 'taskpro-menu__chip-icon', attr: { 'aria-hidden': 'true' } }), chip.icon);
+      button.createSpan({ text: chip.label, attr: { dir: 'auto' } });
+      button.addEventListener('click', (event) => {
+        event.stopPropagation();
+        handle.close();
+        void chip.onSelect();
+      });
+    }
+  }
   let search: HTMLInputElement | null = null;
   if (options.searchPlaceholder) {
     search = rootEl.createEl('input', {
@@ -167,6 +207,18 @@ export function openContextMenu(options: ContextMenuOptions): ContextMenuHandle 
     autoDirection(search, rtl ? 'rtl' : 'ltr');
   }
   const rootList = rootEl.createDiv({ cls: 'taskpro-menu__list' });
+  if (sheet && options.footer) {
+    const foot = rootEl.createDiv({ cls: 'taskpro-menu__footer' });
+    const primary = foot.createEl('button', { cls: 'mod-cta taskpro-menu__primary' });
+    primary.type = 'button';
+    if (options.footer.icon) setIcon(primary.createSpan({ cls: 'taskpro-menu__primary-icon', attr: { 'aria-hidden': 'true' } }), options.footer.icon);
+    primary.createSpan({ text: options.footer.label, attr: { dir: 'auto' } });
+    primary.addEventListener('click', (event) => {
+      event.stopPropagation();
+      handle.close();
+      void options.footer!.onSelect();
+    });
+  }
   const root: Panel = { el: rootEl, rows: [], active: -1 };
   panels.push(root);
 
@@ -545,7 +597,10 @@ export function openContextMenu(options: ContextMenuOptions): ContextMenuHandle 
     else handle.close();
   }, doc);
 
-  if (sheet) undoSheet = makeSheet(rootEl, container, () => handle.close());
+  if (sheet) {
+    rootEl.setAttribute('aria-modal', 'true');
+    undoSheet = makeSheet(rootEl, container, () => handle.close());
+  }
   search?.addEventListener('input', renderRoot);
   renderRoot();
   // A sheet does not raise the keyboard over itself before anything is typed.

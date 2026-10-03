@@ -13,6 +13,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { Menu, setIcon } from 'obsidian';
+import { haptic } from '../ui/haptics';
 import {
   BoardPreferences,
   CHIP_ICON_NAMES,
@@ -162,7 +163,8 @@ export interface CalendarContext {
   readonly root: HTMLElement;
   settings(): BoardSettingsView;
   prefs(): BoardPreferences;
-  updatePrefs(patch: Partial<BoardPreferences>): Promise<void>;
+  /** `rebuildChrome` false leaves the bars alone, for a change made from a sheet that is still open. */
+  updatePrefs(patch: Partial<BoardPreferences>, rebuildChrome?: boolean): Promise<void>;
   /**
    * The board's scope with its search and filters applied. The given daily
    * notes are included whatever the scope, so a task planned on a day never
@@ -429,9 +431,104 @@ export class TaskCalendar {
     };
   }
 
+  /**
+   * On a phone the bar is two lines: the period with back, forward and today;
+   * and under it the views, the unscheduled tasks and a sheet of the rest (the
+   * calendar's system and what it shows). Half the height of the desktop's
+   * bar, so the month gets the screen.
+   */
+  private renderPhoneNav(nav: HTMLElement): void {
+    const labels = this.labels;
+    const range = this.range();
+    nav.addClass('is-phone');
+
+    const top = nav.createDiv({ cls: 'taskpro-cal-nav__top' });
+    const { title } = this.titles(range);
+    const heading = top.createEl('h3', { cls: 'taskpro-cal-nav__title', text: this.view === 'day' ? this.phoneDayTitle() : title });
+    heading.setAttribute('aria-live', 'polite');
+    this.iconButton(top, this.rtl ? 'chevron-right' : 'chevron-left', labels.previous, () => this.step(-1));
+    this.iconButton(top, this.rtl ? 'chevron-left' : 'chevron-right', labels.next, () => this.step(1));
+    const today = top.createEl('button', { cls: 'taskpro-cal-nav__today', text: labels.today });
+    today.type = 'button';
+    today.addEventListener('click', () => this.goToday());
+
+    const bottom = nav.createDiv({ cls: 'taskpro-cal-nav__bottom' });
+    this.ctx.segmented(
+      bottom,
+      'taskpro-cal-nav__views',
+      (['month', 'week', 'day', 'agenda'] as CalendarView[]).map((value) => ({ value, label: labels.views[value] })),
+      this.view,
+      (value) => this.setView(value as CalendarView)
+    );
+    const free = this.iconButton(bottom, 'inbox', labels.unscheduled, () => this.openUnscheduledSheet(free));
+    free.addClass('taskpro-cal-nav__free');
+    const more = this.iconButton(bottom, 'more-horizontal', labels.viewOptions, () => this.openPhoneOptions(more));
+    more.addClass('taskpro-cal-nav__more');
+    more.setAttribute('aria-haspopup', 'dialog');
+  }
+
+  /** "Sat 3 Oct 2026": the day in view, short enough to share a line with the arrows. */
+  private phoneDayTitle(): string {
+    return `${mediumDay(this.anchor, this.system, this.language)} ${partsIn(this.anchor, this.system).year}`;
+  }
+
+  /** The calendar's system and what it shows, as a sheet whose switches stay open. */
+  private openPhoneOptions(anchor: HTMLElement): void {
+    const labels = this.labels;
+    this.closePopover();
+    this.ctx.hold(true);
+    openContextMenu({
+      container: this.ctx.root,
+      at: anchor.getBoundingClientRect(),
+      rtl: this.rtl,
+      header: labels.viewOptions,
+      onClose: () => {
+        this.ctx.hold(false);
+        // The title may now be in the other calendar: the bar is drawn again once the sheet is gone.
+        const nav = this.ctx.root.querySelector<HTMLElement>('.taskpro-cal-nav');
+        if (nav) this.renderNav(nav);
+      },
+      sections: () => {
+        const prefs = this.prefs;
+        const flip = (key: 'calendarShowDeadlines' | 'calendarShowDailyNotes' | 'calendarShowDone') => () => void this.ctx.updatePrefs({ [key]: !prefs[key] }, false);
+        const sections: MenuSection[] = [
+          {
+            title: labels.calendarSystem,
+            entries: (['gregorian', 'jalali'] as CalendarSystem[]).map((value) => ({
+              label: labels.systems[value],
+              icon: 'calendar',
+              checked: this.system === value,
+              keepOpen: true,
+              onSelect: () => void this.ctx.updatePrefs({ calendarSystem: value }, false),
+            })),
+          },
+          {
+            title: labels.showOnCalendar,
+            entries: [
+              { label: labels.showDeadlines, icon: 'flag', toggle: prefs.calendarShowDeadlines, keepOpen: true, onSelect: flip('calendarShowDeadlines') },
+              { label: labels.showDailyNotes, icon: 'file-text', toggle: prefs.calendarShowDailyNotes, keepOpen: true, onSelect: flip('calendarShowDailyNotes') },
+              { label: labels.showDone, icon: 'check-circle', toggle: prefs.calendarShowDone, keepOpen: true, onSelect: flip('calendarShowDone') },
+            ],
+          },
+        ];
+        if (this.ctx.host.openDailyNote) {
+          sections.push({
+            entries: [{ label: labels.openDailyNote, icon: 'file-text', onSelect: () => void this.ctx.host.openDailyNote?.(this.anchor, this.system) }],
+          });
+        }
+        return sections;
+      },
+    });
+  }
+
   /** The bar above the calendar: today, back and forward, the period, and the view switches. */
   renderNav(nav: HTMLElement): void {
     nav.empty();
+    nav.removeClass('is-phone');
+    if (this.compact) {
+      this.renderPhoneNav(nav);
+      return;
+    }
     const labels = this.labels;
     const range = this.range();
 
@@ -803,6 +900,7 @@ export class TaskCalendar {
       });
     }
 
+    this.swipeToStep(root);
     const list = root.createDiv({ cls: 'taskpro-cal__day-list' });
     const listHead = list.createDiv({ cls: 'taskpro-cal__day-list-head' });
     listHead.createSpan({ cls: 'taskpro-cal__day-list-title', text: longDay(selected, system, this.language) });
@@ -815,6 +913,42 @@ export class TaskCalendar {
     const dayItems = items.get(selected) ?? [];
     if (!dayItems.length) list.createDiv({ cls: 'taskpro-cal__day-list-empty', text: labels.nothingOnDay });
     for (const item of dayItems) this.agendaRow(list, item);
+  }
+
+  /**
+   * A swipe across the month turns its page: toward the start of the line for
+   * the next month, away from it for the one before, whichever way the language
+   * reads. The arrows above do the same for anyone who does not swipe.
+   */
+  private swipeToStep(el: HTMLElement): void {
+    let id = -1;
+    let x = 0;
+    let y = 0;
+    let at = 0;
+    el.addEventListener('pointerdown', (event) => {
+      if (event.pointerType !== 'touch') return;
+      id = event.pointerId;
+      x = event.clientX;
+      y = event.clientY;
+      at = performance.now();
+    });
+    el.addEventListener('pointercancel', () => (id = -1));
+    el.addEventListener('pointerup', (event) => {
+      if (event.pointerId !== id) return;
+      id = -1;
+      const dx = event.clientX - x;
+      const dy = event.clientY - y;
+      if (Math.abs(dx) < 64 || Math.abs(dx) < Math.abs(dy) * 1.6 || performance.now() - at > 700) return;
+      // The tap this ends with is not a tap on a day.
+      const swallow = (e: Event) => {
+        e.stopPropagation();
+        e.preventDefault();
+      };
+      el.addEventListener('click', swallow, { capture: true, once: true });
+      window.setTimeout(() => el.removeEventListener('click', swallow, true), 400);
+      haptic('tick');
+      this.step((this.rtl ? dx > 0 : dx < 0) ? 1 : -1);
+    });
   }
 
   /**
@@ -1384,7 +1518,8 @@ export class TaskCalendar {
     button.dataset.status = task.status;
     button.setAttribute('role', 'checkbox');
     button.setAttribute('aria-checked', task.status === '[/]' ? 'mixed' : String(done));
-    button.setAttribute('aria-label', done ? board.markOpen : board.markDone);
+    button.setAttribute('aria-label', displayTitle(task.text) || task.text);
+    button.title = done ? board.markOpen : board.markDone;
     button.addEventListener('pointerdown', (event) => event.stopPropagation());
     button.addEventListener('click', (event) => {
       event.stopPropagation();

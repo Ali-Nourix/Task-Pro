@@ -95,6 +95,31 @@ const SHOTS = [
     file: 'board-preview.html',
     query: '?theme=bookcloth&light&mobile=1&scope=vault',
     selector: 'body',
+    out: 'task-board-phone-add-light.png',
+    board: true,
+    phone: true,
+    setup: async (page) => {
+      await page.tap('.taskpro-board__fab');
+      await page.waitForTimeout(200);
+      await page.locator('.taskpro-qa__input').fill('Call Sara tomorrow 9 #work !high');
+    },
+  },
+  {
+    file: 'board-preview.html',
+    query: '?theme=bookcloth&light&mobile=1&scope=vault',
+    selector: 'body',
+    out: 'task-board-phone-sheet-light.png',
+    board: true,
+    phone: true,
+    setup: async (page) => {
+      await page.tap('.taskpro-list__row:has-text("Send the quote") .taskpro-list__title');
+    },
+  },
+  { file: 'board-preview.html', query: '?theme=bookcloth&light&mobile=1&scope=vault&layout=calendar&cal=month', selector: 'body', out: 'task-board-phone-calendar-light.png', board: true, phone: true },
+  {
+    file: 'board-preview.html',
+    query: '?theme=bookcloth&light&mobile=1&scope=vault',
+    selector: 'body',
     out: 'task-board-phone-selection-light.png',
     board: true,
     phone: true,
@@ -134,7 +159,10 @@ const browser = await chromium.launch({
 });
 
 try {
+  // ONLY=name.png,other.png renders just those, so a change to one screen does not rewrite every image.
+  const only = process.env.ONLY?.split(',');
   for (const shot of SHOTS) {
+    if (only && !only.includes(shot.out)) continue;
     if (!(await available(shot.query))) {
       console.log(`skipped ${shot.out} — test/themes/${themeOf(shot.query)}.css is not present`);
       continue;

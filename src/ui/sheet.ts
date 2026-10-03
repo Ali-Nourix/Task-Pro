@@ -28,6 +28,34 @@ export function makeSheet(el: HTMLElement, container: HTMLElement, close: () => 
   const backdrop = container.createDiv({ cls: 'taskpro-sheet-backdrop' });
   // Behind the sheet: placed before it in the board.
   container.insertBefore(backdrop, el);
+  // A sheet is modal: what is behind it can be neither reached with the keyboard
+  // nor read out by a screen reader until it is gone. (The announcements stay.)
+  const behind = Array.from(container.children).filter(
+    (child): child is HTMLElement => child instanceof HTMLElement && child !== el && child !== backdrop && !child.hasClass('taskpro-live') && !child.hasClass('is-sheet') && !child.hasAttribute('inert')
+  );
+  behind.forEach((child) => child.setAttribute('inert', ''));
+  // Tab goes round inside the sheet rather than out of it.
+  const trap = (event: KeyboardEvent) => {
+    if (event.key !== 'Tab') return;
+    const focusable = Array.from(el.querySelectorAll<HTMLElement>('button, input, select, textarea, [href], [tabindex]:not([tabindex="-1"])')).filter(
+      (candidate) => !candidate.hasAttribute('disabled') && candidate.getClientRects().length > 0
+    );
+    if (!focusable.length) {
+      event.preventDefault();
+      return;
+    }
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    const active = el.ownerDocument.activeElement;
+    if (event.shiftKey && (active === first || active === el)) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && active === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
+  el.addEventListener('keydown', trap);
   const grabber = createDiv({ cls: 'taskpro-sheet-grabber' });
   grabber.createSpan({ cls: 'taskpro-sheet-grabber__bar' });
   el.prepend(grabber);
@@ -77,6 +105,8 @@ export function makeSheet(el: HTMLElement, container: HTMLElement, close: () => 
   });
 
   return () => {
+    behind.forEach((child) => child.removeAttribute('inert'));
+    el.removeEventListener('keydown', trap);
     grabber.remove();
     // Left behind for a moment, fading, so the tap that closed the sheet
     // does not land as a click on whatever was under it.

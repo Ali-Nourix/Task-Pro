@@ -2,6 +2,42 @@
 
 ## 1.5.0 - A calendar and a timeline to plan your days on, and a board that fits a phone
 
+### The phone, rebuilt: a frame, quick add, light rows, accessibility
+
+- **A frame made for a thumb**: a slim top bar, the layouts as tabs along the
+  bottom (List, Board, Calendar, Timeline) and the round **+** above them. On
+  the list the bars step aside while you scroll down and return at the first
+  scroll up, without the list changing size.
+- **A gesture to the task board from anywhere**: two fingers put down together and
+  pulled straight down, from a note or any other view (a setting turns it off).
+- **Quick add reads a line of words**: `call Sara tomorrow 9 #work !high` becomes
+  a task for tomorrow at nine, tagged and urgent, with what was understood shown
+  as chips under the field (each can be left as words). English and Persian;
+  plans, reminders, deadlines, priorities and tags; Today, Tomorrow, a month to
+  pick a day from, priority, tags and reminders as buttons that write into the
+  line. A task with a day goes into that day's note. Adding keeps the sheet and
+  the keyboard open for the next. The same reader as the Telegram bot's (a test
+  reads 64,800 lines with both and compares).
+- **Lighter rows**: a title and one calm line of small text, colour only for
+  what is overdue, due today or urgent; **Row style › Chips** keeps the old look.
+  A 24px circle with a 44px target.
+- **A tap or a swipe that was not meant is forgiven**: a line at the foot says
+  what happened, with **Undo**, and a short buzz where the phone has one.
+- **A task's sheet leads with Today / Tomorrow / Next week / Pick a date…** and
+  has **Done** as a large button at its foot.
+- **The calendar's bar is two lines** instead of three, with a sheet for the rest;
+  a swipe across the month turns the page; the calendar and the timeline now fill
+  the screen down to the tab bar with the **+** floating over them, and what is
+  written inside a frame keeps a 16px margin from it.
+- **Accessibility**: names for everything (a checkbox is named for its task), a
+  tab bar that is a real tab list, sheets that are modal (the board behind them
+  is inert, Tab goes round inside, focus returns), spoken confirmations, a ring
+  wherever the keyboard lands, targets of at least 24px with a bigger touch area,
+  bars that grow with the text, `prefers-contrast` and forced colours, and
+  `lang` set to the board's language. `test/mobile-a11y.mjs` sweeps every screen.
+- The phone buttons keep their heights under themes that give every button one
+  (Bookcloth).
+
 ### Telegram bot
 
 - **A Telegram bot for your tasks and reminders**, backed by your own Supabase

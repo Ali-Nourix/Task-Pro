@@ -32,7 +32,7 @@ import {
   TaskStatus,
 } from '../types';
 import { TaskTag, applyTagColor, resolveTag, resolveTagColor } from '../tags';
-import { RemindAt, extractTags, setPriority, setTags } from '../task-metadata';
+import { RemindAt, extractTags, normalizeTagKey, setDeadline, setPriority, setRemind, setSchedule, setTags } from '../task-metadata';
 import { isWithinTargetFolder } from '../path-utils';
 import { gregorianToJalali } from '../date-utils';
 import { getDeadlineInfo } from '../widget-localization';
@@ -65,7 +65,7 @@ import { holdToDrag, onContextPress, readyToCarry } from '../ui/touch';
 import { TaskTimeline } from '../timeline/timeline-view';
 import { getTimelineLabels } from '../timeline/timeline-localization';
 import { getCalendarLabels } from '../calendar/calendar-localization';
-import { MenuEntry, MenuSection, closeContextMenu, openContextMenu } from '../ui/context-menu';
+import { ContextMenuOptions, MenuChip, MenuEntry, MenuSection, closeContextMenu, openContextMenu } from '../ui/context-menu';
 import {
   TaskActionOptions,
   deadlineSections,
@@ -96,6 +96,13 @@ import {
   visibleColumns,
 } from './board-columns';
 import { isSchedulePast, scheduleDayText, scheduleText, scheduleTimeText } from '../calendar/schedule-text';
+import { addDays, resolveWeekStart, todayKey } from '../calendar/calendar-dates';
+import { openDaySheet } from './day-sheet';
+import { Parsed } from './quick-add';
+import { announce } from '../ui/announce';
+import { haptic } from '../ui/haptics';
+import { showSnackbar } from '../ui/snackbar';
+import { openQuickAddSheet } from './quick-add-sheet';
 
 /** The preferences that change what the board shows, and so bring the new view in. */
 const ENTERING_PREFS = new Set<string>([
@@ -116,6 +123,7 @@ const ENTERING_PREFS = new Set<string>([
   'timelineZoom',
   'timelineUndated',
   'compactTable',
+  'rowStyle',
   'deadlines',
   'plans',
   'notes',
@@ -354,6 +362,7 @@ export class TaskBoard {
   /** A touch screen: no hover, and a long press for the right click. */
   private readonly touch: boolean;
   private sizeObserver: ResizeObserver | null = null;
+  private headObserver: ResizeObserver | null = null;
   /** The phone bar's search field, open. */
   private searchOpen = false;
   /** A sheet changed a preference the bar shows; the bar is drawn again when it closes. */
@@ -398,6 +407,7 @@ export class TaskBoard {
     this.compact = this.measureCompact();
     this.el.toggleClass('is-compact', this.compact);
     this.observeSize();
+    this.watchScroll();
     this.renderChrome();
     this.pendingEntrance = 'view';
     this.renderBody();
@@ -415,6 +425,8 @@ export class TaskBoard {
     this.timelineView?.destroy();
     this.sizeObserver?.disconnect();
     this.sizeObserver = null;
+    this.headObserver?.disconnect();
+    this.headObserver = null;
     closeContextMenu();
   }
 
@@ -524,7 +536,7 @@ export class TaskBoard {
       root: this.el,
       settings: () => this.settings,
       prefs: () => this.prefs,
-      updatePrefs: (patch) => this.updatePrefs(patch),
+      updatePrefs: (patch, rebuildChrome) => this.updatePrefs(patch, rebuildChrome),
       tasks: (dailyNotes) => {
         const all = this.host.store.all();
         const folder = this.settings.targetFolder;
@@ -571,10 +583,65 @@ export class TaskBoard {
       rtl: language === 'fa',
       header: displayTitle(task.text) || '—',
       searchPlaceholder: getActionLabels(language).search,
+      ...(this.compact ? this.sheetExtras(task) : {}),
       // The calendar brings its own first row; everywhere else it is the card.
       sections: taskActionSections({ ...this.actionOptions(task, anchor), lead: lead ?? (this.isCalendar ? undefined : [this.openCardEntry(task, anchor)]) }),
       onClose: () => this.hold(false),
     });
+  }
+
+  /**
+   * What a task's sheet puts first on a phone: the days a task is most often
+   * moved to, one tap each, and the one thing it is most often opened for, as
+   * a large button at its foot: Done, or Not started again.
+   */
+  private sheetExtras(task: BoardTask): Pick<ContextMenuOptions, 'chips' | 'chipsLabel' | 'footer'> {
+    const labels = getActionLabels(this.language);
+    const host = this.host;
+    const system = this.prefs.calendarSystem ?? this.settings.calendarSystem;
+    const planned = !!host.setSchedule;
+    const setDay = (day: string) => {
+      // A timed plan moved to another day keeps its time.
+      if (planned) void host.setSchedule!(task, task.schedule ? { ...task.schedule, date: day } : { date: day });
+      else void host.setDeadline?.(task, day);
+    };
+    const current = planned ? task.schedule?.date : task.deadline;
+    const today = todayKey();
+    const days: Array<[string, string]> = [
+      [labels.today, today],
+      [labels.tomorrow, addDays(today, 1)],
+      [labels.nextWeek, addDays(today, 7)],
+    ];
+    const chips: MenuChip[] = days.map(([label, day]) => ({ label, icon: 'calendar', checked: current === day, onSelect: () => (current === day ? undefined : setDay(day)) }));
+    chips.push({
+      label: labels.pickDate,
+      icon: 'calendar-search',
+      onSelect: () =>
+        openDaySheet({
+          container: this.el,
+          anchor: this.el.getBoundingClientRect(),
+          language: this.language,
+          system,
+          weekStartsOn: resolveWeekStart(this.settings.calendar.weekStart, system),
+          title: planned ? labels.plan : labels.deadline,
+          closeLabel: this.labels.qaClose,
+          previousLabel: this.labels.qaPrevMonth,
+          nextLabel: this.labels.qaNextMonth,
+          selected: current ?? null,
+          onPick: setDay,
+          hold: (on) => this.hold(on),
+        }),
+    });
+    const done = task.status === '[x]';
+    return {
+      chips: planned || host.setDeadline ? chips : undefined,
+      chipsLabel: planned ? labels.plan : labels.deadline,
+      footer: {
+        label: done ? this.labels.markOpen : this.labels.markDoneSwipe,
+        icon: done ? 'rotate-ccw' : 'check',
+        onSelect: () => this.changeStatus(task, done ? '[ ]' : '[x]'),
+      },
+    };
   }
 
   /**
@@ -673,7 +740,11 @@ export class TaskBoard {
     // A card or ghost the calendar left open belongs to the old chrome.
     this.calendarView?.destroy();
     this.el.empty();
+    this.el.removeClass('is-chrome-collapsible', 'is-chrome-hidden');
+    this.headObserver?.disconnect();
+    this.headObserver = null;
     this.el.setAttribute('dir', this.language === 'fa' ? 'rtl' : 'ltr');
+    this.el.setAttribute('lang', this.language);
     this.el.toggleClass('is-board-layout', this.prefs.layout === 'board');
     this.el.toggleClass('is-calendar-layout', this.isCalendar);
     this.el.toggleClass('is-timeline-layout', this.isTimeline);
@@ -859,65 +930,35 @@ export class TaskBoard {
   }
 
   // ── The phone layout's chrome ────────────────────────────────────────────
-  // One bar under the title: what the board shows (the layout), search,
-  // filters and the rest of the view's options, each opening a sheet from
-  // the bottom. New tasks come from a button in thumb's reach. Nothing the
-  // desktop bar offers is left out; it is one tap further in.
+  // A slim bar on top (the title, search, filters, the view's options, and a
+  // "more" sheet for the rest), what the board shows as tabs along the bottom
+  // where a thumb rests, and a round button for a new task above them. Both
+  // bars step aside while the list is scrolled down and come back at the
+  // first scroll up, so the tasks get the whole screen. Nothing the desktop
+  // bar offers is left out; it is one tap further in.
 
   private renderCompactChrome(): void {
     const labels = this.labels;
     this.calendarView?.destroy();
     this.el.empty();
+    this.el.removeClass('is-chrome-hidden');
     this.el.setAttribute('dir', this.language === 'fa' ? 'rtl' : 'ltr');
+    this.el.setAttribute('lang', this.language);
     this.el.toggleClass('is-board-layout', this.prefs.layout === 'board');
     this.el.toggleClass('is-calendar-layout', this.isCalendar);
     this.el.toggleClass('is-timeline-layout', this.isTimeline);
 
     this.headerEl = this.el.createDiv({ cls: 'taskpro-board__header is-compact' });
+    // Only the list steps aside: a board's columns and a calendar's grid scroll on their own and keep their bars.
+    this.el.toggleClass('is-chrome-collapsible', this.prefs.layout === 'table' && (this.prefs.compactTable ?? 'list') === 'list');
+    this.trackHead();
     const heading = this.headerEl.createDiv({ cls: 'taskpro-board__heading' });
-    setIcon(heading.createSpan({ cls: 'taskpro-board__heading-icon' }), 'list-checks');
     const titles = heading.createDiv({ cls: 'taskpro-board__titles' });
     titles.createEl('h2', { cls: 'taskpro-board__title-text', text: labels.title });
     this.summaryEl = titles.createSpan({ cls: 'taskpro-board__summary' });
-    const actions = heading.createDiv({ cls: 'taskpro-board__heading-actions' });
-    this.iconButton(actions, 'tags', labels.manageTags, () => this.host.manageTags());
-    this.iconButton(actions, 'refresh-cw', labels.refresh, () => void this.host.store.reload());
-    const toggleFloating =
-      this.options.onToggleFloating ?? (this.host.openFloating ? () => this.host.openFloating?.() : null);
-    if (toggleFloating) {
-      this.iconButton(
-        actions,
-        this.options.floating ? 'minimize-2' : 'picture-in-picture-2',
-        this.options.floating ? labels.dock : labels.float,
-        () => toggleFloating()
-      ).addClass('taskpro-board__float-toggle');
-    }
-    if (this.options.floating && this.options.onClose) {
-      this.iconButton(actions, 'x', labels.close, () => this.options.onClose?.()).addClass('taskpro-board__close');
-    }
 
-    this.toolbarEl = this.headerEl.createDiv({ cls: 'taskpro-board__bar' });
-    const item = this.layoutItems().find((entry) => entry.value === this.prefs.layout) ?? this.layoutItems()[0];
-    const layout = this.toolbarEl.createEl('button', { cls: 'taskpro-board__bar-btn is-layout' });
-    layout.type = 'button';
-    layout.setAttribute('aria-label', `${labels.layoutLabel}: ${item.label}`);
-    setIcon(layout.createSpan({ cls: 'taskpro-board__bar-icon' }), item.icon);
-    layout.createSpan({ cls: 'taskpro-board__bar-label', text: item.label });
-    setIcon(layout.createSpan({ cls: 'taskpro-board__bar-chevron' }), 'chevron-down');
-    layout.addEventListener('click', () =>
-      this.openSheetMenu(layout, labels.layoutLabel, () => [
-        {
-          entries: this.layoutItems().map((entry) => ({
-            label: entry.label,
-            icon: entry.icon,
-            checked: entry.value === this.prefs.layout,
-            onSelect: () => void this.updatePrefs({ layout: entry.value }),
-          })),
-        },
-      ])
-    );
-
-    this.toolbarEl.createDiv({ cls: 'taskpro-board__bar-space' });
+    // The toolbar is the heading's actions: search, filters, the view's options, more.
+    this.toolbarEl = heading.createDiv({ cls: 'taskpro-board__heading-actions' });
     const searching = this.searchOpen || !!this.search.trim();
     const searchButton = this.iconButton(this.toolbarEl, 'search', searching ? labels.closeSearch : labels.openSearch, () => {
       this.searchOpen = !searching;
@@ -930,6 +971,7 @@ export class TaskBoard {
     });
     searchButton.addClass('taskpro-board__bar-icon-btn');
     searchButton.toggleClass('is-active', searching);
+    searchButton.setAttribute('aria-pressed', String(searching));
 
     const count = this.activeFilterCount();
     const filter = this.toolbarEl.createEl('button', { cls: 'taskpro-board__bar-btn is-filter' });
@@ -942,6 +984,10 @@ export class TaskBoard {
 
     const options = this.iconButton(this.toolbarEl, 'sliders-horizontal', labels.viewOptions, () => this.openViewOptions(options));
     options.addClass('taskpro-board__bar-icon-btn', 'taskpro-board__properties');
+
+    const more = this.iconButton(this.toolbarEl, 'more-horizontal', labels.more, () => this.openMoreSheet(more));
+    more.addClass('taskpro-board__bar-icon-btn', 'taskpro-board__more');
+    more.setAttribute('aria-haspopup', 'dialog');
 
     if (searching) {
       const search = this.headerEl.createDiv({ cls: 'taskpro-board__search is-compact' });
@@ -974,6 +1020,117 @@ export class TaskBoard {
 
     this.bodyEl = this.createBody();
     this.renderFab();
+    this.renderTabBar();
+  }
+
+  /** The bar's height, kept where the list under it can read it: the search field opens in it, and a language can wrap it. */
+  private trackHead(): void {
+    this.headObserver?.disconnect();
+    this.headObserver = null;
+    const head = this.headerEl;
+    const measure = () => this.el.style.setProperty('--taskpro-head-h', `${head.offsetHeight}px`);
+    measure();
+    const view = this.el.ownerDocument.defaultView ?? window;
+    if (typeof view.ResizeObserver === 'undefined') return;
+    this.headObserver = new view.ResizeObserver(measure);
+    this.headObserver.observe(head);
+  }
+
+  /** What the board shows, as tabs along the bottom. */
+  private renderTabBar(): void {
+    const labels = this.labels;
+    const bar = this.el.createEl('nav', { cls: 'taskpro-tabbar', attr: { 'aria-label': labels.layoutTabs } });
+    const list = bar.createDiv({ cls: 'taskpro-tabbar__list', attr: { role: 'tablist', 'aria-label': labels.layoutTabs } });
+    const tabs = this.layoutItems().map((entry) => ({
+      ...entry,
+      label: entry.value === 'table' && (this.prefs.compactTable ?? 'list') === 'list' ? labels.layoutList : entry.label,
+    }));
+    const buttons: HTMLButtonElement[] = [];
+    for (const entry of tabs) {
+      const selected = entry.value === this.prefs.layout;
+      const tab = list.createEl('button', { cls: 'taskpro-tabbar__tab' });
+      tab.type = 'button';
+      tab.dataset.layout = entry.value;
+      tab.setAttribute('role', 'tab');
+      tab.setAttribute('aria-selected', String(selected));
+      tab.tabIndex = selected ? 0 : -1;
+      tab.toggleClass('is-active', selected);
+      setIcon(tab.createSpan({ cls: 'taskpro-tabbar__icon', attr: { 'aria-hidden': 'true' } }), entry.icon);
+      tab.createSpan({ cls: 'taskpro-tabbar__label', text: entry.label });
+      tab.addEventListener('click', () => {
+        if (!selected) void this.updatePrefs({ layout: entry.value });
+      });
+      buttons.push(tab);
+    }
+    // Arrow keys move between the tabs, as a tab list does.
+    list.addEventListener('keydown', (event) => {
+      const at = buttons.indexOf(document.activeElement as HTMLButtonElement);
+      if (at === -1) return;
+      const rtl = this.language === 'fa';
+      const step = event.key === 'ArrowRight' ? (rtl ? -1 : 1) : event.key === 'ArrowLeft' ? (rtl ? 1 : -1) : 0;
+      const to = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : step ? (at + step + buttons.length) % buttons.length : -1;
+      if (to === -1) return;
+      event.preventDefault();
+      buttons[to].focus();
+    });
+  }
+
+  /** What the bar on top does not carry: the tags, a refresh, the saved views and the floating board. */
+  private openMoreSheet(anchor: HTMLElement): void {
+    const labels = this.labels;
+    const toggleFloating = this.options.onToggleFloating ?? (this.host.openFloating ? () => this.host.openFloating?.() : null);
+    this.openSheetMenu(anchor, labels.more, () => {
+      const entries: MenuEntry[] = [
+        { label: labels.views, icon: 'bookmark', hint: this.activeView()?.name, submenu: () => this.viewSections() },
+        { label: labels.manageTags, icon: 'tags', onSelect: () => this.host.manageTags() },
+        { label: labels.refresh, icon: 'refresh-cw', onSelect: () => void this.host.store.reload() },
+      ];
+      if (toggleFloating) {
+        entries.push({
+          label: this.options.floating ? labels.dock : labels.float,
+          icon: this.options.floating ? 'minimize-2' : 'picture-in-picture-2',
+          onSelect: () => toggleFloating(),
+        });
+      }
+      if (this.options.floating && this.options.onClose) {
+        entries.push({ label: labels.close, icon: 'x', onSelect: () => this.options.onClose?.() });
+      }
+      return [{ entries }];
+    });
+  }
+
+  /**
+   * Both bars step aside while a list is scrolled down and come back at the
+   * first scroll up (or at the top, or when something needs them). Scrolling
+   * sideways, as a board of columns does, is not scrolling down.
+   */
+  private watchScroll(): void {
+    const last = new WeakMap<EventTarget, number>();
+    this.el.addEventListener(
+      'scroll',
+      (event) => {
+        if (!this.compact || !this.el.hasClass('is-chrome-collapsible')) return;
+        const target = event.target;
+        if (!(target instanceof HTMLElement) || target.scrollHeight <= target.clientHeight + 1) return;
+        const top = target.scrollTop;
+        const before = last.get(target) ?? 0;
+        last.set(target, top);
+        const delta = top - before;
+        const needed = this.searchOpen || this.selected.size > 0 || this.holds > 0;
+        if (top < 48 || delta < -6 || needed) this.setChromeHidden(false);
+        else if (delta > 6) this.setChromeHidden(true);
+      },
+      { capture: true, passive: true }
+    );
+    // Reaching for a bar with the keyboard or a switch brings it back.
+    this.el.addEventListener('focusin', (event) => {
+      if ((event.target as HTMLElement).closest('.taskpro-board__header, .taskpro-tabbar, .taskpro-board__fab')) this.setChromeHidden(false);
+    });
+  }
+
+  private setChromeHidden(hidden: boolean): void {
+    if (hidden === this.el.hasClass('is-chrome-hidden')) return;
+    this.el.toggleClass('is-chrome-hidden', hidden);
   }
 
   /**
@@ -1107,6 +1264,24 @@ export class TaskBoard {
           ],
         });
       }
+      if (!board && (this.prefs.compactTable ?? 'list') === 'list') {
+        const rowStyle = this.prefs.rowStyle ?? 'light';
+        rows.push({
+          label: labels.rowStyle,
+          icon: 'rows-3',
+          hint: rowStyle === 'light' ? labels.rowStyleLight : labels.rowStyleChips,
+          submenu: () => [
+            {
+              entries: (['light', 'chips'] as const).map((value) => ({
+                label: value === 'light' ? labels.rowStyleLight : labels.rowStyleChips,
+                checked: (this.prefs.rowStyle ?? 'light') === value,
+                keepOpen: true,
+                onSelect: () => this.quietPrefs({ rowStyle: value }),
+              })),
+            },
+          ],
+        });
+      }
       sections.push({ entries: rows });
       return sections;
     });
@@ -1126,59 +1301,36 @@ export class TaskBoard {
     });
   }
 
-  /** The quick-add row as a sheet: a title, the note it goes into, and Add; Enter adds and stays for the next. */
+  /** New tasks as a sheet: one line of words read as it is typed, with what it understood shown under it. */
   private openAddSheet(anchor: HTMLElement): void {
     const labels = this.labels;
-    const actionLabels = getActionLabels(this.language);
-    this.hold(true);
-    openCalendarPopover({
+    const system = this.prefs.calendarSystem ?? this.settings.calendarSystem;
+    const baseName = (path: string) => path.split('/').pop()!.replace(/\.md$/i, '');
+    openQuickAddSheet({
       container: this.el,
       anchor,
-      cls: 'taskpro-add-sheet',
-      rtl: this.language === 'fa',
-      onClose: () => this.hold(false),
-      build: (el) => {
-        el.createDiv({ cls: 'taskpro-add-sheet__title', text: labels.addTaskButton });
-        const input = el.createEl('input', {
-          type: 'text',
-          cls: 'taskpro-add-sheet__input',
-          attr: { placeholder: labels.addPlaceholder, 'aria-label': labels.addPlaceholder, dir: 'auto', enterkeyhint: 'done' },
-        });
-        autoDirection(input, this.direction);
-        const row = el.createDiv({ cls: 'taskpro-add-sheet__row' });
-        const target = row.createEl('button', { cls: 'taskpro-add-sheet__target' });
-        target.type = 'button';
-        setIcon(target.createSpan({ cls: 'taskpro-add-sheet__target-icon' }), 'file-plus');
-        const name = target.createSpan({ cls: 'taskpro-add-sheet__target-name', attr: { dir: 'auto' } });
-        const showTarget = () => {
-          const inbox = this.inboxPath();
-          name.setText(`${labels.addInto}: ${inbox ? inbox.split('/').pop()!.replace(/\.md$/i, '') : labels.chooseInboxShort}`);
-        };
-        showTarget();
-        target.addEventListener('click', () =>
-          this.host.chooseNote((path) => {
-            void this.updatePrefs({ inboxPath: path }, false).then(showTarget);
-          })
-        );
-        const add = row.createEl('button', { cls: 'mod-cta taskpro-add-sheet__add', text: actionLabels.add });
-        add.type = 'button';
-        const submit = () => {
-          const text = input.value.trim();
-          if (!text) return;
-          void this.addTask(text, {}).then((added) => {
-            if (!added) return;
-            input.value = '';
-            input.focus();
-          });
-        };
-        add.addEventListener('click', submit);
-        input.addEventListener('keydown', (event) => {
-          if (event.key !== 'Enter' || event.isComposing) return;
-          event.preventDefault();
-          submit();
-        });
-        window.setTimeout(() => input.focus(), 60);
+      language: this.language,
+      labels,
+      addLabel: getActionLabels(this.language).add,
+      system,
+      timeFormat: this.settings.calendar.timeFormat,
+      weekStartsOn: resolveWeekStart(this.settings.calendar.weekStart, system),
+      tags: this.settings.tags,
+      direction: this.direction,
+      destination: (parsed) => {
+        if (parsed.plan && this.host.addTaskOnDay && this.host.dayNoteTarget) {
+          const target = this.host.dayNoteTarget(parsed.plan.date, system);
+          return { name: target.path ? baseName(target.path) : labels.chooseInboxShort, choosable: target.isDailyNote === false };
+        }
+        const inbox = this.inboxPath();
+        return { name: inbox ? baseName(inbox) : labels.chooseInboxShort, choosable: true };
       },
+      chooseNote: (done) =>
+        this.host.chooseNote((path) => {
+          void this.updatePrefs({ inboxPath: path }, false).then(done);
+        }),
+      add: (parsed) => this.addParsed(parsed),
+      hold: (on) => this.hold(on),
     });
   }
 
@@ -1579,6 +1731,55 @@ export class TaskBoard {
     const inScope = this.effectiveScope === 'vault' || isWithinTargetFolder(path, this.settings.targetFolder);
     this.host.notify(inScope ? labels.added(noteName) : labels.outsideScope);
     return true;
+  }
+
+  /**
+   * Writes a task read from a line of words. With a plan it goes into that
+   * day's note, as a task made on the calendar does; otherwise into the
+   * inbox. Resolves the name of the note it went into, or null.
+   */
+  private async addParsed(parsed: Parsed): Promise<string | null> {
+    const labels = this.labels;
+    const host = this.host;
+    const system = this.prefs.calendarSystem ?? this.settings.calendarSystem;
+    const defaults = this.newTaskDefaults({});
+    let line = `- ${defaults.status} ${parsed.title.replace(/\s+/g, ' ').trim()}`;
+    const priority = parsed.priority ?? defaults.priority;
+    if (priority) line = setPriority(line, priority);
+    if (parsed.deadline) line = setDeadline(line, parsed.deadline);
+    const plan = parsed.plan;
+    let path: string | null = null;
+    const withTail = (text: string) => {
+      let out = text;
+      if (parsed.remind) out = setRemind(out, parsed.remind);
+      const keys = [...new Set([...defaults.tags, ...parsed.tags.map(normalizeTagKey)].filter(Boolean))];
+      return keys.length ? setTags(out, keys) : out;
+    };
+
+    if (plan && host.addTaskOnDay) {
+      // The note is the day, so an untimed task there needs no marker; one with a time carries it.
+      const timed = !!plan.start;
+      const target = host.dayNoteTarget?.(plan.date, system);
+      const implicit = !timed && this.prefs.calendarShowDailyNotes && target?.isDailyNote !== false;
+      line = setSchedule(line, timed ? plan : implicit ? null : { date: plan.date });
+      path = await host.addTaskOnDay(plan.date, withTail(line), system);
+    } else {
+      if (plan) line = setSchedule(line, plan);
+      const inbox = this.inboxPath();
+      if (!inbox) {
+        host.notify(labels.addFailed);
+        host.chooseNote((picked) => void this.updatePrefs({ inboxPath: picked }, false));
+        return null;
+      }
+      path = (await host.addTask(inbox, withTail(line))) ? inbox : null;
+    }
+    if (!path) {
+      host.notify(labels.addFailed);
+      return null;
+    }
+    const inScope = this.effectiveScope === 'vault' || isWithinTargetFolder(path, this.settings.targetFolder);
+    if (!inScope) host.notify(labels.outsideScope);
+    return path.split('/').pop()!.replace(/\.md$/i, '');
   }
 
   /**
@@ -2139,7 +2340,7 @@ export class TaskBoard {
       this.toggleSelected(task);
     } else if (event.code === 'Space') {
       event.preventDefault();
-      void this.host.setStatus(task, task.status === '[x]' ? '[ ]' : '[x]');
+      this.changeStatus(task, task.status === '[x]' ? '[ ]' : '[x]');
     } else if (event.code === 'KeyE' || event.key === 'F2') {
       event.preventDefault();
       el.querySelector<HTMLElement>('.taskpro-board__title')?.click();
@@ -3063,9 +3264,13 @@ export class TaskBoard {
       setIcon(titleLine.createSpan({ cls: 'taskpro-board__waiting' }), 'hourglass');
     }
 
-    const props = main.createDiv({ cls: 'taskpro-list__props' });
-    for (const { id } of columns) this.listProperty(props, task, id);
-    if (!props.childElementCount) props.remove();
+    if ((this.prefs.rowStyle ?? 'light') === 'light') {
+      this.lightMeta(main, task, columns);
+    } else {
+      const props = main.createDiv({ cls: 'taskpro-list__props' });
+      for (const { id } of columns) this.listProperty(props, task, id);
+      if (!props.childElementCount) props.remove();
+    }
 
     const open = (at: { x: number; y: number } | DOMRect) => this.openTaskActions(task, at, row);
     main.addEventListener('click', () => open(main.getBoundingClientRect()));
@@ -3082,6 +3287,95 @@ export class TaskBoard {
     this.withTaskActions(row, task);
     this.swipeRow(row, content, task);
     return row;
+  }
+
+  /**
+   * What a row says about a task, as one calm line of small text rather than a
+   * wall of chips: when, how urgent, which tags, how far along. Only what is
+   * overdue or due today is coloured, so what needs a look stands out. The
+   * chips are one tap in (the task's sheet).
+   */
+  private lightMeta(main: HTMLElement, task: BoardTask, columns: readonly BoardColumnPref[]): void {
+    const meta = main.createDiv({ cls: 'taskpro-list__meta' });
+    const item = (kind: string, icon: string | null, text: string, state?: string): HTMLElement => {
+      const el = meta.createSpan({ cls: `taskpro-meta is-${kind}` });
+      if (state) el.dataset.state = state;
+      if (icon) setIcon(el.createSpan({ cls: 'taskpro-meta__icon', attr: { 'aria-hidden': 'true' } }), icon);
+      el.createSpan({ cls: 'taskpro-meta__text', text, attr: { dir: 'auto' } });
+      return el;
+    };
+    for (const { id } of columns) {
+      switch (id) {
+        case 'status':
+          if (task.status === '[/]') item('status', 'circle-dot', STATUS_LABELS[this.language]['[/]'], 'doing');
+          else if (task.status === '[!]') item('status', 'circle-x', STATUS_LABELS[this.language]['[!]'], 'failed');
+          break;
+        case 'plan':
+          if (task.schedule) {
+            const options = {
+              language: this.language,
+              calendarSystem: this.prefs.calendarSystem ?? this.settings.calendarSystem,
+              timeFormat: this.settings.calendar.timeFormat,
+            };
+            const past = task.status !== '[x]' && isSchedulePast(task.schedule);
+            item('plan', task.schedule.start ? CHIP_ICON_NAMES.schedule : CHIP_ICON_NAMES.scheduleDay, scheduleText(task.schedule, options), past ? 'past' : undefined);
+          }
+          break;
+        case 'deadline':
+          if (task.deadline) {
+            const info = getDeadlineInfo(task.deadline, this.language, task.status);
+            const text = info.state === 'missed' ? this.labels.buckets.overdue : info.state === 'completed' ? this.formatDate(task.deadline) : info.text;
+            item('deadline', CHIP_ICON_NAMES.deadline, text, info.state);
+          }
+          break;
+        case 'priority':
+          if (task.priority) {
+            const el = item('priority', PRIORITY_ICON_NAMES[task.priority], PRIORITY_LABELS[this.language][task.priority]);
+            el.dataset.priority = task.priority;
+          }
+          break;
+        case 'tags':
+          if (task.tags.length) {
+            const el = meta.createSpan({ cls: 'taskpro-meta is-tags' });
+            const shown = task.tags.slice(0, 2).map((key) => resolveTag(key, this.settings.tags));
+            for (const tag of shown) {
+              const one = el.createSpan({ cls: 'taskpro-meta__tag' });
+              one.createSpan({ cls: 'taskpro-meta__dot', attr: { 'aria-hidden': 'true' } }).style.setProperty('--taskpro-dot', resolveTagColor(tag.color));
+              one.createSpan({ cls: 'taskpro-meta__text', text: tag.name, attr: { dir: 'auto' } });
+            }
+            if (task.tags.length > shown.length) el.createSpan({ cls: 'taskpro-meta__more', text: `+${task.tags.length - shown.length}` });
+          }
+          break;
+        case 'waiting':
+          if (task.waiting?.length) item('waiting', 'hourglass', String(task.waiting.length));
+          break;
+        case 'repeat':
+          if (task.repeat) item('repeat', CHIP_ICON_NAMES.repeat, getRepeatLabels(this.language).chip(task.repeat));
+          break;
+        case 'progress': {
+          const progress = this.host.getProgress(task);
+          const count = this.subtaskProgress(task);
+          if (progress?.enabled) {
+            const percent = Math.round((progress.currentSteps / progress.totalSteps) * 100);
+            this.metaBar(item('progress', null, `${percent}%`), percent);
+          } else if (count) {
+            this.metaBar(item('progress', null, `${count.done}/${count.total}`), Math.round((count.done / Math.max(1, count.total)) * 100));
+          }
+          break;
+        }
+        case 'note':
+          if (this.prefs.groupBy !== 'note') item('note', 'file-text', task.fileName);
+          break;
+      }
+    }
+    if (!meta.childElementCount) meta.remove();
+  }
+
+  /** A thin bar before a progress figure: how far along, at a glance. */
+  private metaBar(el: HTMLElement, percent: number): void {
+    const bar = createSpan({ cls: 'taskpro-meta__bar', attr: { 'aria-hidden': 'true' } });
+    bar.createSpan({ cls: 'taskpro-meta__fill' }).style.setProperty('--taskpro-progress', `${percent}%`);
+    el.prepend(bar);
   }
 
   /** One property under a row's title, when it has a value; each opens its own choices. */
@@ -3124,6 +3418,38 @@ export class TaskBoard {
         this.noteLink(cell(), task);
         return;
     }
+  }
+
+  /**
+   * A task ticked off, or opened again, from its row. On a phone a tap or a
+   * swipe can land by mistake, so the change is announced at the foot of the
+   * screen with a way to take it back, and given a short buzz where there is one.
+   */
+  private changeStatus(task: BoardTask, next: TaskStatus): void {
+    const labels = this.labels;
+    const before = task.status;
+    void this.host.setStatus(task, next);
+    if (!this.compact) return;
+    haptic(next === '[x]' ? 'success' : 'tick');
+    const title = displayTitle(task.text) || task.text;
+    // A repeating task starts its next round when it is done; putting this one back would leave that round behind.
+    const undoable = !(next === '[x]' && task.repeat);
+    showSnackbar({
+      container: this.el,
+      message: next === '[x]' ? labels.doneToast(title) : labels.reopenedToast(title),
+      dismissLabel: labels.qaClose,
+      actionLabel: undoable ? labels.undo : undefined,
+      onAction: undoable ? () => this.undoStatus(task, before) : undefined,
+    });
+  }
+
+  private undoStatus(task: BoardTask, before: TaskStatus): void {
+    const all = this.host.store.all();
+    const fresh = all.find((candidate) => candidate.id === task.id) ?? all.find((candidate) => candidate.filePath === task.filePath && candidate.lineNumber === task.lineNumber);
+    if (!fresh) return;
+    void this.host.setStatus(fresh, before);
+    haptic('tick');
+    announce(this.el, this.labels.undoneToast);
   }
 
   /**
@@ -3181,7 +3507,7 @@ export class TaskBoard {
       };
       content.addEventListener('click', swallow, { capture: true, once: true });
       window.setTimeout(() => content.removeEventListener('click', swallow, true), 400);
-      if (lead >= SWIPE_ACT) void this.host.setStatus(task, task.status === '[x]' ? '[ ]' : '[x]');
+      if (lead >= SWIPE_ACT) this.changeStatus(task, task.status === '[x]' ? '[ ]' : '[x]');
       else if (lead <= -SWIPE_ACT) this.openTaskActions(task, content.getBoundingClientRect(), row);
     };
     content.addEventListener('pointerup', finish);
@@ -3203,14 +3529,16 @@ export class TaskBoard {
     button.dataset.status = task.status;
     button.setAttribute('role', 'checkbox');
     button.setAttribute('aria-checked', task.status === '[/]' ? 'mixed' : String(done));
-    button.setAttribute('aria-label', done ? labels.markOpen : labels.markDone);
+    // A checkbox is named for what it ticks, and its state is said by aria-checked; what a press does is its tooltip.
+    button.setAttribute('aria-label', displayTitle(task.text) || task.text);
+    button.title = done ? labels.markOpen : labels.markDone;
     // A status that has just changed pops: the tick lands where the row now is.
     if (this.arrivals.changed.has(task.id) && performance.now() <= this.arrivals.until) button.addClass('is-popping');
     // No icon inside: the tick and the cross are CSS masks. A theme's rules
     // for icon buttons key on an <svg> in a <button> and would resize it.
     button.addEventListener('click', (event) => {
       event.stopPropagation();
-      void this.host.setStatus(task, done ? '[ ]' : '[x]');
+      this.changeStatus(task, done ? '[ ]' : '[x]');
     });
   }
 

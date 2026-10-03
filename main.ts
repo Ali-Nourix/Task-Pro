@@ -72,6 +72,8 @@ import { TaskBoardView, VIEW_TYPE_TASK_BOARD } from './src/board/task-board-view
 import { TaskBoardModal } from './src/board/task-board-modal';
 import { getBoardLabels } from './src/board/board-localization';
 import { sanitizeViews } from './src/board/board-views';
+import { watchTwoFingerSwipe } from './src/ui/gestures';
+import { haptic } from './src/ui/haptics';
 import { DailyNoteService, appendTaskLine } from './src/calendar/daily-notes';
 import { todayKey } from './src/calendar/calendar-dates';
 import { getCalendarLabels } from './src/calendar/calendar-localization';
@@ -608,6 +610,16 @@ export default class TaskProPlugin extends Plugin {
         this.refreshDecorations();
       },
     });
+
+    // Two fingers pulled down anywhere open the task board, on a touch screen.
+    const stopSwipe = watchTwoFingerSwipe(document, {
+      enabled: () => this.settings.boardGesture,
+      onSwipeDown: () => {
+        haptic('success');
+        void this.activateBoard();
+      },
+    });
+    this.register(stopSwipe);
 
     // Command: open the all-tasks board
     this.addCommand({

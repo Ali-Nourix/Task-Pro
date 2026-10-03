@@ -62,11 +62,49 @@ export interface BoardLabels {
   resetColumnWidth: string;
   newTagColumn: string;
   /** The phone layout's bar and sheets. */
+  /** What the board shows, as a phone's bottom tabs are called, and the table as it is there. */
+  layoutTabs: string;
+  layoutList: string;
   viewOptions: string;
   layoutLabel: string;
   scopeLabel: string;
   tableStyle: string;
   tableStyleList: string;
+  rowStyle: string;
+  rowStyleLight: string;
+  rowStyleChips: string;
+  // Quick add: one line of words becomes a task with a day, a time, a priority and tags.
+  qaTitle: string;
+  qaHint: string;
+  qaToday: string;
+  qaTomorrow: string;
+  qaNextWeek: string;
+  qaPickDate: string;
+  qaPriority: string;
+  qaTags: string;
+  qaRemind: string;
+  qaRemindHour: string;
+  qaRemindEvening: string;
+  qaRemindTomorrow: string;
+  qaNoTags: string;
+  qaBack: string;
+  qaClose: string;
+  qaUnderstood: string;
+  qaKeepAsWords: string;
+  qaRemoveFromTask: string;
+  qaDue: (day: string) => string;
+  qaReminder: (moment: string) => string;
+  qaGoesTo: (note: string) => string;
+  qaAddedLine: (title: string, note: string) => string;
+  qaNeedsTitle: string;
+  qaPrevMonth: string;
+  qaNextMonth: string;
+  qaPickedDay: (day: string) => string;
+  qaEdited: string;
+  undo: string;
+  doneToast: (title: string) => string;
+  reopenedToast: (title: string) => string;
+  undoneToast: string;
   tableStyleFull: string;
   openSearch: string;
   closeSearch: string;
@@ -212,11 +250,47 @@ const EN: BoardLabels = {
   columnMenu: 'Column options',
   resetColumnWidth: 'Reset column width',
   newTagColumn: 'New tag',
+  layoutTabs: 'Views',
+  layoutList: 'List',
   viewOptions: 'View options',
   layoutLabel: 'Layout',
   scopeLabel: 'Show tasks from',
   tableStyle: 'Table style',
   tableStyleList: 'List',
+  rowStyle: 'Row style',
+  rowStyleLight: 'Light',
+  rowStyleChips: 'Chips',
+  qaTitle: 'New task',
+  qaHint: 'Try: call Sara tomorrow 9 #work !high',
+  qaToday: 'Today',
+  qaTomorrow: 'Tomorrow',
+  qaNextWeek: 'Next week',
+  qaPickDate: 'Date…',
+  qaPriority: 'Priority',
+  qaTags: 'Tags',
+  qaRemind: 'Remind',
+  qaRemindHour: 'In 1 hour',
+  qaRemindEvening: 'This evening',
+  qaRemindTomorrow: 'Tomorrow morning',
+  qaNoTags: 'No tags yet',
+  qaBack: 'Back',
+  qaClose: 'Close',
+  qaUnderstood: 'Understood',
+  qaKeepAsWords: 'Keep as words in the title',
+  qaRemoveFromTask: 'Remove',
+  qaDue: (day) => `Due ${isolate(day)}`,
+  qaReminder: (moment) => `Remind ${isolate(moment)}`,
+  qaGoesTo: (note) => `Goes to ${isolate(note)}`,
+  qaAddedLine: (title, note) => `Added “${isolate(title)}” to ${isolate(note)}`,
+  qaNeedsTitle: 'Write what the task is first',
+  qaPrevMonth: 'Previous month',
+  qaNextMonth: 'Next month',
+  qaPickedDay: (day) => `Picked ${isolate(day)}`,
+  qaEdited: 'Updated',
+  undo: 'Undo',
+  doneToast: (title) => `Done: ${isolate(title)}`,
+  reopenedToast: (title) => `Reopened: ${isolate(title)}`,
+  undoneToast: 'Undone',
   tableStyleFull: 'Full table',
   openSearch: 'Search',
   closeSearch: 'Close search',
@@ -373,11 +447,47 @@ const FA: BoardLabels = {
   columnMenu: 'گزینه‌های ستون',
   resetColumnWidth: 'بازگشت به عرض پیش‌فرض ستون‌ها',
   newTagColumn: 'برچسب تازه',
+  layoutTabs: 'نماها',
+  layoutList: 'فهرست',
   viewOptions: 'گزینه‌های نما',
   layoutLabel: 'چیدمان',
   scopeLabel: 'تسک‌ها از',
   tableStyle: 'شکل جدول',
   tableStyleList: 'فهرست',
+  rowStyle: 'شکل ردیف',
+  rowStyleLight: 'سبک',
+  rowStyleChips: 'چیپ',
+  qaTitle: 'تسک تازه',
+  qaHint: 'مثلاً: زنگ به سارا فردا ساعت ۹ #کار !بالا',
+  qaToday: 'امروز',
+  qaTomorrow: 'فردا',
+  qaNextWeek: 'هفته بعد',
+  qaPickDate: 'تاریخ…',
+  qaPriority: 'اولویت',
+  qaTags: 'برچسب‌ها',
+  qaRemind: 'یادآوری',
+  qaRemindHour: 'یک ساعت دیگر',
+  qaRemindEvening: 'امشب',
+  qaRemindTomorrow: 'فردا صبح',
+  qaNoTags: 'هنوز برچسبی نیست',
+  qaBack: 'بازگشت',
+  qaClose: 'بستن',
+  qaUnderstood: 'برداشت من',
+  qaKeepAsWords: 'فقط به‌صورت متن در عنوان بماند',
+  qaRemoveFromTask: 'حذف',
+  qaDue: (day) => `مهلت ${isolate(day)}`,
+  qaReminder: (moment) => `یادآوری ${isolate(moment)}`,
+  qaGoesTo: (note) => `می‌رود به ${isolate(note)}`,
+  qaAddedLine: (title, note) => `«${isolate(title)}» به ${isolate(note)} اضافه شد`,
+  qaNeedsTitle: 'اول بنویس تسک چیست',
+  qaPrevMonth: 'ماه قبل',
+  qaNextMonth: 'ماه بعد',
+  qaPickedDay: (day) => `${isolate(day)} انتخاب شد`,
+  qaEdited: 'به‌روز شد',
+  undo: 'بازگردانی',
+  doneToast: (title) => `انجام شد: ${isolate(title)}`,
+  reopenedToast: (title) => `دوباره باز شد: ${isolate(title)}`,
+  undoneToast: 'بازگردانی شد',
   tableStyleFull: 'جدول کامل',
   openSearch: 'جستجو',
   closeSearch: 'بستن جستجو',
