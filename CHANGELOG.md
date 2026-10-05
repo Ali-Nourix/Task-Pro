@@ -94,6 +94,25 @@
   card shows the family. The ID, used by typed commands, is shown on the card.
 - **One double-click to update**: `update-bot.bat` redeploys the three functions;
   they bring the database up to date themselves on first use.
+- **Your tags, listed**: the bot knows every tag you have used (open or finished
+  tasks) and the tags you defined under **Settings → Tags**, with their names.
+  `/tags` (and the 🏷 button on the menu) shows them with how many tasks are open
+  under each; a tag opens its list of tasks or starts a new task already tagged.
+  Wherever a tag is asked for (a task's tags, a new task) the known tags are
+  buttons, so you tap instead of typing; typing still works. The plugin uploads
+  the list with the snapshot, only when it changes.
+- **MarkdownV2 throughout**: screens are sent as MarkdownV2 (bold labels, underlined
+  headings, italic notes, quotes, an expandable quote for a long list of subtasks
+  and the command list, code for ids). Every character Telegram reserves is
+  escaped; a message Telegram still refuses falls back to HTML, then plain text.
+  The converter has its own validator in the tests, and every screen the bot
+  sends is checked against it.
+- **Accessible mode** (**Settings → Accessible mode** in the bot, off by default):
+  no emoji, decoration or invisible padding in the text (screen readers read
+  them out), buttons and sections named with words instead of symbols, "(selected)"
+  instead of ticks, one task to a button row, a task's facts one per line with
+  their names, a plain list of the next 14 days instead of a calendar grid, and
+  plain reminders. Typed answers still work.
 - Notes remain the source of truth; the tables are locked to the service role and
   the bot answers only the chat it was paired with.
 

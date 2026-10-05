@@ -754,6 +754,7 @@ export default class TaskProPlugin extends Plugin {
       settings: () => this.settings.telegram,
       tasks: () => (this.taskStore.isLoaded ? this.syncableTasks() : null),
       defaults: () => ({ enabled: this.settings.reminders.planReminders, leadMinutes: this.settings.reminders.planLeadMinutes }),
+      definedTags: () => this.settings.tags,
       post: async (url, token, body) => {
         const response = await requestUrl({
           url,

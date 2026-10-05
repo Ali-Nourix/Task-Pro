@@ -6,6 +6,7 @@
  */
 import * as esbuild from 'esbuild';
 import { fileURLToPath } from 'url';
+import { validateV2 } from './md2-validator.mjs';
 
 const build = await esbuild.build({
   stdin: {
@@ -23,6 +24,7 @@ const build = await esbuild.build({
       export { htmlToRich, mdEscape } from "../supabase/functions/_shared/rich.ts";
       export { telegramApi } from "../supabase/functions/_shared/telegram-api.ts";
       export { widenHtml, widenMarkdown, padOf, PADS } from "../supabase/functions/_shared/widen.ts";
+      export { htmlToMarkdownV2 } from "../supabase/functions/_shared/markdownv2.ts";
     `,
     resolveDir: new URL('.', import.meta.url).pathname,
     loader: 'ts',
@@ -124,9 +126,18 @@ function world(at = '2026-10-02T12:00:00Z') {
   const toasts = [];
   const commands = [];
   const state = { now: new Date(at) };
+  // What goes out must be something Telegram takes: MarkdownV2 it will not refuse, and buttons within its limits.
+  const vet = (text, buttons) => {
+    const problem = validateV2(mod.htmlToMarkdownV2(text));
+    if (problem) throw new Error(`a screen Telegram would refuse as MarkdownV2 (${problem}):\n${text}`);
+    for (const button of (buttons ?? []).flat()) {
+      if (!button.text || Array.from(button.text).length > 64) throw new Error(`a button label that is empty or too long: ${JSON.stringify(button.text)}`);
+      if (Buffer.byteLength(button.data) > 64) throw new Error(`a button whose data is over 64 bytes: ${button.data}`);
+    }
+  };
   const tg = {
-    send: async (chat, text, buttons, options) => void sent.push({ chat, text, buttons, options }),
-    edit: async (chat, id, text, buttons, rich) => void edits.push({ chat, id, text, buttons, rich }),
+    send: async (chat, text, buttons, options) => void (vet(text, buttons), sent.push({ chat, text, buttons, options })),
+    edit: async (chat, id, text, buttons, rich) => void (vet(text, buttons), edits.push({ chat, id, text, buttons, rich })),
     answer: async (_id, text) => void toasts.push(text),
     setCommands: async (chat, list) => void commands.push(list.map((c) => c.command)),
   };
@@ -160,8 +171,8 @@ async function paired() {
   eq(w.store.owner.chat_id, 7, 'the right code pairs the chat');
   eq([w.store.owner.language, w.store.owner.timezone, w.store.owner.calendar], ['fa', 'Asia/Tehran', 'jalali'], 'in Persian, Tehran time and the Jalali calendar to begin with');
   eq(w.sent.slice(-2).map((m) => m.text.startsWith('👋 <b>') ? 'greeting' : m.text.startsWith('✨ <b>') ? 'menu' : '?'), ['greeting', 'menu'], 'it greets, then shows the main menu');
-  eq(w.commands[0], ['start', 'today', 'list', 'status', 'settings', 'help'], 'and puts its commands in the chat’s menu');
-  eq(w.data(w.last()), ['ls:t:0', 'ls:a:0', 'new', 'st', 'set', 'help'], 'the menu: today, all, new, status, settings, help');
+  eq(w.commands[0], ['start', 'today', 'list', 'tags', 'status', 'settings', 'help'], 'and puts its commands in the chat’s menu');
+  eq(w.data(w.last()), ['ls:t:0', 'ls:a:0', 'new', 'tg:0', 'st', 'set', 'help'], 'the menu: today, all, new, tags, status, settings, help');
   eq(w.last().buttons[0][0].style, 'primary', 'the first button is blue');
   w.sent.length = 0;
   await w.say('hello', 99);
@@ -302,7 +313,7 @@ async function paired() {
 
   // Settings, in place.
   await w.say('/settings');
-  eq(w.data(w.last()), ['set:lang', 'set:cal', 'set:lead', 'set:tz', 'set:rich', 'set:pad', 'home', 'ls:t:0', 'ls:a:0', 'new', 'set'], 'settings, with the tab bar');
+  eq(w.data(w.last()), ['set:lang', 'set:cal', 'set:lead', 'set:tz', 'set:rich', 'set:pad', 'set:a11y', 'home', 'ls:t:0', 'ls:a:0', 'new', 'set'], 'settings, with the tab bar');
   await w.press('set:cal');
   eq([w.store.owner.calendar, w.lastEdit().text.includes('میلادی')], ['gregorian', true], 'the calendar flips');
   await w.press('set:lead');
@@ -312,7 +323,7 @@ async function paired() {
   await w.press('set:lang');
   eq([w.store.owner.language, w.lastEdit().text.startsWith('⚙️ <b>Settings</b>'), w.commands.at(-1)[0]], ['en', true, 'start'], 'the language flips and the page is redrawn in it');
   await w.say('/help');
-  eq(w.last().text.startsWith('📖 <b>Help</b>'), true, 'in English from then on');
+  eq(w.last().text.startsWith('📖 <b><u>Help</u></b>'), true, 'in English from then on');
   await w.say('/tz Mars/Base');
   eq(w.last().text.includes('Asia/Tehran'), true, 'a time zone that does not exist is refused');
   await w.say('/tz Europe/Berlin');
@@ -351,8 +362,8 @@ async function paired() {
   ] });
   await w.say('/start');
   const home = w.last();
-  eq([home.text.includes('۱ عقب‌افتاده'), home.text.includes('۲ تسک باز'), home.text.includes('🟢')], [true, true, true], 'the menu counts what is late, due today and open, and shows the sync');
-  eq(w.data(home), ['ls:t:0', 'ls:a:0', 'new', 'ls:o:0', 'st', 'set', 'help'], 'with a button for what is overdue when something is');
+  eq([home.text.includes('<b>۱</b> عقب‌افتاده'), home.text.includes('<b>۲</b> تسک باز'), home.text.includes('🟢')], [true, true, true], 'the menu counts what is late, due today and open, and shows the sync');
+  eq(w.data(home), ['ls:t:0', 'ls:a:0', 'new', 'ls:o:0', 'tg:0', 'st', 'set', 'help'], 'with a button for what is overdue when something is');
   eq(home.buttons.flat().find((b) => b.data === 'ls:o:0').style, 'danger', 'in red');
   await w.press('st');
   eq(w.lastEdit().text.includes('📊'), true, 'the status page opens in place');
@@ -372,12 +383,230 @@ async function paired() {
 }
 
 
+// ── Tags: the ones the notes know, listed to pick from ──────────────────────
+{
+  const w = await paired();
+  // The plugin uploads the tasks and a catalog of tags: defined ones with their names, and how many tasks carry each.
+  await w.sync({
+    snapshot: [
+      { key: 'A.md|^a|0', title: 'Buy bread', status: 'open', tags: ['home'], plan_date: '2026-10-03' },
+      { key: 'A.md|^b|0', title: 'Call the bank', status: 'open', tags: ['errand', 'home'] },
+      { key: 'B.md|^c|0', title: 'Write report', status: 'open', tags: ['work'] },
+    ],
+    tags: [
+      { key: 'work', name: 'کار', count: 14 }, { key: 'home', count: 6 }, { key: 'reading', name: 'Reading', count: 3 },
+      { key: 'old-project', count: 1 }, { key: 'errand', count: 2 }, { key: 'a:b', count: 9 }, { key: 'x'.repeat(61), count: 1 },
+      { key: 'work', count: 99 }, { count: 5 },
+    ],
+  });
+  eq(w.store.owner.tag_catalog.map((t) => t.key), ['work', 'a:b', 'home', 'reading', 'errand', 'old-project'], 'the catalog is kept: most used first, no duplicates, nothing without a key or too long');
+  eq(w.store.owner.tag_catalog[0], { key: 'work', name: 'کار', count: 14 }, 'with its name');
+  await w.sync({ snapshot: [
+    { key: 'A.md|^a|0', title: 'Buy bread', status: 'open', tags: ['home'], plan_date: '2026-10-03' },
+    { key: 'A.md|^b|0', title: 'Call the bank', status: 'open', tags: ['errand', 'home'] },
+    { key: 'B.md|^c|0', title: 'Write report', status: 'open', tags: ['work'] },
+  ] });
+  eq(w.store.owner.tag_catalog.length, 6, 'a sync that says nothing of tags leaves them as they were');
+
+  // The picker on a task: every tag the notes know, the task’s own ticked.
+  await w.press('tm:1@a0');
+  const picker = w.lastEdit();
+  eq(w.data(picker).filter((d) => d.startsWith('tt:')), ['tt:1:0~work@a0', 'tt:1:0~home@a0', 'tt:1:0~reading@a0', 'tt:1:0~errand@a0', 'tt:1:0~old-project@a0'], 'a button for each tag the notes know, most used first (a key that cannot ride in a button is left out)');
+  eq(picker.buttons.flat().filter((b) => b.data.startsWith('tt:')).map((b) => b.text), ['#work', '✓ #home', '#reading', '#errand', '#old-project'], 'the ones on the task are ticked');
+  eq(picker.buttons.flat().find((b) => b.text === '✓ #home').style, 'primary', 'and blue');
+  eq(picker.text.includes('<code>#home</code>') && picker.text.includes('✓'), true, 'the text says what is on the task and what ✓ means');
+  await w.press('tt:1:0~work@a0');
+  eq([w.store.tasks[0].tags, w.store.commands.at(-1).payload.tags], [['home', 'work'], ['home', 'work']], 'a tap adds a tag from the list');
+  eq(w.lastEdit().buttons.flat().find((b) => b.data === 'tt:1:0~work@a0').text, '✓ #work', 'and the picker is drawn again with it ticked');
+  await w.press('tt:1:0~home@a0');
+  eq(w.store.tasks[0].tags, ['work'], 'a tap on a ticked tag takes it off');
+  await w.press('tt:1:0~old-project@a0');
+  eq(w.store.tasks[0].tags, ['work', 'old-project'], 'a tag only closed tasks use is on the list too');
+  await w.press('tt:1:0~home@a0');
+
+  // The tag overview, and a tag’s own list.
+  await w.press('tg:0');
+  const overview = w.lastEdit();
+  eq(w.data(overview).filter((d) => d.startsWith('lg:')), ['lg:0:work', 'lg:0:home', 'lg:0:reading', 'lg:0:errand', 'lg:0:old-project'], 'the overview has a button for each tag');
+  eq(overview.text.includes('<code>#work</code> — کار') && overview.text.includes('۲ باز') && overview.text.includes('بدون تسک باز'), true, 'and says in words what each is called and how many tasks are open');
+  eq(overview.buttons.flat().find((b) => b.data === 'lg:0:work').text, '#work · ۲', 'a button says the count too');
+  await w.press('lg:0:home');
+  const list = w.lastEdit();
+  eq(list.text.includes('#home') && list.text.includes('Buy bread') && list.text.includes('Call the bank') && !list.text.includes('Write report'), true, 'a tag’s list is the open tasks that carry it');
+  eq(w.data(list).filter((d) => !d.startsWith('home') && !d.startsWith('ls:') && d !== 'set' && d !== 'new'), ['t:1@g0~home', 't:2@g0~home', 'nt:home', 'tg:0'], 'with the way to a card, a new task with that tag, and back to the tags');
+  await w.press('t:1@g0~home');
+  eq(w.data(w.lastEdit()).at(-1), 'lg:0:home', 'a card opened from it goes back to it');
+  await w.press('done:1@g0~home');
+  eq([w.store.tasks[0].status, w.lastEdit().text.includes('Buy bread'), w.lastEdit().text.includes('Call the bank')], ['done', false, true], 'done from there goes back to the tag’s list');
+  await w.press('lg:0:nothing-here');
+  eq(w.lastEdit().text.includes('#nothing-here'), true, 'a tag nobody has says so');
+
+  // A new task that starts with a tag.
+  await w.press('new');
+  eq(w.lastEdit().buttons.flat().filter((b) => b.data.startsWith('nt:')).map((b) => b.data), ['nt:work', 'nt:home', 'nt:reading', 'nt:errand', 'nt:old-project'], 'the new-task screen offers the tags');
+  await w.press('nt:home');
+  eq([w.last().options.forceReply, w.last().text.split('\n')[1]], ['عنوان تسک …', '#home'], 'a tap asks for the title, with the tag on the second line');
+  await w.reply('Pay rent tomorrow 9', w.last().text);
+  const rent = w.store.tasks.at(-1);
+  eq([rent.title, rent.tags, rent.plan_start], ['Pay rent', ['home'], '09:00'], 'and the answer is a task with that tag, read as any other');
+  eq(w.store.commands.at(-1).payload.tags, ['home'], 'which the notes are told');
+  await w.say('/tags');
+  eq(w.last().text.startsWith('🏷 <b>برچسب‌ها</b>'), true, 'the /tags command opens the overview');
+
+  // Many tags: pages.
+  const many = await paired();
+  await many.sync({ snapshot: [], tags: Array.from({ length: 23 }, (_, i) => ({ key: `tag${String(i).padStart(2, '0')}`, count: 30 - i })) });
+  await many.press('tg:0');
+  eq([many.data(many.lastEdit()).filter((d) => d.startsWith('lg:')).length, many.data(many.lastEdit()).includes('tg:1'), many.data(many.lastEdit()).includes('tg:-1')], [10, true, false], 'ten tags to a page, with a way to the next');
+  await many.press('tg:2');
+  eq([many.data(many.lastEdit()).filter((d) => d.startsWith('lg:')).length, many.data(many.lastEdit()).includes('tg:1')], [3, true], 'and the last page has what is left');
+  await many.sync({ snapshot: [{ key: 'A.md|^a|0', title: 'Task', status: 'open', tags: [] }] });
+  await many.press('tm:1');
+  eq([many.data(many.lastEdit()).filter((d) => d.startsWith('tt:')).length, many.data(many.lastEdit()).includes('tp:1:1')], [10, true], 'the picker pages too');
+  await many.press('tp:1:2');
+  eq(many.data(many.lastEdit()).filter((d) => d.startsWith('tt:')).length, 3, 'to the end');
+  await many.press('tt:1:2~tag22');
+  eq([many.store.tasks[0].tags, many.data(many.lastEdit()).includes('tt:1:2~tag22')], [['tag22'], true], 'a tap on the last page stays on it');
+
+  // No tags at all.
+  const none = await paired();
+  await none.press('tg:0');
+  eq(none.lastEdit().text.includes('هنوز برچسبی نداری'), true, 'with no tags the overview says how to make one');
+  await none.press('new');
+  eq(none.data(none.lastEdit()).some((d) => d.startsWith('nt:')), false, 'and the new-task screen has no tag buttons');
+}
+
+// ── The accessible display ──────────────────────────────────────────────────
+{
+  const w = await paired();
+  await w.sync({
+    snapshot: [
+      { key: 'A.md|^a|0', title: 'Buy bread', status: 'doing', tags: ['home'], plan_date: '2026-10-03', plan_start: '09:00', priority: 'high', repeat: '1w', subs_total: 3, subs_done: 1 },
+      { key: 'A.md|^b|0', title: 'Call the bank', status: 'open', tags: ['errand', 'home'], deadline: '2026-10-01', parent_key: 'A.md|^a|0', parent_title: 'Buy bread' },
+      { key: 'B.md|^c|0', title: 'Write report', status: 'open', tags: ['work'], remind_at: '2026-10-03T05:00:00Z' },
+    ],
+    tags: [{ key: 'work', name: 'کار', count: 14 }, { key: 'home', count: 6 }],
+  });
+  // What a screen reader would trip over: pictures, bars, invisible blanks.
+  const decor = /[\p{Extended_Pictographic}▰▱⠀]|↳/u;
+  const plain = (view, label) => {
+    const words = view.text.replace(/<[^>]+>/g, '');
+    eq([decor.test(words), view.buttons.flat().some((b) => decor.test(b.text))], [false, false], `${label}: no pictures, bars or blanks in the text or on the buttons`);
+  };
+
+  // Before: a list with pictures, two buttons to a row.
+  await w.press('ls:a:0');
+  eq([decor.test(w.lastEdit().text), w.lastEdit().buttons[0].length, w.lastEdit().text.includes('▰')], [true, 2, true], 'by default a list has pictures, a bar, and two buttons to a row');
+
+  await w.press('set:a11y');
+  eq([w.store.owner.a11y, w.lastEdit().data === undefined, w.lastEdit().rich], [true, true, undefined], 'the setting is kept, and a screen is no longer sent as a rich message');
+  plain(w.lastEdit(), 'settings');
+  eq(w.lastEdit().buttons.flat().find((b) => b.data === 'set:a11y').text, 'حالت دسترسی‌پذیر: روشن', 'the button says it is on');
+  eq(w.lastEdit().buttons.at(-1).map((b) => b.text), ['منو', 'امروز', 'همه', 'جدید', 'تنظیمات'], 'and the tab bar is words, not pictures');
+
+  await w.press('home');
+  plain(w.lastEdit(), 'home');
+  eq(w.lastEdit().text.includes('Obsidian به‌روز است.'), true, 'the home screen says the sync’s state in words, not by a coloured dot');
+  await w.press('st');
+  plain(w.lastEdit(), 'status');
+
+  await w.press('ls:a:0');
+  const list = w.lastEdit();
+  plain(list, 'list');
+  eq(list.buttons.slice(0, 3).map((row) => row.length), [1, 1, 1], 'a list has one task to a button row');
+  eq(list.buttons[0][0].text, '۱. Buy bread', 'whose label is its number and as much of its title as fits');
+  eq(['در حال انجام، اولویت بالا، زیرتسک‌ها ۱ از ۳', 'برنامه: فردا ۰۹:۰۰', 'تکرار: هر هفته', 'برچسب: <code>#home</code>'].every((line) => list.text.includes(line)), true, 'each task says its state, plan and tags in words, a fact to a line');
+  eq(list.text.includes('زیرتسکِ «Buy bread»') && list.text.includes('مهلت: دیروز'), true, 'a subtask says whose it is, and a deadline says it is a deadline');
+  eq(list.text.includes('🔴') || list.text.includes('🔄'), false, 'a priority and a state are never only a picture');
+
+  await w.press('t:1@a0');
+  plain(w.lastEdit(), 'card');
+  eq(w.lastEdit().buttons.flat().find((b) => b.data === 't:2@a0').text, 'زیرتسک: Call the bank', 'a subtask button says it is one');
+  eq(w.lastEdit().text.includes('<code>۱ از ۳</code>') && !w.lastEdit().text.includes('▰'), true, 'a count, not a bar');
+  eq(w.lastEdit().buttons.flat().find((b) => b.data === 'pm:1@a0').text, 'اولویت: بالا', 'each setting button says what it is and its value');
+
+  await w.press('sm:1@a0');
+  plain(w.lastEdit(), 'status menu');
+  eq(w.lastEdit().buttons.flat().find((b) => b.data === 'ss:1:doing@a0').text, 'در حال انجام (انتخاب‌شده)', 'the current choice says it is selected, instead of a tick');
+  await w.press('pm:1@a0');
+  plain(w.lastEdit(), 'priority menu');
+  eq(w.lastEdit().buttons.flat().find((b) => b.data === 'pr:1:high@a0').text, 'بالا (انتخاب‌شده)', 'in the priority menu too');
+  await w.press('tm:1@a0');
+  plain(w.lastEdit(), 'tags');
+  eq([w.lastEdit().buttons.flat().find((b) => b.data.startsWith('tt:1:0~home')).text, w.lastEdit().text.includes('«انتخاب‌شده» یعنی')], ['#home (انتخاب‌شده)', true], 'the tag picker says selected, and explains it in the same words');
+  await w.press('tg:0');
+  plain(w.lastEdit(), 'tag overview');
+  await w.press('lg:0:home');
+  plain(w.lastEdit(), 'a tag’s list');
+  for (const data of ['dm:1@a0', 'qm:1@a0', 'rm:1@a0', 'pl:1@a0']) {
+    await w.press(data);
+    plain(w.lastEdit(), data);
+  }
+
+  // The days: a list that says the weekday and the date, in place of a grid of bare numbers.
+  await w.press('cn:p:1:1405-7@a0');
+  const days = w.lastEdit();
+  plain(days, 'days');
+  eq(days.buttons.flat().filter((b) => b.data.startsWith('cd:p:1:')).length, 14, 'fourteen days to choose from');
+  eq(days.buttons.flat().filter((b) => b.data.startsWith('cd:p:1:')).slice(0, 3).map((b) => b.text), ['امروز', 'فردا (انتخاب‌شده، ۱ تسک)', 'یکشنبه ۱۲ مهر'], 'each button names the day, the one already chosen says so, and a day with tasks says how many');
+  eq(days.buttons.flat().some((b) => b.data === 'cn:p:1:2026-10-16@a0') && !days.buttons.flat().some((b) => b.text.startsWith('‹')), true, 'with a way forward, and none back from today');
+  await w.press('cn:p:1:2026-10-16@a0');
+  eq(w.lastEdit().buttons.flat().some((b) => b.data === 'cn:p:1:2026-10-02@a0'), true, 'a way back once it has gone forward');
+  await w.press('cd:p:1:2026-10-17@a0');
+  plain(w.lastEdit(), 'hours');
+  await w.press('ct:p:1:2026-10-17:1400@a0');
+  plain(w.lastEdit(), 'durations');
+  await w.press('cu:p:1:2026-10-17:1400:60@a0');
+  eq([w.store.tasks[0].plan_date, w.store.tasks[0].plan_start, w.store.tasks[0].plan_end], ['2026-10-17', '14:00', '15:00'], 'and the plan is set through them as usual');
+
+  // Questions that ask for a reply keep the picture they start with: it is how the answer finds its task.
+  await w.press('ed:1');
+  eq(w.last().text.startsWith('✏️'), true, 'a question that asks for an answer is left as it is');
+  await w.reply('Buy rye bread', w.last().text);
+  eq(w.store.tasks[0].title, 'Buy rye bread', 'and its answer is still understood');
+
+  // A task typed in: the confirmation is plain too.
+  await w.say('Pay rent tomorrow 10 #home');
+  plain(w.last(), 'a new task');
+
+  // Reminders arrive plain.
+  w.store.tasks[2].remind_at = '2026-10-02T12:00:00.000Z';
+  await runTick({ store: w.store, tg: w.deps.tg, now: () => w.state.now });
+  plain(w.sent.at(-1), 'a reminder');
+  eq([w.sent.at(-1).options?.rich, w.sent.at(-1).text.includes('⠀')], [undefined, false], 'with no rich message and no invisible padding');
+
+  // Off again: pictures and padding return.
+  await w.press('set:a11y');
+  eq(w.store.owner.a11y, false, 'turned off');
+  eq(w.lastEdit().text.includes('♿'), true, 'the settings screen is drawn with pictures again');
+  await w.press('ls:a:0');
+  eq([decor.test(w.lastEdit().text), w.lastEdit().buttons[0].length], [true, 2], 'and so is a list');
+
+  // A database that has not learnt the column yet.
+  const x = await paired();
+  x.store.patchOwner = async () => { throw new Error('column "a11y" does not exist'); };
+  const quiet = console.error;
+  console.error = () => {};
+  await x.press('set:a11y');
+  console.error = quiet;
+  eq(x.toasts.at(-1).includes('دیتابیس'), true, 'if the database cannot keep it yet, the owner is told');
+
+  // English reads in English.
+  const en = await paired();
+  await en.sync({ snapshot: [{ key: 'A.md|^a|0', title: 'Buy bread', status: 'doing', tags: ['home'], plan_date: '2026-10-03', plan_start: '09:00', priority: 'high' }] });
+  await en.press('set:lang');
+  await en.press('set:a11y');
+  await en.press('ls:a:0');
+  plain(en.lastEdit(), 'English list');
+  eq(['In progress, Priority High', 'Plan: Tomorrow 09:00'].every((line) => en.lastEdit().text.includes(line)), true, 'the same lines, in English, with English commas');
+}
+
 // The statements the functions run to update the database are the migrations'.
 {
   const fs = await import('fs');
   const read = (name) => fs.readFileSync(new URL(`../supabase/migrations/${name}`, import.meta.url), 'utf8');
   const code = (text) => text.split('\n').filter((line) => !line.startsWith('--')).join(' ').replace(/\s+/g, ' ').trim();
-  eq(code(mod.TASK_SETTINGS_SQL), code(read('20261003000000_task_settings.sql') + '\n' + read('20261004000000_subtasks.sql') + '\n' + read('20261005000000_rich_messages.sql') + '\n' + read('20261006000000_message_width.sql')), 'the update the functions run is the migration files, in order');
+  eq(code(mod.TASK_SETTINGS_SQL), code(read('20261003000000_task_settings.sql') + '\n' + read('20261004000000_subtasks.sql') + '\n' + read('20261005000000_rich_messages.sql') + '\n' + read('20261006000000_message_width.sql') + '\n' + read('20261007000000_tags_accessibility.sql')), 'the update the functions run is the migration files, in order');
 }
 
 // ── Every setting of a task ────────────────────────────────────────────────
@@ -418,12 +647,12 @@ async function paired() {
 
   // Tags
   await w.press('tm:1@a0');
-  eq(w.data(w.lastEdit()), ['tr:1:0@a0', 'ta:1', 't:1@a0'], 'a button for each tag to remove it, one to add');
+  eq(w.data(w.lastEdit()), ['tt:1:0~work@a0', 'ta:1', 'tx:1@a0', 't:1@a0'], 'a button for the tag it has (to take it off), one to type a new tag, one to clear them');
   await w.press('ta:1');
   await w.reply('home #deep', w.last().text);
   eq([w.store.tasks[0].tags, w.store.commands.at(-1).payload.tags], [['work', 'home', 'deep'], ['work', 'home', 'deep']], 'tags are added to the ones it has');
   await w.press('tr:1:1@a0');
-  eq(w.store.tasks[0].tags, ['work', 'deep'], 'one is taken off by its button');
+  eq(w.store.tasks[0].tags, ['work', 'deep'], 'one is taken off by an old button’s index');
   await w.press('tx:1@a0');
   eq(w.store.tasks[0].tags, [], 'or all of them');
 
@@ -676,7 +905,23 @@ async function paired() {
   replies.push({ ok: false, status: 400, text: 'Bad Request: can\'t parse rich message' }, { ok: false, status: 400, text: 'Bad Request: can\'t parse rich message' });
   await tg.send(7, '<b>Hi</b>', buttons, { rich });
   eq(calls.map((c) => c.method), ['sendRichMessage', 'sendRichMessage', 'sendMessage'], 'if Telegram refuses it (once more without the colours), the classic message is sent instead');
-  eq([calls[1].body.reply_markup.inline_keyboard[0][0].style, calls[2].body.parse_mode, calls[2].body.text], [undefined, 'HTML', '<b>Hi</b>'], 'as HTML');
+  eq([calls[1].body.reply_markup.inline_keyboard[0][0].style, calls[2].body.parse_mode, calls[2].body.text], [undefined, 'MarkdownV2', '*Hi*'], 'as MarkdownV2');
+  calls.length = 0;
+  // The classic message is MarkdownV2; if Telegram will not parse it, the same text as HTML; then plain words.
+  replies.push({ ok: false, status: 400, text: "Bad Request: can't parse entities: Character '.' is reserved" });
+  await tg.send(7, '<b>Hi.</b> 1-2', buttons);
+  eq([calls.map((c) => c.body.parse_mode), calls.map((c) => c.body.text)], [['MarkdownV2', 'HTML'], ['*Hi\\.* 1\\-2', '<b>Hi.</b> 1-2']], 'MarkdownV2 is tried first, HTML next');
+  calls.length = 0;
+  replies.push({ ok: false, status: 400, text: "Bad Request: can't parse entities" }, { ok: false, status: 400, text: "Bad Request: can't parse entities" });
+  await tg.send(7, '<b>Hi</b> &amp; you', buttons);
+  eq([calls.map((c) => c.body.parse_mode), calls[2].body.text], [['MarkdownV2', 'HTML', undefined], 'Hi & you'], 'and if neither is taken, plain words');
+  calls.length = 0;
+  replies.push({ ok: false, status: 400, text: 'Bad Request: wrong style' });
+  await tg.send(7, '<b>Hi</b>', buttons);
+  eq([calls.length, calls[0].body.reply_markup.inline_keyboard[0][0].style, calls[1].body.reply_markup.inline_keyboard[0][0].style, calls[1].body.parse_mode], [2, 'success', undefined, 'MarkdownV2'], 'a refused colour is dropped before the markup is');
+  calls.length = 0;
+  await tg.send(7, 'Reply please.', undefined, { forceReply: 'title…' });
+  eq([calls[0].body.parse_mode, calls[0].body.text, calls[0].body.reply_markup], ['MarkdownV2', 'Reply please\\.', { force_reply: true, input_field_placeholder: 'title…' }], 'a question that asks for a reply is MarkdownV2 as well');
   calls.length = 0;
   await tg.edit(7, 55, '<b>Hi</b>', buttons, rich);
   eq([calls[0].method, calls[0].body.message_id, !!calls[0].body.rich_message], ['editMessageText', 55, true], 'an edit carries the rich message to editMessageText');
@@ -722,7 +967,7 @@ async function paired() {
 
   await w.say('/settings');
   eq(w.data(w.last()).includes('set:pad'), true, 'the settings have a button for the message width');
-  eq(w.last().text.includes('↔️ عرض پیام · متوسط'), true, 'which starts at medium (60)');
+  eq(w.last().text.includes('↔️ <b>عرض پیام</b> · متوسط'), true, 'which starts at medium (60)');
   await w.press('set:pad');
   eq([w.store.owner.pad, w.lastEdit().text.includes('زیاد')], [80, true], 'a tap makes it wider');
   await w.press('set:pad');

@@ -12,7 +12,7 @@ const build = await esbuild.build({
   stdin: {
     contents: `
       export { parseBoardTasks } from "../src/board/task-store";
-      export { keyTasks, keyForNewTask, reminderAt, buildSnapshot } from "../src/telegram/snapshot";
+      export { keyTasks, keyForNewTask, reminderAt, buildSnapshot, buildTagCatalog } from "../src/telegram/snapshot";
       export { applyCommands, lineForNewTask } from "../src/telegram/apply";
       export { TelegramSync, syncEndpoint } from "../src/telegram/sync-service";
       export { setSchedule, setRemind, setPriority, setDeadline, setTags, setRepeat, replaceTaskText } from "../src/task-metadata";
@@ -40,7 +40,7 @@ const build = await esbuild.build({
   ],
 });
 const mod = await import('data:text/javascript;base64,' + Buffer.from(build.outputFiles[0].text).toString('base64'));
-const { parseBoardTasks, keyTasks, keyForNewTask, reminderAt, buildSnapshot, applyCommands, lineForNewTask, TelegramSync, syncEndpoint, setSchedule, setRemind, setPriority, setDeadline, setTags, setRepeat, replaceTaskText } = mod;
+const { parseBoardTasks, keyTasks, keyForNewTask, reminderAt, buildSnapshot, buildTagCatalog, applyCommands, lineForNewTask, TelegramSync, syncEndpoint, setSchedule, setRemind, setPriority, setDeadline, setTags, setRepeat, replaceTaskText } = mod;
 
 let checked = 0;
 function eq(actual, expected, label) {
@@ -56,6 +56,14 @@ const two = tasksOf('A.md', ['- [ ] Same', '- [ ] Same', '- [ ] Own id ^tp-1', '
 eq([...keyTasks(two).keys()], ['A.md|Same|0', 'A.md|Same|1', 'A.md|^tp-1|0', 'A.md|Finished|0', 'A.md|Doing|0'], 'a task is named by its note, its block ID or title, and which of the same');
 eq(keyForNewTask(two, 'A.md', 'Same'), 'A.md|Same|2', 'a task about to be appended is named the same way');
 eq(keyForNewTask(two, 'B.md', 'Same'), 'B.md|Same|0', 'in another note, from the start');
+
+// ── The tags the bot may list ──────────────────────────────────────────────
+{
+  const tagged = tasksOf('T.md', ['- [ ] One @tag(work) @tag(home)', '- [x] Done long ago @tag(work) @tag(old)', '- [ ] Three @tag(work)', '- [ ] Four'].join('\n'));
+  eq(buildTagCatalog(tagged, []), [{ key: 'work', count: 3 }, { key: 'home', count: 1 }, { key: 'old', count: 1 }], 'every tag a task carries, closed tasks included, most used first');
+  eq(buildTagCatalog(tagged, [{ key: 'reading', name: 'Reading' }, { key: 'work', name: 'کار' }, { key: 'home', name: 'home' }]), [{ key: 'work', name: 'کار', count: 3 }, { key: 'home', count: 1 }, { key: 'old', count: 1 }, { key: 'reading', name: 'Reading', count: 0 }], 'the settings’ own tags are on it too, with their names, even when no task has them');
+  eq(buildTagCatalog(tagged, [], 2).length, 2, 'and it is kept short');
+}
 
 const defaults = { enabled: true, leadMinutes: 10 };
 const at = (line) => reminderAt(tasksOf('A.md', line)[0], defaults);
@@ -247,6 +255,7 @@ eq([syncEndpoint('https://abc.supabase.co'), syncEndpoint('https://abc.supabase.
 
   let outcome = await sync.syncNow();
   eq([outcome.ok, outcome.applied], [true, 0], 'a first sync reports the notes');
+  eq(posts[0].body.tags, [], 'the tags the notes know go up with it (none yet here)');
   eq(posts[0].url, 'https://abc.supabase.co/functions/v1/sync', 'to the sync function');
   eq(store.tasks.map((t) => t.title).sort(), ['Existing', 'Report'], 'and the bot knows the open tasks');
   eq(store.tasks.find((t) => t.title === 'Report').remind_at, local(2026, 10, 3, 10, 50), 'with a reminder ten minutes before the plan');

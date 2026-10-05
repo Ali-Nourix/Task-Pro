@@ -34,7 +34,7 @@ const GREGORIAN_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug'
 const FA_WEEKDAYS = ['یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه', 'پنجشنبه', 'جمعه', 'شنبه'];
 const EN_WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-type Owner = Pick<OwnerRow, 'language' | 'calendar' | 'timezone'>;
+type Owner = Pick<OwnerRow, 'language' | 'calendar' | 'timezone'> & Partial<Pick<OwnerRow, 'a11y'>>;
 
 /** "Today", "Tomorrow", or a weekday and date in the owner's calendar. */
 export function dayLabel(date: string, owner: Owner, today: string): string {
@@ -115,6 +115,7 @@ export function taskEntry(task: TaskRow, owner: Owner, today: string, options: E
   const language = owner.language;
   const depth = options.depth ?? 0;
   const pad = depth ? INDENT : '';
+  if (owner.a11y) return accessibleEntry(task, owner, today, options);
   const glyph = task.status === 'doing' ? '🔄 ' : task.pending ? '🕓 ' : '';
   const priority = task.priority ? ` ${PRIORITY_MARK[task.priority]}` : '';
   const arrow = depth ? '↳ ' : '';
@@ -136,6 +137,36 @@ export function taskEntry(task: TaskRow, owner: Owner, today: string, options: E
   return lines.join('\n');
 }
 
+/**
+ * A task for a list, for a screen reader: its number and title, then a line for each fact in
+ * words. Nothing depends on a picture: a priority is its name, "in progress" is written out,
+ * and there is no bar, only the count.
+ */
+function accessibleEntry(task: TaskRow, owner: Owner, today: string, options: EntryOptions): string {
+  const language = owner.language;
+  const w = words(language);
+  const pad = options.depth ? INDENT : '';
+  const detail = `${pad}${INDENT}`;
+  const comma = language === 'fa' ? '،' : ',';
+  const lines = [`${pad}<b>${digits(options.position, language)}.</b> ${esc(truncate(task.title, 110))}`];
+  const state: string[] = [];
+  if (task.status === 'doing') state.push(w.labels.statuses.doing);
+  if (task.pending) state.push(w.labels.pending);
+  if (task.priority) state.push(`${w.labels.priority} ${PRIORITY_NAME[language][task.priority]}`);
+  if (task.subs_total) state.push(`${w.labels.subtasks} ${ratio(task.subs_done ?? 0, task.subs_total, language)}`);
+  if (state.length) lines.push(`${detail}${state.join(`${comma} `)}`);
+  if (task.parent_title && (options.parentHint || options.depth)) lines.push(`${detail}${w.labels.subOf} «${esc(truncate(task.parent_title, 28))}»`);
+  const plan = planText(task, owner, today);
+  if (plan) lines.push(`${detail}${w.labels.plan}: ${plan}`);
+  if (task.deadline) lines.push(`${detail}${w.labels.deadline}: ${dayLabel(task.deadline, owner, today)}`);
+  const remind = remindText(task, owner, today);
+  if (remind) lines.push(`${detail}${w.labels.remind}: ${remind}`);
+  const repeat = repeatLabel(task.repeat ?? null, language);
+  if (repeat) lines.push(`${detail}${w.labels.repeat}: ${repeat}`);
+  if (task.tags.length) lines.push(`${detail}${w.labels.tags}: ${task.tags.map((tag) => `<code>#${esc(tag)}</code>`).join(`${comma} `)}`);
+  return lines.join('\n');
+}
+
 /** What a card says about the task's family: its parent, and its open subtasks. */
 export interface Relatives {
   parentTitle?: string | null;
@@ -148,15 +179,15 @@ export function taskCard(task: TaskRow, owner: Owner, today: string, relatives: 
   const language = owner.language;
   const rows: string[] = [];
   const plan = planText(task, owner, today);
-  if (plan) rows.push(`📅 ${w.labels.plan} · ${plan}`);
-  if (task.deadline) rows.push(`⏳ ${w.labels.deadline} · ${dayLabel(task.deadline, owner, today)}`);
+  if (plan) rows.push(`📅 <b>${w.labels.plan}</b> · ${plan}`);
+  if (task.deadline) rows.push(`⏳ <b>${w.labels.deadline}</b> · ${dayLabel(task.deadline, owner, today)}`);
   const remind = remindText(task, owner, today);
-  if (remind) rows.push(`🔔 ${w.labels.remind} · ${remind}`);
+  if (remind) rows.push(`🔔 <b>${w.labels.remind}</b> · ${remind}`);
   const repeat = repeatLabel(task.repeat ?? null, language);
-  if (repeat) rows.push(`🔁 ${w.labels.repeat} · ${repeat}`);
-  if (task.priority) rows.push(`${PRIORITY_MARK[task.priority]} ${w.labels.priority} · ${PRIORITY_NAME[language][task.priority]}`);
-  if (task.tags.length) rows.push(`🏷 ${w.labels.tags} · ${task.tags.map((tag) => `<code>#${esc(tag)}</code>`).join(' ')}`);
-  if (task.note_path) rows.push(`📄 ${w.labels.note} · ${esc(task.note_path.replace(/^.*\//, '').replace(/\.md$/i, ''))}`);
+  if (repeat) rows.push(`🔁 <b>${w.labels.repeat}</b> · ${repeat}`);
+  if (task.priority) rows.push(`${PRIORITY_MARK[task.priority]} <b>${w.labels.priority}</b> · ${PRIORITY_NAME[language][task.priority]}`);
+  if (task.tags.length) rows.push(`🏷 <b>${w.labels.tags}</b> · ${task.tags.map((tag) => `<code>#${esc(tag)}</code>`).join(' ')}`);
+  if (task.note_path) rows.push(`📄 <b>${w.labels.note}</b> · <i>${esc(task.note_path.replace(/^.*\//, '').replace(/\.md$/i, ''))}</i>`);
   const title = task.status === 'done' ? `<s>${esc(task.title)}</s>` : `<b>${esc(task.title)}</b>`;
   const parent = relatives.parentTitle || task.parent_title ? `↳ <i>${w.labels.subOf} «${esc(truncate(relatives.parentTitle || task.parent_title || '', 40))}»</i>\n` : '';
   const body = rows.length ? `<blockquote>${rows.join('\n')}</blockquote>` : `<i>${w.labels.nothingSet}</i>`;
@@ -168,8 +199,8 @@ export function taskCard(task: TaskRow, owner: Owner, today: string, relatives: 
     const done = task.subs_done ?? 0;
     const list = children.map((child, i) => `${digits(i + 1, language)}. ${child.status === 'doing' ? '🔄 ' : ''}${esc(truncate(child.title, 60))}`);
     subs =
-      `\n<b>${w.labels.subtasks}</b> <code>${ratio(done, total, language)}</code> <code>${progressBar(done, total)}</code>` +
-      (list.length ? `\n<blockquote>${list.join('\n')}</blockquote>` : '');
+      `\n<b>${w.labels.subtasks}</b> <code>${ratio(done, total, language)}</code>${owner.a11y ? '' : ` <code>${progressBar(done, total)}</code>`}` +
+      (list.length ? `\n<blockquote${list.length > 3 && !owner.a11y ? ' expandable' : ''}>${list.join('\n')}</blockquote>` : '');
   }
   const state = `<i>${w.labels.id} #${digits(task.n, language)} · ${w.labels.statuses[task.status]}${task.pending ? ` · ${w.labels.pending}` : ''}</i>`;
   return `${parent}${title}\n${body}${subs}\n${state}`;
@@ -379,12 +410,44 @@ export interface Words {
   newTask: string;
   statusView: (open: number, waiting: number, lastSync: string | null, health: 'ok' | 'stale' | 'never') => string;
   agoMinutes: (minutes: number) => string;
-  settings: (o: { language: string; calendar: string; timezone: string; lead: number; rich: string; pad: string }) => string;
+  settings: (o: { language: string; calendar: string; timezone: string; lead: number; rich: string; pad: string; a11y: string }) => string;
   settingButtons: { language: string; calendar: string; lead: (minutes: number) => string; zone: (zone: string) => string; rich: (on: boolean) => string; pad: (pad: string) => string };
   padNames: (pad: number) => string;
   richNames: { on: string; off: string };
   richUnavailable: string;
   nav: { home: string; today: string; all: string; newTask: string; settings: string };
+  /** The tags the notes know: listing them, picking them, a new task that starts with one. */
+  tagsUi: {
+    button: string;
+    viewTitle: (count: number, page: number, pages: number) => string;
+    viewHelp: string;
+    none: string;
+    openCount: (n: number) => string;
+    listTitle: (tag: string, name?: string) => string;
+    listEmpty: (tag: string) => string;
+    newWith: (tag: string) => string;
+    askNew: (tag: string) => string;
+    hintNew: string;
+    allTags: string;
+    pick: (title: string, tags: string[], page: number, pages: number, mark: string) => string;
+    newTag: string;
+    yourTags: string;
+    startWith: string;
+    tooLong: string;
+  };
+  /** The accessible display: for a screen reader, and for reading without pictures. */
+  a11y: {
+    name: string;
+    button: (on: boolean) => string;
+    names: { on: string; off: string };
+    explain: string;
+    selected: string;
+    subtask: string;
+    parent: string;
+    nav: { home: string; today: string; all: string; newTask: string; settings: string };
+    health: { ok: string; stale: string; never: string };
+    days: { title: (kind: string, task: string | null, current: string | null, from: string, to: string) => string; prev: string; next: string };
+  };
   zoneHint: string;
   languageNames: { fa: string; en: string };
   calendarNames: { jalali: string; gregorian: string };
@@ -409,15 +472,15 @@ const fa: Words = {
     '«خرید نان فردا ساعت ۹ #خانه !بالا»\n' +
     '«یادم بنداز ۲۰ دقیقه دیگه چایی»</blockquote>',
   help:
-    '📖 <b>راهنما</b>\n\n' +
+    '📖 <b><u>راهنما</u></b>\n\n' +
     '<b>تسک تازه</b> — فقط بنویس:\n' +
     '<blockquote>خرید نان <b>فردا ساعت ۹</b> ← برنامه\n' +
     'دارو <b>یادآوری جمعه ۸</b> ← یادآوری\n' +
     'گزارش <b>مهلت شنبه</b> ← مهلت\n' +
     'جلسه شنبه ۹ تا ۱۰ ← بازهٔ زمانی\n' +
     '<b>#برچسب</b> · <b>!بالا</b> <b>!فوری</b> <b>!کم</b> ← برچسب و اولویت</blockquote>\n' +
-    '<b>دستورها</b>\n' +
-    '<blockquote expandable>/start — منوی اصلی\n/today — امروز\n/list — همهٔ تسک‌ها\n' +
+    '<b>دستورها</b> <i>(برای دیدن باز کن)</i>\n' +
+    '<blockquote expandable>/start — منوی اصلی\n/today — امروز\n/list — همهٔ تسک‌ها\n/tags — برچسب‌ها و تسک‌هایشان\n' +
     '/done ۱۲ — انجام شد (عدد = «شناسه» روی صفحهٔ تسک)\n/fail ۱۲ — انجام نشد\n/remind ۱۲ فردا ۸ — یادآوری (یا off)\n/plan ۱۲ شنبه ۹-۱۰ — برنامه (یا off)\n' +
     '/del ۱۲ — حذف\n/status — وضعیت همگام‌سازی\n/settings — تنظیمات\n' +
     '/lang fa|en · /tz Asia/Tehran · /cal jalali|gregorian · /lead ۱۰</blockquote>',
@@ -426,14 +489,14 @@ const fa: Words = {
 
   home: (counts, lastSync, health) => {
     const rows: string[] = [];
-    if (counts.overdue) rows.push(`⚠️ ${digits(counts.overdue, 'fa')} عقب‌افتاده`);
-    rows.push(`📅 ${digits(counts.today, 'fa')} برای امروز`);
-    rows.push(`📋 ${digits(counts.open, 'fa')} تسک باز`);
+    if (counts.overdue) rows.push(`⚠️ <b>${digits(counts.overdue, 'fa')}</b> عقب‌افتاده`);
+    rows.push(`📅 <b>${digits(counts.today, 'fa')}</b> برای امروز`);
+    rows.push(`📋 <b>${digits(counts.open, 'fa')}</b> تسک باز`);
     const dot = health === 'ok' ? '🟢' : health === 'stale' ? '🟡' : '⚪';
     return (
       '✨ <b>TaskPro</b>\n' +
       `<blockquote>${rows.join('\n')}</blockquote>\n` +
-      `${dot} آخرین همگام‌سازی: ${lastSync ?? 'هنوز نشده'}\n\n` +
+      `${dot} آخرین همگام‌سازی: <b>${lastSync ?? 'هنوز نشده'}</b>\n\n` +
       '<i>هر چیزی بنویسی، تسک می‌شود.</i>'
     );
   },
@@ -595,16 +658,16 @@ const fa: Words = {
           : '⚪ هنوز همگام نشده؛ Obsidian را باز کن و «Sync now» را بزن.';
     return (
       '📊 <b>وضعیت</b>\n' +
-      `<blockquote>📋 ${digits(open, 'fa')} تسک باز\n` +
-      `⏳ ${digits(waiting, 'fa')} تغییر منتظر Obsidian\n` +
-      `🔄 آخرین همگام‌سازی: ${lastSync ?? 'هنوز نشده'}</blockquote>\n${note}`
+      `<blockquote>📋 <b>${digits(open, 'fa')}</b> تسک باز\n` +
+      `⏳ <b>${digits(waiting, 'fa')}</b> تغییر منتظر Obsidian\n` +
+      `🔄 آخرین همگام‌سازی: <b>${lastSync ?? 'هنوز نشده'}</b></blockquote>\n${note}`
     );
   },
   agoMinutes: (minutes) =>
     minutes < 1 ? 'همین الان' : minutes < 60 ? `${digits(minutes, 'fa')} دقیقه پیش` : minutes < 2880 ? `${digits(Math.floor(minutes / 60), 'fa')} ساعت پیش` : `${digits(Math.floor(minutes / 1440), 'fa')} روز پیش`,
   settings: (o) =>
     '⚙️ <b>تنظیمات</b>\n' +
-    `<blockquote>🌐 زبان · ${o.language}\n📆 تقویم · ${o.calendar}\n🕒 منطقهٔ زمانی · <code>${esc(o.timezone)}</code>\n⏱ یادآوری پیش از برنامه · ${digits(o.lead, 'fa')} دقیقه\n🧩 نمایش پیشرفته · ${o.rich}\n↔️ عرض پیام · ${o.pad}</blockquote>`,
+    `<blockquote>🌐 <b>زبان</b> · ${o.language}\n📆 <b>تقویم</b> · ${o.calendar}\n🕒 <b>منطقهٔ زمانی</b> · <code>${esc(o.timezone)}</code>\n⏱ <b>یادآوری پیش از برنامه</b> · ${digits(o.lead, 'fa')} دقیقه\n🧩 <b>نمایش پیشرفته</b> · ${o.rich}\n↔️ <b>عرض پیام</b> · ${o.pad}\n♿ <b>حالت دسترسی‌پذیر</b> · ${o.a11y}</blockquote>`,
   settingButtons: {
     language: '🌐 زبان',
     calendar: '📆 تقویم',
@@ -617,6 +680,43 @@ const fa: Words = {
   richNames: { on: 'روشن', off: 'خاموش' },
   richUnavailable: 'این گزینه بعد از به‌روزرسانی دیتابیس فعال می‌شود؛ چند ثانیه بعد دوباره امتحان کن.',
   nav: { home: '🏠', today: '📅', all: '📋', newTask: '➕', settings: '⚙️' },
+  tagsUi: {
+    button: '🏷 برچسب‌ها',
+    viewTitle: (count, page, pages) => `🏷 <b>برچسب‌ها</b> — <i>${digits(count, 'fa')} برچسب${pages > 1 ? ` · صفحهٔ ${digits(page, 'fa')} از ${digits(pages, 'fa')}` : ''}</i>`,
+    viewHelp: 'روی یک برچسب بزن تا تسک‌های بازِ آن را ببینی، یا با آن تسک تازه بسازی.',
+    none: 'هنوز برچسبی نداری. در یادداشت‌ها یا همین‌جا با <code>#نام</code> بساز.',
+    openCount: (n) => (n ? `${digits(n, 'fa')} باز` : 'بدون تسک باز'),
+    listTitle: (tag, name) => `🏷 <b>#${esc(tag)}</b>${name ? ` — ${esc(name)}` : ''}`,
+    listEmpty: (tag) => `تسک بازی با برچسب #${esc(tag)} نیست.`,
+    newWith: (tag) => `➕ تسک تازه با #${tag}`,
+    askNew: (tag) => `🆕 تسک تازه با برچسب «${tag}»\n#${tag}\n\nعنوان تسک را بنویس؛ زمان و اولویت را هم می‌توانی در همان جمله بنویسی.`,
+    hintNew: 'عنوان تسک …',
+    allTags: '🏷 همهٔ برچسب‌ها',
+    pick: (title, tags, page, pages, mark) =>
+      `🏷 <b>برچسب‌ها</b>\n<blockquote>${esc(title)}\n${tags.length ? `روی این تسک: <code>${esc(tags.map((tag) => `#${tag}`).join(' '))}</code>` : 'هنوز برچسبی ندارد'}</blockquote>\n` +
+      `یک برچسب را بزن تا اضافه یا برداشته شود؛ ${mark} یعنی روی این تسک است.${pages > 1 ? `\n<i>صفحهٔ ${digits(page, 'fa')} از ${digits(pages, 'fa')}</i>` : ''}`,
+    newTag: '✏️ برچسب تازه',
+    yourTags: 'برچسب‌های تو',
+    startWith: 'روی یک برچسب بزن تا تسک تازه‌ای با آن بسازی.',
+    tooLong: 'برچسب‌های خیلی بلند را فقط می‌شود نوشت.',
+  },
+  a11y: {
+    name: 'حالت دسترسی‌پذیر',
+    button: (on) => `♿ حالت دسترسی‌پذیر: ${on ? 'روشن' : 'خاموش'}`,
+    names: { on: 'روشن', off: 'خاموش' },
+    explain: 'برای صفحه‌خوان و خواندن بی‌تصویر: بدون شکلک و نوار، هر ویژگیِ تسک در یک خطِ جدا، گزینه‌ها یکی‌یکی در هر ردیف، روزها به‌صورت فهرست و بدون نویسه‌های نامرئی.',
+    selected: 'انتخاب‌شده',
+    subtask: 'زیرتسک',
+    parent: 'تسکِ اصلی',
+    nav: { home: 'منو', today: 'امروز', all: 'همه', newTask: 'جدید', settings: 'تنظیمات' },
+    health: { ok: 'Obsidian به‌روز است.', stale: 'مدتی است Obsidian باز نبوده.', never: 'هنوز همگام نشده.' },
+    days: {
+      title: (kind, task, current, from, to) =>
+        `📆 <b>روز را انتخاب کن</b>\n<blockquote>${kind}${task ? ` · ${esc(task)}` : ''}${current ? `\nاکنون: ${current}` : ''}</blockquote>\nروزهای ${from} تا ${to}:`,
+      prev: '‹ ۱۴ روز قبل',
+      next: '۱۴ روز بعد ›',
+    },
+  },
   zoneHint: 'برای تغییر بنویس: /tz Asia/Tehran',
   languageNames: { fa: 'فارسی', en: 'English' },
   calendarNames: { jalali: 'شمسی', gregorian: 'میلادی' },
@@ -643,6 +743,7 @@ const fa: Words = {
     { command: 'start', description: 'منوی اصلی' },
     { command: 'today', description: 'تسک‌های امروز' },
     { command: 'list', description: 'همهٔ تسک‌ها' },
+    { command: 'tags', description: 'برچسب‌ها' },
     { command: 'status', description: 'وضعیت همگام‌سازی' },
     { command: 'settings', description: 'تنظیمات' },
     { command: 'help', description: 'راهنما' },
@@ -658,15 +759,15 @@ const en: Words = {
     '“Buy bread tomorrow at 9 #home !high”\n' +
     '“remind me in 20 minutes tea”</blockquote>',
   help:
-    '📖 <b>Help</b>\n\n' +
+    '📖 <b><u>Help</u></b>\n\n' +
     '<b>New task</b> — just type it:\n' +
     '<blockquote>Buy bread <b>tomorrow at 9</b> → a plan\n' +
     'Pills <b>remind friday 8</b> → a reminder\n' +
     'Report <b>due saturday</b> → a deadline\n' +
     'Meeting sat 9-10 → a time range\n' +
     '<b>#tag</b> · <b>!high</b> <b>!highest</b> <b>!low</b> → tag and priority</blockquote>\n' +
-    '<b>Commands</b>\n' +
-    '<blockquote expandable>/start — main menu\n/today\n/list — everything open\n' +
+    '<b>Commands</b> <i>(tap to open)</i>\n' +
+    '<blockquote expandable>/start — main menu\n/today\n/list — everything open\n/tags — your tags and their tasks\n' +
     '/done 12 (the number is the task card’s ID)\n/remind 12 tomorrow 8 (or off)\n/plan 12 sat 9-10 (or off)\n' +
     '/del 12\n/status — sync status\n/settings\n' +
     '/lang fa|en · /tz Asia/Tehran · /cal jalali|gregorian · /lead 10</blockquote>',
@@ -675,14 +776,14 @@ const en: Words = {
 
   home: (counts, lastSync, health) => {
     const rows: string[] = [];
-    if (counts.overdue) rows.push(`⚠️ ${counts.overdue} overdue`);
-    rows.push(`📅 ${counts.today} for today`);
-    rows.push(`📋 ${counts.open} open`);
+    if (counts.overdue) rows.push(`⚠️ <b>${counts.overdue}</b> overdue`);
+    rows.push(`📅 <b>${counts.today}</b> for today`);
+    rows.push(`📋 <b>${counts.open}</b> open`);
     const dot = health === 'ok' ? '🟢' : health === 'stale' ? '🟡' : '⚪';
     return (
       '✨ <b>TaskPro</b>\n' +
       `<blockquote>${rows.join('\n')}</blockquote>\n` +
-      `${dot} Last sync: ${lastSync ?? 'not yet'}\n\n` +
+      `${dot} Last sync: <b>${lastSync ?? 'not yet'}</b>\n\n` +
       '<i>Type anything and it becomes a task.</i>'
     );
   },
@@ -844,16 +945,16 @@ const en: Words = {
           : '⚪ Not synced yet; open Obsidian and press “Sync now”.';
     return (
       '📊 <b>Status</b>\n' +
-      `<blockquote>📋 ${open} open tasks\n` +
-      `⏳ ${waiting} changes waiting for Obsidian\n` +
-      `🔄 Last sync: ${lastSync ?? 'not yet'}</blockquote>\n${note}`
+      `<blockquote>📋 <b>${open}</b> open tasks\n` +
+      `⏳ <b>${waiting}</b> changes waiting for Obsidian\n` +
+      `🔄 Last sync: <b>${lastSync ?? 'not yet'}</b></blockquote>\n${note}`
     );
   },
   agoMinutes: (minutes) =>
     minutes < 1 ? 'just now' : minutes < 60 ? `${minutes} min ago` : minutes < 2880 ? `${Math.floor(minutes / 60)} h ago` : `${Math.floor(minutes / 1440)} d ago`,
   settings: (o) =>
     '⚙️ <b>Settings</b>\n' +
-    `<blockquote>🌐 Language · ${o.language}\n📆 Calendar · ${o.calendar}\n🕒 Time zone · <code>${esc(o.timezone)}</code>\n⏱ Remind before a plan · ${o.lead} min\n🧩 Rich display · ${o.rich}\n↔️ Message width · ${o.pad}</blockquote>`,
+    `<blockquote>🌐 <b>Language</b> · ${o.language}\n📆 <b>Calendar</b> · ${o.calendar}\n🕒 <b>Time zone</b> · <code>${esc(o.timezone)}</code>\n⏱ <b>Remind before a plan</b> · ${o.lead} min\n🧩 <b>Rich display</b> · ${o.rich}\n↔️ <b>Message width</b> · ${o.pad}\n♿ <b>Accessible mode</b> · ${o.a11y}</blockquote>`,
   settingButtons: {
     language: '🌐 Language',
     calendar: '📆 Calendar',
@@ -866,6 +967,43 @@ const en: Words = {
   richNames: { on: 'on', off: 'off' },
   richUnavailable: 'This option works once the database is updated; try again in a few seconds.',
   nav: { home: '🏠', today: '📅', all: '📋', newTask: '➕', settings: '⚙️' },
+  tagsUi: {
+    button: '🏷 Tags',
+    viewTitle: (count, page, pages) => `🏷 <b>Tags</b> — <i>${count} tag${count === 1 ? '' : 's'}${pages > 1 ? ` · page ${page} of ${pages}` : ''}</i>`,
+    viewHelp: 'Tap a tag to see its open tasks, or to start a new task with it.',
+    none: 'No tags yet. Make one in your notes, or here with <code>#name</code>.',
+    openCount: (n) => (n ? `${n} open` : 'none open'),
+    listTitle: (tag, name) => `🏷 <b>#${esc(tag)}</b>${name ? ` — ${esc(name)}` : ''}`,
+    listEmpty: (tag) => `No open tasks tagged #${esc(tag)}.`,
+    newWith: (tag) => `➕ New task with #${tag}`,
+    askNew: (tag) => `🆕 New task tagged “${tag}”\n#${tag}\n\nWrite the title; a time and a priority can go in the same sentence.`,
+    hintNew: 'Task title …',
+    allTags: '🏷 All tags',
+    pick: (title, tags, page, pages, mark) =>
+      `🏷 <b>Tags</b>\n<blockquote>${esc(title)}\n${tags.length ? `On this task: <code>${esc(tags.map((tag) => `#${tag}`).join(' '))}</code>` : 'No tags yet'}</blockquote>\n` +
+      `Tap a tag to add or remove it; ${mark} means it is on this task.${pages > 1 ? `\n<i>Page ${page} of ${pages}</i>` : ''}`,
+    newTag: '✏️ New tag',
+    yourTags: 'Your tags',
+    startWith: 'Tap a tag to start a new task with it.',
+    tooLong: 'Very long tags can only be typed.',
+  },
+  a11y: {
+    name: 'Accessible mode',
+    button: (on) => `♿ Accessible mode: ${on ? 'on' : 'off'}`,
+    names: { on: 'on', off: 'off' },
+    explain: 'For a screen reader and for reading without pictures: no emoji or bars, each property of a task on a line of its own, choices one to a row, days as a list, no invisible characters.',
+    selected: 'selected',
+    subtask: 'Subtask',
+    parent: 'Parent task',
+    nav: { home: 'Menu', today: 'Today', all: 'All', newTask: 'New', settings: 'Settings' },
+    health: { ok: 'Obsidian is up to date.', stale: 'Obsidian has not been open for a while.', never: 'Not synced yet.' },
+    days: {
+      title: (kind, task, current, from, to) =>
+        `📆 <b>Pick a day</b>\n<blockquote>${kind}${task ? ` · ${esc(task)}` : ''}${current ? `\nNow: ${current}` : ''}</blockquote>\nDays ${from} to ${to}:`,
+      prev: '‹ 14 days earlier',
+      next: '14 days later ›',
+    },
+  },
   zoneHint: 'To change it, send: /tz Asia/Tehran',
   languageNames: { fa: 'فارسی', en: 'English' },
   calendarNames: { jalali: 'Jalali', gregorian: 'Gregorian' },
@@ -892,6 +1030,7 @@ const en: Words = {
     { command: 'start', description: 'Main menu' },
     { command: 'today', description: 'Today’s tasks' },
     { command: 'list', description: 'All tasks' },
+    { command: 'tags', description: 'Tags' },
     { command: 'status', description: 'Sync status' },
     { command: 'settings', description: 'Settings' },
     { command: 'help', description: 'Help' },

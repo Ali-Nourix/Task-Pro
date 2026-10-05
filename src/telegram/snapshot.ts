@@ -79,6 +79,31 @@ export function reminderAt(task: BoardTask, defaults: ReminderDefaults): string 
   return new Date(localInstant(task.schedule.date, task.schedule.start) - lead * 60_000).toISOString();
 }
 
+/** A tag as the bot lists it: the key written in the notes, the name shown for it, how many tasks carry it. */
+export interface TagInfo {
+  key: string;
+  name?: string;
+  count: number;
+}
+
+/**
+ * The tags the bot can offer: the ones defined in the settings and the ones tasks carry
+ * (closed tasks included, so a tag used last month is still on the list), most used first.
+ */
+export function buildTagCatalog(tasks: readonly BoardTask[], defined: ReadonlyArray<{ key: string; name: string }>, limit = 300): TagInfo[] {
+  const counts = new Map<string, number>();
+  for (const task of tasks) for (const tag of new Set(task.tags)) counts.set(tag, (counts.get(tag) ?? 0) + 1);
+  const names = new Map(defined.map((tag) => [tag.key, tag.name]));
+  for (const key of names.keys()) if (!counts.has(key)) counts.set(key, 0);
+  return [...counts.entries()]
+    .map(([key, count]): TagInfo => {
+      const name = names.get(key);
+      return { key, ...(name && name !== key ? { name } : {}), count };
+    })
+    .sort((a, b) => b.count - a.count || a.key.localeCompare(b.key))
+    .slice(0, limit);
+}
+
 const REPEAT_TOKEN = { day: 'd', week: 'w', month: 'm' } as const;
 
 export const repeatToken = (repeat: TaskRepeat | undefined): string | null => (repeat ? `${repeat.every}${REPEAT_TOKEN[repeat.unit]}` : null);

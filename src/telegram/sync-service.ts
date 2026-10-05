@@ -12,7 +12,7 @@
 import type { BoardTask } from '../board/task-store';
 import type { TelegramSettings } from '../types';
 import { ApplyHost, Command, Result, applyCommands } from './apply';
-import { ReminderDefaults, buildSnapshot } from './snapshot';
+import { ReminderDefaults, TagInfo, buildSnapshot, buildTagCatalog } from './snapshot';
 
 export interface Reply {
   status: number;
@@ -24,6 +24,8 @@ export interface SyncHost {
   /** Every task, or null until the notes have been read. */
   tasks(): BoardTask[] | null;
   defaults(): ReminderDefaults;
+  /** The tags defined in the settings, for the bot to list. */
+  definedTags?(): ReadonlyArray<{ key: string; name: string }>;
   post(url: string, token: string, body: unknown): Promise<Reply>;
   apply: ApplyHost;
   save(): Promise<void>;
@@ -57,6 +59,7 @@ export class TelegramSync {
   private debounce: number | null = null;
   private running = false;
   private lastUploaded = '';
+  private lastTags = '';
 
   constructor(private readonly host: SyncHost) {}
 
@@ -96,12 +99,16 @@ export class TelegramSync {
     try {
       const snapshot = buildSnapshot(this.host.tasks()!, this.host.defaults());
       const json = JSON.stringify(snapshot);
+      const catalog = this.catalog();
+      const tagsJson = JSON.stringify(catalog);
       const sentAcks = [...(settings.unconfirmed ?? [])];
       const first = await this.call(endpoint, settings.token, {
         acks: sentAcks,
         snapshot: json === this.lastUploaded ? undefined : snapshot,
+        tags: tagsJson === this.lastTags ? undefined : catalog,
       });
       this.lastUploaded = json;
+      this.lastTags = tagsJson;
       this.confirm(sentAcks);
 
       const commands = Array.isArray(first.commands) ? first.commands : [];
@@ -126,6 +133,11 @@ export class TelegramSync {
     } finally {
       this.running = false;
     }
+  }
+
+  /** The tags the bot may list: the settings' own and the ones tasks carry. */
+  private catalog(): TagInfo[] {
+    return buildTagCatalog(this.host.tasks() ?? [], this.host.definedTags?.() ?? []);
   }
 
   private async call(endpoint: string, token: string, body: unknown): Promise<{ commands?: Command[] }> {

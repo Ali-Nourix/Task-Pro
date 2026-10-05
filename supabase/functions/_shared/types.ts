@@ -2,6 +2,13 @@
 
 import type { Moment, Plan, Priority } from './quickadd.ts';
 
+/** A tag the notes know: the key written in them, the name the plugin shows for it, and how many tasks carry it. */
+export interface TagInfo {
+  key: string;
+  name?: string;
+  count: number;
+}
+
 /** Open, in progress, done, not done: the marker between a task line's brackets, in words. */
 export type Status = 'open' | 'doing' | 'done' | 'failed';
 
@@ -18,6 +25,10 @@ export interface OwnerRow {
   rich?: boolean | null;
   /** How many invisible characters widen a short message (0: none). */
   pad?: number | null;
+  /** Accessible display: words instead of emoji, no bars or invisible padding, one choice to a line, days as a list. */
+  a11y?: boolean | null;
+  /** The tags the notes use or define, with how many tasks have each, as the plugin last uploaded them. */
+  tag_catalog?: TagInfo[] | null;
   last_sync_at: string | null;
 }
 

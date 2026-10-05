@@ -1,8 +1,9 @@
 // Telegram's HTTP API, for the few calls the bot makes.
 
+import { htmlToMarkdownV2 } from './markdownv2.ts';
 import type { BotCommand, Button, Rich, Telegram } from './types.ts';
 
-const PARSE_ERROR = /can't parse entities|unsupported start tag|can't find end tag/i;
+const PARSE_ERROR = /can't parse entities|unsupported start tag|can't find end tag|can't parse message/i;
 /** Telegram does not know the rich methods (an older Bot API server): stop trying for a while. */
 const NO_RICH = /method not found|unknown method|not implemented|404/i;
 const RICH_PAUSE_MS = 10 * 60_000;
@@ -52,25 +53,36 @@ export function telegramApi(token: string): Telegram {
     }
   };
 
-  /** Sends or edits a classic message, taking a step back when Telegram refuses part of it: the colours, then the markup. */
-  const deliver = async (method: string, body: Record<string, unknown>, text: string, buttons?: Button[][]) => {
-    const attempt = (html: boolean, styled: boolean) =>
+  /**
+   * Sends or edits a classic message, taking a step back when Telegram refuses part of it:
+   * MarkdownV2 first, then the same text as HTML, then plain words; and, at each, the
+   * coloured buttons before the buttons themselves.
+   */
+  const deliver = async (method: string, body: Record<string, unknown>, text: string, buttons?: Button[][], markup?: Record<string, unknown>) => {
+    const hasStyle = !!buttons?.some((row) => row.some((b) => b.style));
+    const attempt = (mode: 'MarkdownV2' | 'HTML' | 'plain', styled: boolean) =>
       call(method, {
         ...body,
-        text: html ? text : plain(text),
-        ...(html ? { parse_mode: 'HTML' } : {}),
+        text: mode === 'MarkdownV2' ? htmlToMarkdownV2(text) : mode === 'HTML' ? text : plain(text),
+        ...(mode === 'plain' ? {} : { parse_mode: mode }),
         link_preview_options: { is_disabled: true },
-        ...(buttons?.length ? { reply_markup: keyboard(buttons, styled) } : {}),
+        ...(markup ? { reply_markup: markup } : buttons?.length ? { reply_markup: keyboard(buttons, styled) } : {}),
       });
-    const hasStyle = !!buttons?.some((row) => row.some((b) => b.style));
-    try {
-      await attempt(true, true);
-    } catch (error) {
-      const message = String(error);
-      if (/not modified/i.test(message)) return;
-      if (PARSE_ERROR.test(message)) return attempt(false, true);
-      if (hasStyle && message.includes(': 400')) return attempt(true, false);
-      throw error;
+    const modes = ['MarkdownV2', 'HTML', 'plain'] as const;
+    for (let i = 0; i < modes.length; i++) {
+      try {
+        await attempt(modes[i], true);
+        return;
+      } catch (error) {
+        const message = String(error);
+        if (/not modified/i.test(message)) return;
+        if (PARSE_ERROR.test(message) && i < modes.length - 1) {
+          console.error(`${modes[i]} refused, trying ${modes[i + 1]}`, message.slice(0, 160));
+          continue;
+        }
+        if (hasStyle && !markup && message.includes(': 400')) return attempt(modes[i], false);
+        throw error;
+      }
     }
   };
 
@@ -90,13 +102,7 @@ export function telegramApi(token: string): Telegram {
   return {
     async send(chatId: number, text: string, buttons?: Button[][], options?: { forceReply?: string; rich?: Rich }) {
       if (options?.forceReply !== undefined) {
-        const body = { chat_id: chatId, reply_markup: { force_reply: true, input_field_placeholder: options.forceReply.slice(0, 64) } };
-        try {
-          await call('sendMessage', { ...body, text, parse_mode: 'HTML', link_preview_options: { is_disabled: true } });
-        } catch (error) {
-          if (!PARSE_ERROR.test(String(error))) throw error;
-          await call('sendMessage', { ...body, text: plain(text) });
-        }
+        await deliver('sendMessage', { chat_id: chatId }, text, undefined, { force_reply: true, input_field_placeholder: options.forceReply.slice(0, 64) });
         return;
       }
       await show('sendRichMessage', 'sendMessage', { chat_id: chatId }, text, buttons, options?.rich);
