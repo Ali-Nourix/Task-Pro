@@ -15,6 +15,15 @@ function assistant() {
   return cloudflareAi({ accountId, token, model: Deno.env.get('CF_AI_MODEL') || undefined, speechModel: Deno.env.get('CF_STT_MODEL') || undefined });
 }
 
+/**
+ * The one Telegram user id the bot answers, when ALLOWED_USER_ID is set. A value that is not a
+ * number is kept as NaN, which matches nobody: a typo locks the bot rather than opening it.
+ */
+function allowedUser(): number | undefined {
+  const raw = Deno.env.get('ALLOWED_USER_ID')?.trim();
+  return raw ? (/^\d{1,15}$/.test(raw) ? Number(raw) : Number.NaN) : undefined;
+}
+
 Deno.serve(async (request) => {
   const secret = Deno.env.get('TELEGRAM_WEBHOOK_SECRET') ?? '';
   // Telegram sends the secret it was given when the webhook was set.
@@ -28,6 +37,7 @@ Deno.serve(async (request) => {
       store: supabaseStore(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_SECRET_KEY')!),
       tg: telegramApi(Deno.env.get('TELEGRAM_BOT_TOKEN')!),
       pairingCode: Deno.env.get('PAIRING_CODE') ?? '',
+      allowedUserId: allowedUser(),
       now: () => new Date(),
       ai: assistant(),
     });

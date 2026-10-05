@@ -128,14 +128,6 @@ export function telegramApi(token: string): Telegram {
     async typing(chatId: number) {
       await call('sendChatAction', { chat_id: chatId, action: 'typing' }).catch(() => undefined);
     },
-    async thinking(chatId: number, html: string) {
-      try {
-        // A draft lives for thirty seconds or until the real message is sent, whichever is first.
-        await call('sendRichMessageDraft', { chat_id: chatId, draft_id: 1 + Math.floor(Math.random() * 2_000_000_000), rich_message: { html } });
-      } catch {
-        await call('sendChatAction', { chat_id: chatId, action: 'typing' }).catch(() => undefined);
-      }
-    },
     async react(chatId: number, messageId: number, emoji: string | null) {
       await call('setMessageReaction', { chat_id: chatId, message_id: messageId, reaction: emoji ? [{ type: 'emoji', emoji }] : [] }).catch(() => undefined);
     },

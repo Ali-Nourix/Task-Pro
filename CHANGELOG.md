@@ -129,8 +129,9 @@
   countdown). Italic next to underline is now kept apart the way the formatting notes
   say (an empty bold entity), not with a stray control character. Buttons that only
   hold a place (the page number, the blanks of a month) are **disabled buttons**.
-  When the assistant gets a message, the message receives a 👀 at once, a **«Thinking…»
-  placeholder** shows (with what a voice message said), the answer hangs from the
+  When the assistant gets a message, the message receives a 👀 at once, «typing…» shows
+  while it works (renewed until the answer is ready; a «Thinking…» draft was tried and left an
+  empty gap under the answer), the answer hangs from the
   message it answers, and the message ends with 👌 (or 👍 for an answer in words, 🤔
   when something failed). Each of these falls back by itself on a Telegram that does
   not know it.
@@ -142,11 +143,16 @@
   comes again** every ten minutes up to three times until the task is ticked or snoozed.
   Everything is written down before it is sent, so nothing goes out twice, and without a
   place to write it down nothing goes out at all.
-- **The week and the day**: `/week` (and a button on the menu) draws the week from Saturday
-  to Friday (Monday to Sunday with the Gregorian calendar) as a table in the rich message and as
-  a block for each day in the classic one, with a button for each day and the weeks around it;
-  a day's screen lists its tasks with the days around it, and the Today list has
-  yesterday / week / tomorrow under it.
+- **The overview and the day**: `/overview` (and a button on the menu; `/week` still opens it)
+  lists **every open task** in clean Markdown, by when: the late, today (tasks with an hour in
+  order, then those with none, a deadline marked ⏳ and a reminder-only task 🔔), tomorrow,
+  later and **what has no plan at all**. No table and no week to page through. Forty are listed
+  and the rest counted. A day's screen lists its tasks with the days around it, and the Today list
+  has yesterday / overview / tomorrow under it.
+- **Counts in brackets** on the filters and the menu: «امروز (۳)», «بدون برنامه (۵)», «عقب‌افتاده (۱)».
+- **Only for one user**: set the `ALLOWED_USER_ID` secret to a Telegram id (`/id` shows yours) and
+  everyone else is ignored completely, including at pairing; a value that is not a number answers
+  nobody.
 - **Plan my day** (`/planday`, a button on Today and in the morning summary): the assistant
   fits the tasks that have no plan, or are late, into the free hours, leaving alone what already
   has an hour. It **shows its plan first** and does nothing until you tap Apply; **Settings →

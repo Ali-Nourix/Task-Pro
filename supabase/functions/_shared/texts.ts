@@ -34,28 +34,29 @@ export function truncate(text: string, length: number): string {
 const GREGORIAN_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const FA_WEEKDAYS = ['یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه', 'پنجشنبه', 'جمعه', 'شنبه'];
 const EN_WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const FA_INITIALS = ['ی', 'د', 'س', 'چ', 'پ', 'ج', 'ش'];
-const EN_INITIALS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+/** A label with how many there are, the number in brackets: «امروز (۳)». */
+export const counted = (label: string, count: number, language: Language): string => `${label} (${digits(count, language)})`;
 
-/** The short name of a weekday for a button: «ش» or «Sa». */
-export const weekdayInitial = (date: string, language: Language): string => (language === 'fa' ? FA_INITIALS : EN_INITIALS)[weekdayOf(date)];
-
-/** The day of the month as the owner's calendar writes it, for a button. */
-export function dayNumber(date: string, owner: Owner): string {
-  const [y, m, d] = parseIso(date);
-  return digits(owner.calendar === 'jalali' ? gregorianToJalali(y, m, d)[2] : d, owner.language);
-}
-
-/** One task on a day, short: its hour (or a dot, or the mark of a deadline or reminder), then its title. */
-export function dayItem(task: TaskRow, day: string, owner: Owner, rich = false): string {
-  const title = (rich ? mdEscape : esc)(truncate(task.title, 38));
-  if (task.plan_date === day) {
-    const mark = task.plan_start ? clockLabel(task.plan_start, owner.language) : '•';
-    return `${mark} ${title}${task.deadline === day ? ' ⏳' : ''}`;
+/**
+ * One task on the overview, short and clean: the heading above it says the day, so a task of
+ * today or tomorrow shows its hour (and a mark if it is also due or only has a reminder), and one
+ * of another day says which. `day` is the day the heading stands for, when it stands for one.
+ */
+export function overviewItem(task: TaskRow, day: string | null, owner: Owner, today: string, rich = false): string {
+  const title = (rich ? mdEscape : esc)(truncate(task.title, 60));
+  const glyph = task.status === 'doing' ? '🔄 ' : '';
+  const priority = task.priority === 'highest' || task.priority === 'high' ? ` ${PRIORITY_MARK[task.priority]}` : '';
+  const hour = task.plan_start ? `${clockLabel(task.plan_start, owner.language)} ` : '';
+  if (day) {
+    const marks: string[] = [];
+    if (task.deadline === day && task.plan_date !== day) marks.push('⏳');
+    if (task.plan_date !== day && task.deadline !== day && task.remind_at) marks.push(`🔔 ${clockLabel(utcToLocal(owner.timezone, new Date(task.remind_at)).time, owner.language)}`);
+    return `${task.plan_date === day ? hour : ''}${glyph}${title}${priority}${marks.length ? ` ${marks.join(' ')}` : ''}`;
   }
-  if (task.deadline === day) return `⏳ ${title}`;
-  const at = task.remind_at ? utcToLocal(owner.timezone, new Date(task.remind_at)).time : '';
-  return `🔔 ${at ? `${clockLabel(at, owner.language)} ` : ''}${title}`;
+  const when = task.plan_date ?? task.deadline;
+  if (!when) return `${glyph}${title}${priority}`;
+  const label = `${task.plan_date ? '' : '⏳ '}${dayLabel(when, owner, today)}${task.plan_date ? ` ${hour.trim()}`.trimEnd() : ''}`;
+  return `${glyph}${title}${priority} — ${rich ? mdEscape(label) : label}`;
 }
 
 type Owner = Pick<OwnerRow, 'language' | 'calendar' | 'timezone'>;
@@ -472,7 +473,6 @@ export interface Words {
     button: (state: 'on' | 'off' | 'unset') => string;
     intro: (state: 'on' | 'off' | 'unset') => string;
     heard: (text: string) => string;
-    thinking: string;
     done: string;
     nothing: string;
     groups: { added: string; changed: string; status: string; remove: string };
@@ -511,7 +511,7 @@ export interface Words {
     };
     nudge: { eve: (n: number) => string; morn: (n: number) => string };
     nag: (n: number, of: number) => string;
-    buttons: { today: string; week: string; planDay: string; tomorrow: string; overdue: string };
+    buttons: { today: string; overview: string; planDay: string; tomorrow: string; overdue: string };
     more: (n: number) => string;
   };
   notif: {
@@ -531,18 +531,19 @@ export interface Words {
   };
   /** The week and the day screens. */
   week: {
-    title: (range: string) => string;
     dayTitle: (label: string, count: number) => string;
     today: string;
-    empty: string;
     dayEmpty: string;
-    thisWeek: string;
-    weekBack: string;
-    weekNext: string;
     newOnDay: string;
+  };
+  /** Every open task at a glance, by when. */
+  overview: {
+    title: (count: number) => string;
     more: (n: number) => string;
   };
   zoneHint: string;
+  /** The person's Telegram id, and what to do with it. */
+  userId: (id: number) => string;
   languageNames: { fa: string; en: string };
   calendarNames: { jalali: string; gregorian: string };
   langSet: string;
@@ -575,10 +576,10 @@ const fa: Words = {
     '<b>#برچسب</b> · <b>!بالا</b> <b>!فوری</b> <b>!کم</b> ← برچسب و اولویت</blockquote>\n' +
     '🤖 <b>دستیار هوشمند</b> — اگر راه‌اندازی شده باشد، به زبان خودت بگو (یا <b>ویس</b> بفرست) و خودش تسک‌ها را در روز درست می‌گذارد.\n' +
     '<b>دستورها</b> <i>(برای دیدن باز کن)</i>\n' +
-    '<blockquote expandable>/start — منوی اصلی\n/today — امروز\n/week — برنامهٔ هفته\n/list — همهٔ تسک‌ها\n/planday — روزم را بچین\n/tags — برچسب‌ها و تسک‌هایشان\n/ai — دستیار هوشمند (یا /ai و بعدش متن)\n' +
+    '<blockquote expandable>/start — منوی اصلی\n/today — امروز\n/overview — نمای کلی\n/list — همهٔ تسک‌ها\n/planday — روزم را بچین\n/tags — برچسب‌ها و تسک‌هایشان\n/ai — دستیار هوشمند (یا /ai و بعدش متن)\n' +
     '/done ۱۲ — انجام شد (عدد = «شناسه» روی صفحهٔ تسک)\n/fail ۱۲ — انجام نشد\n/remind ۱۲ فردا ۸ — یادآوری (یا off)\n/plan ۱۲ شنبه ۹-۱۰ — برنامه (یا off)\n' +
     '/del ۱۲ — حذف\n/status — وضعیت همگام‌سازی\n/settings — تنظیمات\n' +
-    '/lang fa|en · /tz Asia/Tehran · /cal jalali|gregorian · /lead ۱۰</blockquote>',
+    '/lang fa|en · /tz Asia/Tehran · /cal jalali|gregorian · /lead ۱۰ · /id</blockquote>',
   badCode: '🚫 کد درست نیست.',
   needStart: 'اول با <code>/start</code> و کد راه‌اندازی وصلم کن.',
 
@@ -817,7 +818,6 @@ const fa: Words = {
           ? 'الان خاموش است و نوشته‌هایت مثل قبل تسک ساده می‌شوند. با <code>/ai متن</code> هر وقت خواستی صدایش کن، یا در ⚙️ تنظیمات روشنش کن.'
           : 'روشن است: هر چه بنویسی یا ویس بدهی، اول به دستیار می‌رسد.'),
     heard: (text) => `🎙 <i>«${esc(text)}»</i>`,
-    thinking: 'دارم فکر می‌کنم …',
     done: '🤖 <b>انجام شد</b>',
     nothing: '🤖 کاری انجام ندادم.',
     groups: { added: '➕ <b>تسک تازه</b>', changed: '✏️ <b>تغییر کرد</b>', status: '☑️ <b>وضعیت</b>', remove: '🗑 <b>حذف را تأیید کن</b>' },
@@ -884,7 +884,7 @@ const fa: Words = {
       morn: (n) => `⏳ <b>${digits(n, 'fa')} مهلت امروز</b>`,
     },
     nag: (n, of) => `🔁 <b>هنوز انجام نشده</b> · بار ${digits(n, 'fa')} از ${digits(of, 'fa')}`,
-    buttons: { today: '📅 امروز', week: '🗓 هفته', planDay: '🪄 روزم را بچین', tomorrow: '📅 فردا', overdue: '⚠️ عقب‌افتاده' },
+    buttons: { today: '📅 امروز', overview: '🗂 نمای کلی', planDay: '🪄 روزم را بچین', tomorrow: '📅 فردا', overdue: '⚠️ عقب‌افتاده' },
     more: (n) => `<i>و ${digits(n, 'fa')} مورد دیگر</i>`,
   },
   notif: {
@@ -903,18 +903,17 @@ const fa: Words = {
     unavailable: 'این گزینه بعد از به‌روزرسانی دیتابیس فعال می‌شود؛ چند ثانیه بعد دوباره امتحان کن.',
   },
   week: {
-    title: (range) => `🗓 <b>هفته</b> — <i>${range}</i>`,
     dayTitle: (label, count) => `📅 <b>${label}</b> — <i>${count ? `${digits(count, 'fa')} تسک` : 'خالی'}</i>`,
     today: 'امروز',
-    empty: '—',
     dayEmpty: 'برای این روز برنامه‌ای نیست.',
-    thisWeek: '🗓 این هفته',
-    weekBack: 'هفتهٔ قبل',
-    weekNext: 'هفتهٔ بعد',
     newOnDay: '➕ تسک برای این روز',
-    more: (n) => `+${digits(n, 'fa')}`,
+  },
+  overview: {
+    title: (count) => `🗂 <b>نمای کلی</b> — <i>${digits(count, 'fa')} تسک باز</i>`,
+    more: (n) => `<i>و ${digits(n, 'fa')} مورد دیگر؛ از «همهٔ تسک‌ها» ببین.</i>`,
   },
   zoneHint: 'برای تغییر بنویس: /tz Asia/Tehran',
+  userId: (id) => `🪪 شناسهٔ تلگرام تو: <code>${id}</code>\nبرای اینکه ربات فقط به تو جواب بدهد، همین عدد را به‌عنوان <code>ALLOWED_USER_ID</code> در Supabase بگذار.`,
   languageNames: { fa: 'فارسی', en: 'English' },
   calendarNames: { jalali: 'شمسی', gregorian: 'میلادی' },
   langSet: 'زبان تغییر کرد.',
@@ -940,7 +939,7 @@ const fa: Words = {
     { command: 'start', description: 'منوی اصلی' },
     { command: 'today', description: 'تسک‌های امروز' },
     { command: 'list', description: 'همهٔ تسک‌ها' },
-    { command: 'week', description: 'برنامهٔ این هفته' },
+    { command: 'overview', description: 'نمای کلی' },
     { command: 'tags', description: 'برچسب‌ها' },
     { command: 'ai', description: 'دستیار هوشمند' },
     { command: 'planday', description: 'روزم را بچین' },
@@ -968,10 +967,10 @@ const en: Words = {
     '<b>#tag</b> · <b>!high</b> <b>!highest</b> <b>!low</b> → tag and priority</blockquote>\n' +
     '🤖 <b>Assistant</b> — once it is set up, say it in your own words (or send a <b>voice message</b>) and it puts the tasks on the right days.\n' +
     '<b>Commands</b> <i>(tap to open)</i>\n' +
-    '<blockquote expandable>/start — main menu\n/today\n/week — this week\n/list — everything open\n/planday — plan my day\n/tags — your tags and their tasks\n/ai — the assistant (or /ai and your words)\n' +
+    '<blockquote expandable>/start — main menu\n/today\n/overview — every task at a glance\n/list — everything open\n/planday — plan my day\n/tags — your tags and their tasks\n/ai — the assistant (or /ai and your words)\n' +
     '/done 12 (the number is the task card’s ID)\n/remind 12 tomorrow 8 (or off)\n/plan 12 sat 9-10 (or off)\n' +
     '/del 12\n/status — sync status\n/settings\n' +
-    '/lang fa|en · /tz Asia/Tehran · /cal jalali|gregorian · /lead 10</blockquote>',
+    '/lang fa|en · /tz Asia/Tehran · /cal jalali|gregorian · /lead 10 · /id</blockquote>',
   badCode: '🚫 That code is not right.',
   needStart: 'Connect me first with <code>/start</code> and your setup code.',
 
@@ -1210,7 +1209,6 @@ const en: Words = {
           ? 'It is off, so what you type becomes a plain task as before. Call it any time with <code>/ai your words</code>, or turn it on in ⚙️ Settings.'
           : 'It is on: whatever you write or say goes to the assistant first.'),
     heard: (text) => `🎙 <i>“${esc(text)}”</i>`,
-    thinking: 'Thinking …',
     done: '🤖 <b>Done</b>',
     nothing: '🤖 I did nothing.',
     groups: { added: '➕ <b>New tasks</b>', changed: '✏️ <b>Changed</b>', status: '☑️ <b>Status</b>', remove: '🗑 <b>Confirm to delete</b>' },
@@ -1277,7 +1275,7 @@ const en: Words = {
       morn: (n) => `⏳ <b>${n} due today</b>`,
     },
     nag: (n, of) => `🔁 <b>Still not done</b> · ${n} of ${of}`,
-    buttons: { today: '📅 Today', week: '🗓 Week', planDay: '🪄 Plan my day', tomorrow: '📅 Tomorrow', overdue: '⚠️ Overdue' },
+    buttons: { today: '📅 Today', overview: '🗂 Overview', planDay: '🪄 Plan my day', tomorrow: '📅 Tomorrow', overdue: '⚠️ Overdue' },
     more: (n) => `<i>and ${n} more</i>`,
   },
   notif: {
@@ -1296,18 +1294,17 @@ const en: Words = {
     unavailable: 'This option works once the database is updated; try again in a few seconds.',
   },
   week: {
-    title: (range) => `🗓 <b>Week</b> — <i>${range}</i>`,
     dayTitle: (label, count) => `📅 <b>${label}</b> — <i>${count ? `${count} task${count === 1 ? '' : 's'}` : 'empty'}</i>`,
     today: 'Today',
-    empty: '—',
     dayEmpty: 'Nothing is planned for this day.',
-    thisWeek: '🗓 This week',
-    weekBack: 'Previous week',
-    weekNext: 'Next week',
     newOnDay: '➕ Task for this day',
-    more: (n) => `+${n}`,
+  },
+  overview: {
+    title: (count) => `🗂 <b>Overview</b> — <i>${count} open task${count === 1 ? '' : 's'}</i>`,
+    more: (n) => `<i>and ${n} more; see them in “All tasks”.</i>`,
   },
   zoneHint: 'To change it, send: /tz Asia/Tehran',
+  userId: (id) => `🪪 Your Telegram id: <code>${id}</code>\nTo make the bot answer only you, set this number as <code>ALLOWED_USER_ID</code> in Supabase.`,
   languageNames: { fa: 'فارسی', en: 'English' },
   calendarNames: { jalali: 'Jalali', gregorian: 'Gregorian' },
   langSet: 'Language changed.',
@@ -1333,7 +1330,7 @@ const en: Words = {
     { command: 'start', description: 'Main menu' },
     { command: 'today', description: 'Today’s tasks' },
     { command: 'list', description: 'All tasks' },
-    { command: 'week', description: 'This week’s plan' },
+    { command: 'overview', description: 'Overview' },
     { command: 'tags', description: 'Tags' },
     { command: 'ai', description: 'The assistant' },
     { command: 'planday', description: 'Plan my day' },

@@ -171,8 +171,8 @@ async function paired() {
   eq(w.store.owner.chat_id, 7, 'the right code pairs the chat');
   eq([w.store.owner.language, w.store.owner.timezone, w.store.owner.calendar], ['fa', 'Asia/Tehran', 'jalali'], 'in Persian, Tehran time and the Jalali calendar to begin with');
   eq(w.sent.slice(-2).map((m) => m.text.startsWith('👋 <b>') ? 'greeting' : m.text.startsWith('✨ <b>') ? 'menu' : '?'), ['greeting', 'menu'], 'it greets, then shows the main menu');
-  eq(w.commands[0], ['start', 'today', 'list', 'week', 'tags', 'ai', 'planday', 'status', 'settings', 'help'], 'and puts its commands in the chat’s menu');
-  eq(w.data(w.last()), ['ls:t:0', 'ls:a:0', 'new', 'wk:0', 'tg:0', 'st', 'set', 'help'], 'the menu: today, all, new, the week, tags, status, settings, help');
+  eq(w.commands[0], ['start', 'today', 'list', 'overview', 'tags', 'ai', 'planday', 'status', 'settings', 'help'], 'and puts its commands in the chat’s menu');
+  eq(w.data(w.last()), ['ls:t:0', 'ls:a:0', 'new', 'ov', 'tg:0', 'st', 'set', 'help'], 'the menu: today, all, new, the overview, tags, status, settings, help');
   eq(w.last().buttons[0][0].style, 'primary', 'the first button is blue');
   w.sent.length = 0;
   await w.say('hello', 99);
@@ -234,7 +234,7 @@ async function paired() {
   const today = w.last().text;
   eq([today.includes('Late'), today.includes('Today'), today.includes('Later')], [true, true, false], '/today lists what is late and what is today');
   eq(today.indexOf('عقب‌افتاده') < today.indexOf('Late') && today.indexOf('Late') < today.lastIndexOf('📅 امروز'), true, 'in sections of their own, the late first');
-  eq(w.data(w.last()), ['t:1@t0', 't:2@t0', 'dy:2026-10-03', 'wk:0', 'dy:2026-10-01', 'ls:a:0', 'ls:t:0', 'ls:o:0', 'home', 'ls:t:0', 'ls:a:0', 'new', 'set'], 'each task opens by a button; the days around today and the week (turned round for Persian: tomorrow on the left), the filters that have tasks, then the tab bar');
+  eq(w.data(w.last()), ['t:1@t0', 't:2@t0', 'dy:2026-10-03', 'ov', 'dy:2026-10-01', 'ls:a:0', 'ls:t:0', 'ls:o:0', 'home', 'ls:t:0', 'ls:a:0', 'new', 'set'], 'each task opens by a button; the days around today and the overview (turned round for Persian: tomorrow on the left), the filters that have tasks, then the tab bar');
   eq(w.last().buttons.flat().find((b) => b.data === 'ls:t:0').style, 'primary', 'the filter in use is blue');
   await w.say('/list');
   eq(w.last().text.includes('Later') && w.last().text.includes('🗓 بعداً'), true, '/list lists them all, the far ones under “later”');
@@ -362,6 +362,36 @@ async function paired() {
   eq(Math.max(...w.edits.concat(w.sent).map((m) => m.text.length)) < 4096, true, 'no message is near Telegram’s limit');
 }
 
+// ── Locked to one user id ──────────────────────────────────────────────────
+{
+  const w = world();
+  await w.say('/start sesame');
+  w.sent.length = 0;
+  await w.say('/id');
+  eq(w.last().text.includes('<code>7</code>') && w.last().text.includes('ALLOWED_USER_ID'), true, '/id tells the owner their Telegram id, and what to do with it');
+
+  const from = (id, text, chat = id) => handleUpdate({ message: { chat: { id: chat, type: 'private' }, from: { id }, text, message_id: 9 } }, w.deps);
+  w.deps.allowedUserId = 7;
+  w.sent.length = 0;
+  await from(7, '/start');
+  eq(w.sent.length, 1, 'the one user it is locked to is answered as before');
+  w.sent.length = 0;
+  await from(8, '/start');
+  await from(8, 'buy milk');
+  await from(8, '/start sesame');
+  await handleUpdate({ callback_query: { id: 'cb', data: 'ls:a:0', from: { id: 8 }, message: { chat: { id: 7 }, message_id: 555 } } }, w.deps);
+  eq([w.sent.length, w.edits.length, w.store.tasks.length], [0, 0, 0], 'anyone else gets no answer at all, and changes nothing, even from the owner’s chat');
+  w.deps.allowedUserId = Number.NaN;
+  await from(7, '/start');
+  eq(w.sent.length, 0, 'an id that is not a number answers nobody: a typo locks the bot instead of opening it');
+  delete w.deps.allowedUserId;
+
+  const fresh = world();
+  fresh.deps.allowedUserId = 7;
+  await handleUpdate({ message: { chat: { id: 9, type: 'private' }, from: { id: 9 }, text: '/start sesame', message_id: 1 } }, fresh.deps);
+  eq([fresh.sent.length, fresh.store.owner], [0, null], 'a stranger with the right code cannot pair either');
+}
+
 // ── The menu ───────────────────────────────────────────────────────────────
 {
   const w = await paired();
@@ -372,8 +402,9 @@ async function paired() {
   await w.say('/start');
   const home = w.last();
   eq([home.text.includes('<b>۱</b> عقب‌افتاده'), home.text.includes('<b>۲</b> تسک باز'), home.text.includes('🟢')], [true, true, true], 'the menu counts what is late, due today and open, and shows the sync');
-  eq(w.data(home), ['ls:t:0', 'ls:a:0', 'new', 'wk:0', 'ls:o:0', 'tg:0', 'st', 'set', 'help'], 'with a button for what is overdue when something is');
+  eq(w.data(home), ['ls:t:0', 'ls:a:0', 'new', 'ov', 'ls:o:0', 'tg:0', 'st', 'set', 'help'], 'with a button for what is overdue when something is');
   eq(home.buttons.flat().find((b) => b.data === 'ls:o:0').style, 'danger', 'in red');
+  eq(home.buttons.flat().find((b) => b.data === 'ls:o:0').text, '⚠️ عقب‌افتاده (۱)', 'with its count in brackets');
   await w.press('st');
   eq(w.lastEdit().text.includes('📊'), true, 'the status page opens in place');
   w.state.now = new Date('2026-10-02T14:00:00Z');
@@ -833,13 +864,6 @@ async function paired() {
   await tg.react(7, 41, null);
   eq(calls.map((c) => [c.method, c.body.reaction]), [['setMessageReaction', [{ type: 'emoji', emoji: '👀' }]], ['setMessageReaction', []]], 'a reaction is put on a message, and taken off');
   calls.length = 0;
-  await tg.thinking(7, '<tg-thinking>Thinking</tg-thinking>');
-  eq([calls[0].method, calls[0].body.rich_message, calls[0].body.draft_id > 0], ['sendRichMessageDraft', { html: '<tg-thinking>Thinking</tg-thinking>' }, true], '«Thinking…» is a rich draft');
-  calls.length = 0;
-  replies.push({ ok: false, status: 400, text: 'Bad Request: method not found' });
-  await tg.thinking(7, '<tg-thinking>Thinking</tg-thinking>');
-  eq(calls.map((c) => [c.method, c.body.action]), [['sendRichMessageDraft', undefined], ['sendChatAction', 'typing']], 'and “typing…” where drafts are not known');
-  calls.length = 0;
   replies.push({ ok: false, status: 400, text: 'Bad Request: REACTION_INVALID' });
   eq(await tg.react(7, 41, '👀'), undefined, 'a reaction that cannot be set is not an error: it is only decoration');
   calls.length = 0;
@@ -885,6 +909,7 @@ async function paired() {
   await w.say('/list');
   const filters = w.last().buttons.filter((row) => row.every((b) => /^ls:[atodu]:0$/.test(b.data)));
   eq(filters.map((row) => row.map((b) => b.data)), [['ls:a:0', 'ls:t:0'], ['ls:o:0', 'ls:d:0'], ['ls:u:0']], 'the filters are two to a row, so no label is cut short');
+  eq(filters.flat().map((b) => b.text), ['همه (۴)', 'امروز (۲)', 'عقب‌افتاده (۱)', 'در حال انجام (۱)', 'بدون برنامه (۲)'], 'every filter shows its count in brackets: «امروز (۲)», not «امروز ۲»');
   eq(w.last().text.startsWith('<b>📋 همهٔ تسک‌ها</b> — <i>۴ باز</i>'), true, 'the title counts with a dash, not a dot that reads as a zero');
   eq(w.last().text.includes('<code>۰ از ۱</code>'), true, 'and a ratio reads «۰ از ۱», not a slash that turns round');
 
