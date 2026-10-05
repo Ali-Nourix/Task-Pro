@@ -292,7 +292,7 @@ const tasks = [
   eq(y.store.owner.ai_confirm, 'big', 'cycling through always, big jobs and never');
 }
 
-// ── The overview ───────────────────────────────────────────────────────────
+// ── The overview: a week ───────────────────────────────────────────────────
 {
   const w = await paired(MORNING);
   await w.sync({ snapshot: [
@@ -300,86 +300,98 @@ const tasks = [
     { key: 'A.md|^6|0', title: 'Dentist', status: 'open', tags: [], plan_date: '2026-10-12', plan_start: '10:00' },
     { key: 'A.md|^7|0', title: 'Think about the trip', status: 'open', tags: [] },
     { key: 'A.md|^8|0', title: 'Call mum', status: 'open', tags: [], remind_at: '2026-10-05T14:30:00Z' },
+    ...Array.from({ length: 8 }, (_, i) => ({ key: `B.md|^${i}|0`, title: `Errand ${i + 1}`, status: 'open', tags: [], plan_date: '2026-10-08' })),
   ] });
   w.sent.length = 0;
   await w.say('/overview');
   const view = w.last();
   const text = plain(view.text).replace(/[\n\u2800]+$/, '');
-  eq(text, [
-    '🗂 نمای کلی — ۸ تسک باز',
+  eq(text.split('\n').slice(0, 21), [
+    '🗂 نمای کلی · هفته — شنبه ۱۱ مهر – جمعه ۱۷ مهر',
     '',
-    '⚠️ عقب‌افتاده (۱)',
-    '• Old errand — شنبه ۱۱ مهر',
+    'شنبه ۱۱ مهر (۱)',
+    '• Old errand',
     '',
-    '📅 امروز (۳)',
+    'یکشنبه ۱۲ مهر (۰)',
+    '',
+    'دوشنبه ۱۳ مهر · امروز (۳)',
     '• ۰۹:۰۰ Call the bank',
     '• Send the report 🟠 ⏳',
     '• Call mum 🔔 ۱۸:۰۰',
     '',
-    '🌅 فردا (۲)',
+    'سه‌شنبه ۱۴ مهر (۲)',
     '• Water plants',
     '• Tax form ⏳',
     '',
-    '🗓 بعداً (۱)',
-    '• Dentist — دوشنبه ۲۰ مهر ۱۰:۰۰',
+    'چهارشنبه ۱۵ مهر (۰)',
     '',
-    '📥 بدون برنامه (۱)',
-    '• Think about the trip',
-  ].join('\n'), 'every open task by when: the late, today (a task with no hour is there too), tomorrow, later, and what has no plan at all; the counts in brackets');
+    'پنجشنبه ۱۶ مهر (۸)',
+    '• Errand 1',
+    '• Errand 2',
+  ], 'a week by day, Saturday to Friday: every task of each day (the ones with no hour too, in the order of the day), a heading with how many in brackets, today named');
+  eq(text.includes('• Errand 6\nو ۲ مورد دیگر؛ روز را باز کن.'), true, 'a crowded day shows six and points to its own screen');
+  eq(text.includes('Dentist') || text.includes('Think about the trip'), false, 'what is of another week, or of no day, is not in this one');
   const rich = view.options.rich.markdown;
-  eq(rich.includes('|'), false, 'no table: the rich message is headings and lists');
-  eq(rich.split('\n').filter((line) => line.startsWith('#')), ['# 🗂 نمای کلی — ۸ تسک باز', '## ⚠️ عقب‌افتاده (۱)', '## 📅 امروز (۳)', '## 🌅 فردا (۲)', '## 🗓 بعداً (۱)', '## 📥 بدون برنامه (۱)'], 'with a heading for each, and the count in brackets');
-  eq(rich.includes('- Think about the trip'), true, 'and a list under it');
-  eq(view.buttons.slice(0, 2).map((row) => row.map((b) => b.text)), [['همه (۸)', 'امروز (۴)'], ['عقب‌افتاده (۱)', 'بدون برنامه (۱)']], 'the filters under it count in brackets too, and open the lists');
-  eq(view.buttons.slice(0, 2).flat().map((b) => b.data), ['ls:a:0', 'ls:t:0', 'ls:o:0', 'ls:u:0'], 'each to its own list');
+  eq([rich.includes('|'), rich.split('\n').filter((line) => line.startsWith('#')).slice(0, 4)], [false, ['# 🗂 نمای کلی · هفته — شنبه ۱۱ مهر – جمعه ۱۷ مهر', '## شنبه ۱۱ مهر (۱)', '## یکشنبه ۱۲ مهر (۰)', '## دوشنبه ۱۳ مهر · امروز (۳)']], 'the rich message is headings and lists, no table');
+  const rows = view.buttons;
+  eq(rows[0].map((b) => b.data), ['dy:2026-10-09', 'dy:2026-10-08', 'dy:2026-10-07', 'dy:2026-10-06', 'dy:2026-10-05', 'dy:2026-10-04', 'dy:2026-10-03'], 'a button for each day, Saturday on the right as Persian reads');
+  eq([rows[0][4].text, rows[0][4].style, rows[0][1].text, rows[0][5].text], ['د ۱۳•', 'primary', 'پ ۱۶•', 'ی ۱۲'], 'each names its weekday and number, today is blue, a day with tasks has a dot');
+  eq(rows[1].map((b) => [b.text, b.data]), [['۱۸ – ۲۴ مهر', 'wk:1'], ['🗓 این هفته', 'noop'], ['۴ – ۱۰ مهر', 'wk:-1']], 'the weeks either side are named by their dates, never «next» or «last»; the one shown cannot be chosen again');
+  eq(rows[2].map((b) => [b.text, b.data, b.style]), [['🗓 هفته', 'wk:0', 'primary'], ['📅 روز', 'dy:2026-10-05', undefined]], 'week and day are the two ways to see it; the week is blue, the day opens on today');
+  eq(rows[3].map((b) => [b.text, b.data]), [['عقب‌افتاده (۱)', 'ls:o:0'], ['بدون برنامه (۱)', 'ls:u:0']], 'the late ones and those with no plan, which a week does not show, are a tap away, counted in brackets');
+
+  await w.press('wk:1');
+  const next = w.edits.at(-1);
+  eq([plain(next.text).split('\n')[0], plain(next.text).includes('۱۰:۰۰ Dentist'), next.buttons[1].map((b) => [b.text, b.data]), next.buttons[2].map((b) => b.data)], ['🗂 نمای کلی · هفته — شنبه ۱۸ مهر – جمعه ۲۴ مهر', true, [['۲۵ مهر – ۱ آبان', 'wk:2'], ['🗓 این هفته', 'wk:0'], ['۱۱ – ۱۷ مهر', 'wk:0']], ['wk:1', 'dy:2026-10-10']], 'the next week has the dentist, a way back to this week, and the day switch opens on its first day');
+  await w.press('wk:-5');
+  eq(plain(w.edits.at(-1).text).split('\n')[0], '🗂 نمای کلی · هفته — شنبه ۷ شهریور – جمعه ۱۳ شهریور', 'and several weeks back the headings are dates, as before');
   await w.say('/week');
-  eq(plain(w.last().text).startsWith('🗂 نمای کلی'), true, '/week now opens the same overview');
+  eq(plain(w.last().text).startsWith('🗂 نمای کلی · هفته'), true, '/week opens the same');
   await w.say('/start');
   await w.press('ov');
-  eq(plain(w.edits.at(-1).text).startsWith('🗂 نمای کلی — ۸ تسک باز'), true, 'and so does the button');
-  await w.press('wk:3');
-  eq(plain(w.edits.at(-1).text).startsWith('🗂 نمای کلی'), true, 'a week button left in the chat from before leads to it as well');
-}
-{
-  // A long list is cut short, and says how many are left.
-  const w = await paired(MORNING);
-  await w.sync({ snapshot: Array.from({ length: 45 }, (_, i) => ({ key: `B.md|^${i}|0`, title: `Idea ${i + 1}`, status: 'open', tags: [] })) });
-  await w.say('/overview');
-  const text = plain(w.last().text);
-  eq([text.includes('📥 بدون برنامه (۴۵)'), text.includes('• Idea 40'), text.includes('Idea 41'), text.includes('و ۵ مورد دیگر')], [true, true, false, true], 'forty are listed and the rest counted');
-}
-{
-  const w = await paired(MORNING);
-  await w.say('/overview');
-  eq(plain(w.last().text).startsWith('🗂 نمای کلی — ۰ تسک باز'), true, 'with nothing open it still opens');
+  eq(plain(w.edits.at(-1).text).startsWith('🗂 نمای کلی · هفته — شنبه ۱۱ مهر'), true, 'and so does the menu’s button');
 }
 {
   const w = await paired(MORNING);
   await w.store.patchOwner({ language: 'en', calendar: 'gregorian' });
   await w.sync({ snapshot: tasks });
   await w.press('ov');
-  const text = plain(w.edits.at(-1).text);
-  eq(text.split('\n').slice(0, 5), ['🗂 Overview — 5 open tasks', '', '⚠️ Overdue (1)', '• Old errand — Sat 3 Oct', ''], 'in English too');
+  const week = w.edits.at(-1);
+  eq(plain(week.text).split('\n').slice(0, 3), ['🗂 Overview · Week — Mon 5 Oct – Sun 11 Oct', '', 'Mon 5 Oct · Today (2)'], 'a Gregorian week runs from Monday');
+  eq(week.buttons[0].map((b) => b.text.split(' ')[0]), ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'], 'with the days in reading order, left to right');
+  eq(week.buttons[1].map((b) => b.text), ['‹ 28 Sep – 4 Oct', '🗓 This week', '12 – 18 Oct ›'], 'and arrows in English; a range across two months names both');
 }
 
-// ── A day ──────────────────────────────────────────────────────────────────
+// ── The overview: a day ────────────────────────────────────────────────────
 {
   const w = await paired(MORNING);
   await w.sync({ snapshot: tasks });
-  await w.press('dy:2026-10-06');
+  await w.press('dy:2026-10-07');
   const day = w.edits.at(-1);
-  eq([plain(day.text).split('\n')[0], plain(day.text).includes('۱. Water plants'), plain(day.text).includes('۲. Tax form')], ['📅 سه‌شنبه ۱۴ مهر — ۲ تسک', true, true], 'a day’s screen lists what is planned or due that day');
-  eq(day.buttons[0].map((b) => b.data), ['t:4@y2026-10-06', 't:5@y2026-10-06'], 'a button for each, that comes back to the day');
-  eq(day.buttons[1].map((b) => b.data), ['dy:2026-10-07', 'ls:t:0', 'dy:2026-10-05'], 'then the days around it (tomorrow on the left for Persian) and a way to today');
-  eq(day.buttons[2].map((b) => b.data), ['ov', 'cd:x:0:2026-10-06'], 'the overview, and a new task for this day');
+  eq(plain(day.text).split('\n').slice(0, 2), ['🗂 نمای کلی · روز', '📅 چهارشنبه ۱۵ مهر — خالی'], 'a day’s screen says what it is, and the day');
+  await w.press('dy:2026-10-06');
+  const tue = w.edits.at(-1);
+  eq([plain(tue.text).split('\n')[1], plain(tue.text).includes('۱. Water plants'), plain(tue.text).includes('۲. Tax form')], ['📅 سه‌شنبه ۱۴ مهر — ۲ تسک', true, true], 'it lists what is planned or due that day');
+  eq(tue.buttons[0].map((b) => b.data), ['t:4@y2026-10-06', 't:5@y2026-10-06'], 'a button for each, that comes back to the day');
+  eq(tue.buttons[1].map((b) => [b.text, b.data]), [['چهارشنبه ۱۵', 'dy:2026-10-07'], ['📅 امروز', 'dy:2026-10-05'], ['دوشنبه ۱۳', 'dy:2026-10-05']], 'the days either side are named by their dates (the month dropped when the names would not fit a button), with a way back to today between them');
+  eq(tue.buttons[2].map((b) => [b.data, b.style]), [['wk:0', undefined], ['dy:2026-10-06', 'primary']], 'the two ways to see it: the day is blue, the week opens on this day’s week');
+  eq(tue.buttons[3].map((b) => b.data), ['cd:x:0:2026-10-06'], 'and a new task for this day');
   await w.press('t:4@y2026-10-06');
-  eq(w.edits.at(-1).buttons.at(-2).some((b) => b.data === 'dy:2026-10-06') || w.edits.at(-1).buttons.flat().some((b) => b.data === 'dy:2026-10-06'), true, 'a task opened from a day goes back to that day');
+  eq(w.edits.at(-1).buttons.flat().some((b) => b.data === 'dy:2026-10-06'), true, 'a task opened from a day goes back to that day');
   await w.press('dy:2026-10-05');
-  eq(w.edits.at(-1).buttons[1].map((b) => b.data), ['dy:2026-10-06', 'ov', 'dy:2026-10-04'], 'on today the middle button is the overview');
+  eq(w.edits.at(-1).buttons[1].map((b) => [b.data, b.disabled]), [['dy:2026-10-06', undefined], ['noop', true], ['dy:2026-10-04', undefined]], 'on today the middle button is only a place-holder');
+  // Ten days on, nothing is called «tomorrow» or «yesterday».
+  await w.press('dy:2026-10-15');
+  eq(w.edits.at(-1).buttons[0].map((b) => b.text), ['جمعه ۲۴', '📅 امروز', 'چهارشنبه ۲۲'], 'ten days on, the days either side are still dates, not «tomorrow» or «yesterday»');
+  await w.press('dy:2026-10-15');
+  await w.press('wk:' + 1);
   await w.press('dy:2026-11-30');
   eq(plain(w.edits.at(-1).text).includes('برنامه‌ای نیست'), true, 'an empty day says so');
+  eq(w.edits.at(-1).buttons.find((row) => row[0].data.startsWith('wk:') || row[1]?.data.startsWith('wk:')).map((b) => b.data), ['wk:8', 'dy:2026-11-30'], 'and the week it is in is eight weeks on');
   await w.press('cd:x:0:2026-10-06');
   eq(w.sent.at(-1).options?.forceReply !== undefined && w.sent.at(-1).text.includes('2026-10-06'), true, '“a task for this day” asks what it is, for that day');
+  await w.say('/day');
+  eq(plain(w.last().text).split('\n').slice(0, 2), ['🗂 نمای کلی · روز', '📅 دوشنبه ۱۳ مهر — ۲ تسک · امروز'], '/day opens today');
 }
 
 // ── Move to tomorrow ───────────────────────────────────────────────────────

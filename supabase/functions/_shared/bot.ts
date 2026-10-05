@@ -7,13 +7,13 @@
 import { normalize, parseQuickAdd } from './quickadd.ts';
 import { MAX_TAGS, OFF, cleanTitle, parseRepeat, parseTags } from './taskfields.ts';
 import type { Moment, Plan } from './quickadd.ts';
-import { addDays, clockMinutes, isRealDate, isZone, localNow, localToUtc, toClock, utcToLocal, weekdayOf } from './time.ts';
+import { addDays, clockMinutes, daysBetween, isRealDate, isZone, localNow, localToUtc, toClock, utcToLocal, weekdayOf } from './time.ts';
 import { bucketOf, byHour, byPlan, isOverdue, isToday, onDay } from './agenda.ts';
 import type { Bucket } from './agenda.ts';
 import { buildMonth, monthKeyOf, monthName, partsOf } from './calendar-picker.ts';
 import { htmlToRich, mdEscape } from './rich.ts';
 import { PADS, padOf, widenHtml, widenMarkdown } from './widen.ts';
-import { clockLabel, counted, dateLabel, dayLabel, digits, esc, overviewItem, priorityMark, priorityName, repeatLabel, taskCard, taskCardRich, taskEntry, taskEntryRich, truncate, words } from './texts.ts';
+import { clockLabel, counted, dateLabel, dayItem, dayLabel, dayNumber, digits, esc, priorityMark, priorityName, repeatLabel, taskCard, taskCardRich, taskEntry, taskEntryRich, truncate, weekdayAndDay, weekdayInitial, weekRange, words } from './texts.ts';
 import type { Relatives } from './texts.ts';
 import type { Words } from './texts.ts';
 import type { AiConfirm, PendingPlan, DeadlineNudge, AddPayload, Button, EditPayload, OwnerRow, PlanPayload, Rich, RemindPayload, StatusPayload, Store, TaskRow, Telegram } from './types.ts';
@@ -58,6 +58,7 @@ const COMMANDS: Record<string, string> = {
   tags: 'tags', tag: 'tags', برچسب: 'tags', برچسبها: 'tags',
   ai: 'ai', دستیار: 'ai', هوش: 'ai',
   overview: 'overview', نمایکلی: 'overview', week: 'overview', هفته: 'overview',
+  day: 'day', روز: 'day',
   planday: 'planday', روزم: 'planday',
 };
 
@@ -227,7 +228,9 @@ async function runCommand(command: string, args: string, ctx: Ctx): Promise<void
     case 'ai':
       return args ? assist(args, ctx) : sendView(ctx, aiView(ctx));
     case 'overview':
-      return sendView(ctx, await overviewView(ctx));
+      return sendView(ctx, await weekView(ctx, 0));
+    case 'day':
+      return sendView(ctx, await dayView(ctx, todayOf(ctx)));
     case 'planday':
       return planDay(ctx);
     case 'settings':
@@ -610,7 +613,7 @@ async function listView(ctx: Ctx, filter: Filter, requestedPage: number, tag?: s
     return { text, buttons, rich };
   }
   if (filter === 't') {
-    buttons.push(dayNavRow(ctx, todayOf(ctx)));
+    buttons.push(dayNavRow(ctx, todayOf(ctx), { text: w.digest.buttons.overview, data: 'ov' }));
     if (ctx.deps.ai) buttons.push([{ text: w.digest.buttons.planDay, data: 'pd' }]);
   }
   // Two to a row, so a label is never cut short.
@@ -973,66 +976,94 @@ const readingOrder = <T,>(ctx: Ctx, items: T[]): T[] => (ctx.owner.language === 
 /** A button that goes back or forward: with an arrow in English; in Persian the order and the words say it (an arrow would be turned round). */
 const stepLabel = (ctx: Ctx, side: 'back' | 'forward', text: string): string => (ctx.owner.language === 'fa' ? text : side === 'back' ? `‹ ${text}` : `${text} ›`);
 
-/** Yesterday, a way up, tomorrow: under a day's screen and under the list for today. */
-function dayNavRow(ctx: Ctx, day: string): Button[] {
-  const { w, owner } = ctx;
-  const today = todayOf(ctx);
-  const label = (date: string) => truncate(dayLabel(date, owner, today), 14);
-  const middle: Button = day === today ? { text: w.digest.buttons.overview, data: 'ov' } : { text: w.digest.buttons.today, data: 'ls:t:0' };
+/** The first day of the week the owner's calendar uses: Saturday with the Jalali calendar, Monday with the Gregorian. */
+const weekStart = (ctx: Ctx, date: string): string => addDays(date, -((weekdayOf(date) - (ctx.owner.calendar === 'jalali' ? 6 : 1) + 7) % 7));
+
+/** The seven days of a week, `offset` weeks from this one. */
+function weekDays(ctx: Ctx, offset: number): string[] {
+  const start = addDays(weekStart(ctx, todayOf(ctx)), offset * 7);
+  return Array.from({ length: 7 }, (_, i) => addDays(start, i));
+}
+
+/** How many weeks from this one the week of a day is. */
+const weekOffsetOf = (ctx: Ctx, day: string): number => Math.round(daysBetween(weekStart(ctx, todayOf(ctx)), weekStart(ctx, day)) / 7);
+
+/**
+ * The days either side of a day, named by their dates (never «tomorrow» or «yesterday»: a few
+ * steps away from today such names would be wrong), with `middle` between them.
+ */
+function dayNavRow(ctx: Ctx, day: string, middle: Button): Button[] {
+  const [before, after] = [addDays(day, -1), addDays(day, 1)];
+  // With the month when both fit a third of a row, otherwise without it (the screen's own title has it).
+  const long = [before, after].some((date) => Array.from(dateLabel(date, ctx.owner)).length > 14);
+  const label = (date: string) => (long ? weekdayAndDay(date, ctx.owner) : dateLabel(date, ctx.owner));
   return readingOrder(ctx, [
-    { text: stepLabel(ctx, 'back', label(addDays(day, -1))), data: `dy:${addDays(day, -1)}` },
+    { text: stepLabel(ctx, 'back', label(before)), data: `dy:${before}` },
     middle,
-    { text: stepLabel(ctx, 'forward', label(addDays(day, 1))), data: `dy:${addDays(day, 1)}` },
+    { text: stepLabel(ctx, 'forward', label(after)), data: `dy:${after}` },
   ]);
 }
 
-/** Most tasks the overview lists; the rest are a tap away in the lists. */
-const OVERVIEW_MAX = 40;
+/** One screen, two ways to see it: a day or a week. The one shown is blue. */
+function modeRow(ctx: Ctx, active: 'day' | 'week', day: string, week: number): Button[] {
+  const { w } = ctx;
+  return readingOrder(ctx, [
+    { text: w.week.modeDay, data: `dy:${day}`, ...(active === 'day' ? { style: 'primary' as const } : {}) },
+    { text: w.week.modeWeek, data: `wk:${week}`, ...(active === 'week' ? { style: 'primary' as const } : {}) },
+  ]);
+}
 
-/**
- * Every open task at a glance, by when: late, today, tomorrow, later and with no plan at all. Not
- * a calendar: a task with no day or hour is on it too. Plain lines under headings, which read well
- * in the rich message and in the classic one alike; the counts are in brackets after each heading.
- */
-async function overviewView(ctx: Ctx): Promise<View> {
+/** A week, day by day: each day's tasks (the ones with no hour too), a heading with how many, and no table. */
+async function weekView(ctx: Ctx, offset: number): Promise<View> {
   const { w, owner } = ctx;
   const today = todayOf(ctx);
-  const tomorrow = addDays(today, 1);
+  const days = weekDays(ctx, offset);
   const open = await ctx.deps.store.openTasks();
-  const entries = open.map((task) => ({ task, bucket: bucketOf(task, today, owner.timezone) }));
-  const dayOf = (bucket: Bucket): string | null => (bucket === 'today' ? today : bucket === 'tomorrow' ? tomorrow : null);
+  const rowsOf = days.map((day) => ({ day, tasks: open.filter((task) => onDay(task, day, owner.timezone)).sort(byHour) }));
+  const range = `${dateLabel(days[0], owner)} – ${dateLabel(days[6], owner)}`;
+  const SHOW = 6;
 
-  const html: string[] = [w.overview.title(open.length)];
-  const rich: string[] = [`# ${withoutTags(w.overview.title(open.length))}`];
-  let room = OVERVIEW_MAX;
-  for (const bucket of BUCKET_ORDER) {
-    const order = bucket === 'today' || bucket === 'tomorrow' ? byHour : bucket === 'none' ? (a: TaskRow, b: TaskRow) => a.n - b.n : byPlan;
-    const tasks = entries.filter((entry) => entry.bucket === bucket).map((entry) => entry.task).sort(order);
-    if (!tasks.length) continue;
-    const shown = tasks.slice(0, Math.max(0, room));
-    room -= shown.length;
-    const heading = counted(w.sections[bucket], tasks.length, owner.language);
-    const more = tasks.length > shown.length ? w.overview.more(tasks.length - shown.length) : '';
-    html.push(`<b><u>${heading}</u></b>${shown.length ? `\n<blockquote>${shown.map((task) => `• ${overviewItem(task, dayOf(bucket), owner, today)}`).join('\n')}</blockquote>` : ''}${more ? `\n${more}` : ''}`);
-    rich.push(`## ${heading}${shown.length ? `\n\n${shown.map((task) => `- ${overviewItem(task, dayOf(bucket), owner, today, true)}`).join('\n')}` : ''}${more ? `\n\n${htmlToRich(more)}` : ''}`);
-  }
-  if (!open.length) {
-    html.push(w.empty.a);
-    rich.push(htmlToRich(w.empty.a));
+  const html: string[] = [w.week.title(range)];
+  const rich: string[] = [`# ${withoutTags(w.week.title(range))}`];
+  for (const { day, tasks } of rowsOf) {
+    const heading = counted(`${dateLabel(day, owner)}${day === today ? ` · ${w.week.today}` : ''}`, tasks.length, owner.language);
+    const shown = tasks.slice(0, SHOW);
+    const more = tasks.length > shown.length ? w.week.more(tasks.length - shown.length) : '';
+    html.push(`<b><u>${heading}</u></b>${shown.length ? `\n<blockquote>${shown.map((task) => `• ${dayItem(task, day, owner)}`).join('\n')}</blockquote>` : ''}${more ? `\n${more}` : ''}`);
+    rich.push(`## ${heading}${shown.length ? `\n\n${shown.map((task) => `- ${dayItem(task, day, owner, true)}`).join('\n')}` : ''}${more ? `\n\n${htmlToRich(more)}` : ''}`);
   }
 
-  const counts: Record<Filter, number> = { a: 0, t: 0, o: 0, d: 0, u: 0 };
-  for (const entry of entries) for (const f of FILTERS) if (matches(f, entry)) counts[f]++;
-  const filterRow = FILTERS.filter((f) => f === 'a' || counts[f] > 0).map((f) => ({
-    text: counted(w.filters[f], counts[f], owner.language),
-    data: `ls:${f}:0`,
-    ...(f === 't' ? { style: 'primary' as const } : {}),
+  const dayButtons: Button[] = rowsOf.map(({ day, tasks }) => ({
+    text: `${weekdayInitial(day, owner.language)} ${dayNumber(day, owner)}${tasks.length ? '•' : ''}`,
+    data: `dy:${day}`,
+    ...(day === today ? { style: 'primary' as const } : {}),
   }));
-  const buttons: Button[][] = [];
-  for (let i = 0; i < filterRow.length; i += 2) buttons.push(filterRow.slice(i, i + 2));
-  if (ctx.deps.ai) buttons.push([{ text: w.digest.buttons.planDay, data: 'pd' }]);
+  const neighbour = (side: -1 | 1): Button => {
+    const around = weekDays(ctx, offset + side);
+    return { text: stepLabel(ctx, side < 0 ? 'back' : 'forward', weekRange(around[0], around[6], owner)), data: `wk:${offset + side}` };
+  };
+  const middle: Button = offset === 0 ? idle(w.week.thisWeek) : { text: w.week.thisWeek, data: 'wk:0' };
+  const buttons: Button[][] = [
+    readingOrder(ctx, dayButtons),
+    readingOrder(ctx, [neighbour(-1), middle, neighbour(1)]),
+    modeRow(ctx, 'week', offset === 0 ? today : days[0], offset),
+  ];
+  buttons.push(...(await unfinishedRow(ctx, open)));
   buttons.push(navRow(ctx));
   return { text: html.join('\n\n'), rich: rich.join('\n\n'), buttons };
+}
+
+/** What a week or a day does not show but should not be lost: a button to the late ones and to those with no plan. */
+async function unfinishedRow(ctx: Ctx, open?: TaskRow[]): Promise<Button[][]> {
+  const { w, owner } = ctx;
+  const today = todayOf(ctx);
+  const buckets = (open ?? (await ctx.deps.store.openTasks())).map((task) => bucketOf(task, today, owner.timezone));
+  const late = buckets.filter((bucket) => bucket === 'overdue').length;
+  const unplanned = buckets.filter((bucket) => bucket === 'none').length;
+  const row: Button[] = [];
+  if (late) row.push({ text: counted(w.filters.o, late, owner.language), data: 'ls:o:0', style: 'danger' });
+  if (unplanned) row.push({ text: counted(w.filters.u, unplanned, owner.language), data: 'ls:u:0' });
+  return row.length ? [row] : [];
 }
 
 /** One day: its tasks in the order of the day, a button for each, and the way to the days around it. */
@@ -1047,8 +1078,9 @@ async function dayView(ctx: Ctx, day: string): Promise<View> {
   for (let i = 0; i < shown.length; i += 2) {
     buttons.push(shown.slice(i, i + 2).map((task, j) => ({ text: `${digits(i + j + 1, owner.language)} · ${truncate(task.title, 15)}`, data: `t:${task.n}@y${day}` })));
   }
-  buttons.push(dayNavRow(ctx, day));
-  buttons.push([{ text: w.digest.buttons.overview, data: 'ov' }, { text: w.week.newOnDay, data: `cd:x:0:${day}`, style: 'success' }]);
+  buttons.push(dayNavRow(ctx, day, day === today ? idle(w.digest.buttons.today) : { text: w.digest.buttons.today, data: `dy:${today}` }));
+  buttons.push(modeRow(ctx, 'day', day, weekOffsetOf(ctx, day)));
+  buttons.push([{ text: w.week.newOnDay, data: `cd:x:0:${day}`, style: 'success' }]);
   buttons.push(navRow(ctx));
   return { text, buttons };
 }
@@ -1774,8 +1806,9 @@ async function route(data: string, ctx: Ctx): Promise<void> {
     case 'nf':
       return notifications(rawN, ctx);
     case 'ov':
+      return present(ctx, await weekView(ctx, 0));
     case 'wk':
-      return present(ctx, await overviewView(ctx));
+      return present(ctx, await weekView(ctx, Number(rawN) || 0));
     case 'dy':
       return present(ctx, await dayView(ctx, rawN && isRealDate(rawN) ? rawN : todayOf(ctx)));
     case 'mv':
