@@ -19,6 +19,17 @@ function plain(html: string): string {
     .replace(/&amp;/g, '&');
 }
 
+/**
+ * What a plain draft says for a «Thinking…» rich HTML: nothing when only the placeholder is
+ * wanted (Telegram then shows its own, in the reader's language), or the paragraph with the
+ * placeholder's words under it (what a voice message said, and that the bot is thinking).
+ */
+function draftText(html: string): string {
+  const label = plain(/<tg-thinking>([\s\S]*?)<\/tg-thinking>/.exec(html)?.[1] ?? '').trim();
+  const note = plain(html.replace(/<tg-thinking>[\s\S]*?<\/tg-thinking>/, '')).trim();
+  return note ? `${note}\n\n${label}`.trim() : '';
+}
+
 /** `styled`: with the colours and disabled buttons the newest Bot API has; without, plain buttons every client knows. */
 function keyboard(buttons: Button[][], styled: boolean) {
   return {
@@ -36,7 +47,12 @@ const needsNewest = (buttons?: Button[][]): boolean => !!buttons?.some((row) => 
 
 const richBody = (rich: Rich) => ({ markdown: rich.markdown, is_rtl: rich.rtl, skip_entity_detection: true });
 
-export function telegramApi(token: string): Telegram {
+/**
+ * `thinking`: how «Thinking…» is shown while the assistant works. `text` (the default) is Telegram's
+ * own placeholder, `rich` is a rich draft, `off` is only «typing…».
+ */
+export function telegramApi(token: string, options: { thinking?: 'text' | 'rich' | 'off' } = {}): Telegram {
+  const thinkingStyle = options.thinking ?? 'text';
   const call = async (method: string, body: Record<string, unknown>) => {
     const response = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
       method: 'POST',
@@ -127,6 +143,18 @@ export function telegramApi(token: string): Telegram {
     },
     async typing(chatId: number) {
       await call('sendChatAction', { chat_id: chatId, action: 'typing' }).catch(() => undefined);
+    },
+    async thinking(chatId: number, html: string) {
+      const typing = () => call('sendChatAction', { chat_id: chatId, action: 'typing' }).catch(() => undefined);
+      if (thinkingStyle === 'off') return typing();
+      // A draft lives for thirty seconds or until the bot sends a message, whichever is first.
+      const draft_id = 1 + Math.floor(Math.random() * 2_000_000_000);
+      try {
+        if (thinkingStyle === 'rich') await call('sendRichMessageDraft', { chat_id: chatId, draft_id, rich_message: { html } });
+        else await call('sendMessageDraft', { chat_id: chatId, draft_id, text: draftText(html) });
+      } catch {
+        await typing();
+      }
     },
     async react(chatId: number, messageId: number, emoji: string | null) {
       await call('setMessageReaction', { chat_id: chatId, message_id: messageId, reaction: emoji ? [{ type: 'emoji', emoji }] : [] }).catch(() => undefined);

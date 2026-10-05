@@ -129,9 +129,10 @@
   countdown). Italic next to underline is now kept apart the way the formatting notes
   say (an empty bold entity), not with a stray control character. Buttons that only
   hold a place (the page number, the blanks of a month) are **disabled buttons**.
-  When the assistant gets a message, the message receives a 👀 at once, «typing…» shows
-  while it works (renewed until the answer is ready; a «Thinking…» draft was tried and left an
-  empty gap under the answer), the answer hangs from the
+  When the assistant gets a message, the message receives a 👀 at once, a **«Thinking…»
+  placeholder** shows (Telegram's own, which is a plain text draft with no text; for a voice
+  message it says what was heard), «typing…» is renewed while the model takes longer than the
+  draft lasts, the answer hangs from the
   message it answers, and the message ends with 👌 (or 👍 for an answer in words, 🤔
   when something failed). Each of these falls back by itself on a Telegram that does
   not know it.

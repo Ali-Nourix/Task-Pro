@@ -1028,8 +1028,8 @@ only a snapshot of your open tasks and a queue of what you asked for in Telegram
 - **Dates that adapt.** A task card's plan and reminder are Telegram date entities: your
   words stay, a tap shows the exact time on your own clock, and a live countdown sits
   beside them. Page numbers and the blanks of a calendar are disabled buttons, and the
-  assistant answers with a 👀 on your message, «typing…» while it works and a reply
-  that hangs from what you wrote. Counts on the buttons sit in brackets: «امروز (۳)».
+  assistant answers with a 👀 on your message, Telegram's own «Thinking…» placeholder while it
+  works (gone when the answer arrives) and a reply that hangs from what you wrote. Counts on the buttons sit in brackets: «امروز (۳)».
 - **Only for you.** Set `ALLOWED_USER_ID` (your Telegram id; `/id` tells you) and the bot
   answers nobody else, not even to say so.
 - **In Obsidian:** a background sync (every 2 minutes by default; your edits are sent a few seconds after you stop typing, and on **Sync
