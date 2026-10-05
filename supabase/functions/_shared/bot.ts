@@ -118,7 +118,12 @@ interface Ctx {
   messageId?: number;
   /** A line over the chat for the button just pressed. */
   toast?: string;
+  /** The message being answered, when it is one the owner wrote. */
+  incoming?: number;
 }
+
+/** A button that holds a place and does nothing: drawn disabled where Telegram can. */
+const idle = (text: string): Button => ({ text, data: 'noop', disabled: true });
 
 interface View {
   text: string;
@@ -152,7 +157,7 @@ export async function handleUpdate(update: Update, deps: BotDeps): Promise<void>
   }
   // Nobody but the owner gets an answer.
   if (owner.chat_id !== chatId) return;
-  const ctx = ctxFor(deps, owner, chatId);
+  const ctx = { ...ctxFor(deps, owner, chatId), incoming: message.message_id };
   if (!text && voice) return handleVoice(voice, ctx);
 
   if (text.startsWith('/')) {
@@ -285,7 +290,7 @@ async function present(ctx: Ctx, view: View): Promise<void> {
   await sendView(ctx, view);
 }
 
-const sendView = (ctx: Ctx, view: View): Promise<void> => ctx.deps.tg.send(ctx.chatId, textOf(ctx, view), view.buttons, { rich: richOf(ctx, view) });
+const sendView = (ctx: Ctx, view: View, replyTo?: number): Promise<void> => ctx.deps.tg.send(ctx.chatId, textOf(ctx, view), view.buttons, { rich: richOf(ctx, view), ...(replyTo ? { replyTo } : {}) });
 
 /** The tab bar under the main screens: home, today, all, new, settings. */
 function navRow(ctx: Ctx, active?: 'home' | 'today' | 'all' | 'new' | 'settings'): Button[] {
@@ -429,9 +434,9 @@ async function tagsView(ctx: Ctx, requestedPage: number): Promise<View> {
   }
   if (pages > 1) {
     buttons.push([
-      index > 0 ? { text: w.buttons.prev, data: `tg:${index - 1}` } : { text: '·', data: 'noop' },
-      { text: w.page(index + 1, pages), data: 'noop' },
-      index < pages - 1 ? { text: w.buttons.next, data: `tg:${index + 1}` } : { text: '·', data: 'noop' },
+      index > 0 ? { text: w.buttons.prev, data: `tg:${index - 1}` } : idle('·'),
+      idle(w.page(index + 1, pages)),
+      index < pages - 1 ? { text: w.buttons.next, data: `tg:${index + 1}` } : idle('·'),
     ]);
   }
   buttons.push(navRow(ctx));
@@ -581,9 +586,9 @@ async function listView(ctx: Ctx, filter: Filter, requestedPage: number, tag?: s
     }
     if (pages > 1) {
       buttons.push([
-        index > 0 ? { text: w.buttons.prev, data: listData({ filter, page: index - 1, tag }) } : { text: '·', data: 'noop' },
-        { text: w.page(index + 1, pages), data: 'noop' },
-        index < pages - 1 ? { text: w.buttons.next, data: listData({ filter, page: index + 1, tag }) } : { text: '·', data: 'noop' },
+        index > 0 ? { text: w.buttons.prev, data: listData({ filter, page: index - 1, tag }) } : idle('·'),
+        idle(w.page(index + 1, pages)),
+        index < pages - 1 ? { text: w.buttons.next, data: listData({ filter, page: index + 1, tag }) } : idle('·'),
       ]);
     }
   }
@@ -767,9 +772,9 @@ async function tagsMenuView(ctx: Ctx, task: TaskRow, back: string, requestedPage
   }
   if (pages > 1) {
     rows.push([
-      index > 0 ? { text: w.buttons.prev, data: `tp:${task.n}:${index - 1}${at}` } : { text: '·', data: 'noop' },
-      { text: w.page(index + 1, pages), data: 'noop' },
-      index < pages - 1 ? { text: w.buttons.next, data: `tp:${task.n}:${index + 1}${at}` } : { text: '·', data: 'noop' },
+      index > 0 ? { text: w.buttons.prev, data: `tp:${task.n}:${index - 1}${at}` } : idle('·'),
+      idle(w.page(index + 1, pages)),
+      index < pages - 1 ? { text: w.buttons.next, data: `tp:${task.n}:${index + 1}${at}` } : idle('·'),
     ]);
   }
   rows.push([{ text: w.tagsUi.newTag, data: `ta:${task.n}` }, ...(task.tags.length ? [{ text: w.task.clearTags, data: `tx:${task.n}${at}` }] : [])]);
@@ -1015,7 +1020,13 @@ async function assist(text: string, ctx: Ctx, options: { heard?: string; fallbac
   const { w, owner, chatId } = ctx;
   const { ai, store, tg } = ctx.deps;
   if (!ai) return tg.send(chatId, w.ai.errors.notSetUp);
-  await tg.typing?.(chatId).catch(() => undefined);
+  // At once: a glance on the message, and a «Thinking…» that goes away when the answer arrives.
+  const incoming = ctx.incoming;
+  /** Cosmetic: a failure here must never stop the work. */
+  const quietly = (step: Promise<void> | undefined): Promise<void> => Promise.resolve(step).catch(() => undefined);
+  const react = (emoji: string | null) => quietly(incoming === undefined ? undefined : tg.react?.(chatId, incoming, emoji));
+  const thinking = `${options.heard ? `<p>${w.ai.heard(options.heard)}</p>` : ''}<tg-thinking>${w.ai.thinking}</tg-thinking>`;
+  await Promise.all([react('👀'), quietly(tg.thinking ? tg.thinking(chatId, thinking) : tg.typing?.(chatId))]);
   const now = ctx.deps.now();
   const memory = freshMemory(owner.ai_memory, now);
   let result: AssistantResult;
@@ -1023,6 +1034,7 @@ async function assist(text: string, ctx: Ctx, options: { heard?: string; fallbac
     result = await runAssistant({ ai, store, effects: effectsFor(ctx), owner, now, text, memory, tags: (await knownTags(ctx)).map((tag) => tag.key) });
   } catch (error) {
     console.error('assistant failed', error);
+    await react('🤔');
     const problem = w.ai.errors[error instanceof AiError ? error.kind : 'busy'];
     const heard = options.heard ? `${w.ai.heard(options.heard)}\n\n` : '';
     if (!options.fallback) return tg.send(chatId, `${heard}${problem}`);
@@ -1035,7 +1047,9 @@ async function assist(text: string, ctx: Ctx, options: { heard?: string; fallbac
     // The database has not learnt the column yet: the assistant just forgets between messages.
     console.error('assistant memory not kept', error);
   }
-  await sendView(ctx, await assistantView(ctx, result, options.heard));
+  const acted = result.changes.length > 0 || result.proposals.length > 0;
+  await sendView(ctx, await assistantView(ctx, result, options.heard), incoming);
+  await react(acted ? '👌' : '👍');
 }
 
 /** A voice message becomes words, and the words go to the assistant. */
@@ -1219,7 +1233,7 @@ async function calendarView(ctx: Ctx, kind: Pick, task: TaskRow | null, key: str
   for (const week of month.weeks) {
     buttons.push(
       week.map((iso) => {
-        if (!iso) return { text: '·', data: 'noop' };
+        if (!iso) return idle('·');
         const number = digits(partsOf(system, iso)[2], language);
         const text = iso === current ? `✓${number}` : iso === now ? `[${number}]` : busy.has(iso) ? `${number}•` : number;
         return { text, data: `cd:${kind}:${n}:${iso}${at}`, ...(iso === current ? { style: 'primary' as const } : {}) };

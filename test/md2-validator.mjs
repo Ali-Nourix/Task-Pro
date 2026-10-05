@@ -41,13 +41,18 @@ export function validateV2(text) {
       if (stack[stack.length - 1] === ch) stack.pop(); else stack.push(ch);
       i++; continue;
     }
+    // ![words](tg://time?unix=…&format=…) is a date (and tg://emoji?id=… an emoji): the words stay as the fallback.
+    if (ch === '!' && text[i + 1] === '[') { stack.push('!['); i += 2; continue; }
     if (ch === '[') { stack.push('['); i++; continue; }
     if (ch === ']') {
-      if (stack[stack.length - 1] !== '[') return fail('stray ]');
+      const opener = stack[stack.length - 1];
+      if (opener !== '[' && opener !== '![') return fail('stray ]');
       stack.pop();
       if (text[i + 1] !== '(') return fail('a link without an address');
       const close = text.slice(i + 2).search(/(?<!\\)\)/);
       if (close < 0) return fail('an address never closed');
+      const address = text.slice(i + 2, i + 2 + close);
+      if (opener === '![' && !/^tg:\/\/(time\?unix=\d{1,12}(&format=(r|w?[dD]?[tT]?))?|emoji\?id=\d+)$/.test(address)) return fail(`a date or emoji with a bad address ${address}`);
       i += close + 3; continue;
     }
     if (RESERVED.includes(ch)) return fail(`unescaped ${ch}`);

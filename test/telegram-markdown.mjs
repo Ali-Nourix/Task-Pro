@@ -7,7 +7,8 @@ import * as esbuild from 'esbuild';
 
 const build = await esbuild.build({
   stdin: {
-    contents: `export { htmlToMarkdownV2, escapeV2 } from "../supabase/functions/_shared/markdownv2.ts";`,
+    contents: `export { htmlToMarkdownV2, escapeV2 } from "../supabase/functions/_shared/markdownv2.ts";
+      export { htmlToRich } from "../supabase/functions/_shared/rich.ts";`,
     resolveDir: new URL('.', import.meta.url).pathname,
     loader: 'ts',
   },
@@ -43,9 +44,9 @@ eq(v2('«سلام» ۱۲.'), '«سلام» ۱۲\\.', 'Persian text keeps its mar
 // ── styles ─────────────────────────────────────────────────────────────────
 eq(v2('<b>Hi</b>'), '*Hi*', 'bold');
 eq(v2('<i>Hi</i> <u>there</u> <s>old</s>'), '_Hi_ __there__ ~old~', 'italic, underline, strikethrough');
-eq(v2('<strong>a</strong><em>b</em><ins>c</ins><del>d</del>'), '*a*_b_ __c__~d~'.replace(' ', '\r'), 'the other names of the same tags');
+eq(v2('<strong>a</strong><em>b</em><ins>c</ins><del>d</del>'), '*a*_b_**__c__~d~', 'the other names of the same tags');
 eq(v2('<b>a <i>b</i> c</b>'), '*a _b_ c*', 'a style inside another');
-eq(v2('<u>x</u><i>y</i>'), '__x__\r_y_', 'underline then italic are kept apart with a carriage return');
+eq(v2('<u>x</u><i>y</i>'), '__x__**_y_', 'underline then italic are kept apart by an empty bold entity, as Telegram’s notes say');
 eq(v2('<tg-spoiler>secret</tg-spoiler>'), '||secret||', 'a spoiler');
 eq(v2('<span class="tg-spoiler">secret</span> and <span>plain</span>'), '||secret|| and plain', 'a span is a spoiler only when it says so');
 eq(v2('<b></b>x<i> </i>'), 'x_ _', 'an empty style is dropped');
@@ -67,6 +68,19 @@ eq(v2('<blockquote>a</blockquote><blockquote>b</blockquote>'), '>a\n\n>b', 'two 
 eq(v2('text<blockquote>q</blockquote>'), 'text\n>q', 'a quote starts on its own line');
 eq(v2('<blockquote>q</blockquote>tail'), '>q\ntail', 'and what follows it too');
 eq(v2('<blockquote>1.5 - x</blockquote>'), '>1\\.5 \\- x', 'a quote’s text is escaped');
+
+// ── dates: Telegram's own date entity ─────────────────────────────────────
+eq(v2('<tg-time unix="1647531900">فردا ۰۹:۰۰</tg-time>'), '![فردا ۰۹:۰۰](tg://time?unix=1647531900)', 'a date keeps our words and carries the moment');
+eq(v2('<tg-time unix="1647531900" format="r">⏱</tg-time>'), '![⏱](tg://time?unix=1647531900&format=r)', 'with a format, the client writes it (here «in 20 minutes»)');
+eq(v2('<tg-time unix="1647531900" format="wDT">x</tg-time>'), '![x](tg://time?unix=1647531900&format=wDT)', 'weekday, long date, long time');
+eq(v2('<tg-time unix="5" format="rd">x</tg-time>'), 'x', 'a format Telegram does not know leaves the words alone');
+eq(v2('<tg-time format="r">x</tg-time>'), 'x', 'and so does a date without its moment');
+eq(v2('<tg-time unix="5">a.b (c)</tg-time>'), '![a\\.b \\(c\\)](tg://time?unix=5)', 'the words are escaped like any text');
+eq(v2('<b>🔔 <tg-time unix="5">x</tg-time></b>'), '*🔔 ![x](tg://time?unix=5)*', 'a date inside bold');
+eq(v2('<blockquote>📅 <tg-time unix="5">x</tg-time> · <tg-time unix="5" format="r">⏱</tg-time>\nnext</blockquote>'), '>📅 ![x](tg://time?unix=5) · ![⏱](tg://time?unix=5&format=r)\n>next', 'two dates in a quote');
+valid('<blockquote>📅 <b>Plan</b> · <tg-time unix="1647531900">فردا ۰۹:۰۰</tg-time> · <tg-time unix="1647531900" format="r">⏱</tg-time></blockquote>', 'a card line with dates is valid');
+eq(mod.htmlToRich('<tg-time unix="5" format="r">⏱</tg-time>'), '![⏱](tg://time?unix=5&format=r)', 'the same date in a rich message');
+eq(validateV2('![x](tg://time?unix=abc)') !== null && validateV2('![x](https://x.y)') !== null && validateV2('![x](tg://time?unix=5&format=zz)') !== null, true, 'the validator refuses a date with a bad address');
 
 // ── every output must be one Telegram accepts ─────────────────────────────
 const samples = [

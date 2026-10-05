@@ -4,8 +4,9 @@
 import { JALALI_MONTHS } from './calendar-picker.ts';
 import { htmlToRich, mdEscape } from './rich.ts';
 import { gregorianToJalali } from './jalali.ts';
-import { daysBetween, parseIso, utcToLocal, weekdayOf } from './time.ts';
+import { daysBetween, localToUtc, parseIso, utcToLocal, weekdayOf } from './time.ts';
 import type { Button, Language, OwnerRow, TaskRow } from './types.ts';
+import { isOpen } from './types.ts';
 
 const PERSIAN = '۰۱۲۳۴۵۶۷۸۹';
 
@@ -92,6 +93,31 @@ export function remindText(task: TaskRow, owner: Owner, today: string): string |
   return `${dayLabel(at.date, owner, today)} ${clockLabel(at.time, owner.language)}`;
 }
 
+// ── Dates Telegram understands ─────────────────────────────────────────────
+// Telegram's date entity keeps our words on screen, and a tap on it shows the exact moment on
+// the reader's own clock; with the format `r` it is a countdown («in 20 minutes») that keeps
+// counting. Clients that do not know it show our words.
+
+const unixOf = (at: Date): number => Math.floor(at.getTime() / 1000);
+
+/** A moment as an HTML date entity. */
+export const timeTag = (at: Date, label: string, format = ''): string => `<tg-time unix="${unixOf(at)}"${format ? ` format="${format}"` : ''}>${label}</tg-time>`;
+
+/** The same moment inside a rich message. */
+export const timeRich = (at: Date, label: string, format = ''): string => `![${label}](tg://time?unix=${unixOf(at)}${format ? `&format=${format}` : ''})`;
+
+/** When a task's plan starts, if it has an hour. */
+export function planInstant(task: TaskRow, owner: Owner): Date | null {
+  return task.plan_date && task.plan_start ? localToUtc(owner.timezone, task.plan_date, task.plan_start) : null;
+}
+
+/** A line's moment: our words as a date entity, and, while the task is open, a countdown after it. */
+function moment(label: string, at: Date | null, task: TaskRow, rich: boolean): string {
+  if (!at) return label;
+  const tag = rich ? timeRich : timeTag;
+  return `${tag(at, label)}${isOpen(task.status) ? ` · ${tag(at, '⏱', 'r')}` : ''}`;
+}
+
 /** A bar of ▰▱ for how much of a task's subtasks are done. */
 export function progressBar(done: number, total: number): string {
   const cells = Math.min(total, 8);
@@ -148,10 +174,10 @@ export function taskCard(task: TaskRow, owner: Owner, today: string, relatives: 
   const language = owner.language;
   const rows: string[] = [];
   const plan = planText(task, owner, today);
-  if (plan) rows.push(`📅 <b>${w.labels.plan}</b> · ${plan}`);
+  if (plan) rows.push(`📅 <b>${w.labels.plan}</b> · ${moment(plan, planInstant(task, owner), task, false)}`);
   if (task.deadline) rows.push(`⏳ <b>${w.labels.deadline}</b> · ${dayLabel(task.deadline, owner, today)}`);
   const remind = remindText(task, owner, today);
-  if (remind) rows.push(`🔔 <b>${w.labels.remind}</b> · ${remind}`);
+  if (remind) rows.push(`🔔 <b>${w.labels.remind}</b> · ${moment(remind, task.remind_at ? new Date(task.remind_at) : null, task, false)}`);
   const repeat = repeatLabel(task.repeat ?? null, language);
   if (repeat) rows.push(`🔁 <b>${w.labels.repeat}</b> · ${repeat}`);
   if (task.priority) rows.push(`${PRIORITY_MARK[task.priority]} <b>${w.labels.priority}</b> · ${PRIORITY_NAME[language][task.priority]}`);
@@ -205,10 +231,10 @@ export function taskCardRich(task: TaskRow, owner: Owner, today: string, relativ
   const language = owner.language;
   const rows: [string, string][] = [];
   const plan = planText(task, owner, today);
-  if (plan) rows.push([`📅 ${w.labels.plan}`, mdEscape(plan)]);
+  if (plan) rows.push([`📅 ${w.labels.plan}`, moment(mdEscape(plan), planInstant(task, owner), task, true)]);
   if (task.deadline) rows.push([`⏳ ${w.labels.deadline}`, mdEscape(dayLabel(task.deadline, owner, today))]);
   const remind = remindText(task, owner, today);
-  if (remind) rows.push([`🔔 ${w.labels.remind}`, mdEscape(remind)]);
+  if (remind) rows.push([`🔔 ${w.labels.remind}`, moment(mdEscape(remind), task.remind_at ? new Date(task.remind_at) : null, task, true)]);
   const repeat = repeatLabel(task.repeat ?? null, language);
   if (repeat) rows.push([`🔁 ${w.labels.repeat}`, mdEscape(repeat)]);
   if (task.priority) rows.push([`${PRIORITY_MARK[task.priority]} ${w.labels.priority}`, PRIORITY_NAME[language][task.priority]]);
@@ -411,6 +437,7 @@ export interface Words {
     button: (state: 'on' | 'off' | 'unset') => string;
     intro: (state: 'on' | 'off' | 'unset') => string;
     heard: (text: string) => string;
+    thinking: string;
     done: string;
     nothing: string;
     groups: { added: string; changed: string; status: string; remove: string };
@@ -698,6 +725,7 @@ const fa: Words = {
           ? 'الان خاموش است و نوشته‌هایت مثل قبل تسک ساده می‌شوند. با <code>/ai متن</code> هر وقت خواستی صدایش کن، یا در ⚙️ تنظیمات روشنش کن.'
           : 'روشن است: هر چه بنویسی یا ویس بدهی، اول به دستیار می‌رسد.'),
     heard: (text) => `🎙 <i>«${esc(text)}»</i>`,
+    thinking: 'دارم فکر می‌کنم …',
     done: '🤖 <b>انجام شد</b>',
     nothing: '🤖 کاری انجام ندادم.',
     groups: { added: '➕ <b>تسک تازه</b>', changed: '✏️ <b>تغییر کرد</b>', status: '☑️ <b>وضعیت</b>', remove: '🗑 <b>حذف را تأیید کن</b>' },
@@ -1017,6 +1045,7 @@ const en: Words = {
           ? 'It is off, so what you type becomes a plain task as before. Call it any time with <code>/ai your words</code>, or turn it on in ⚙️ Settings.'
           : 'It is on: whatever you write or say goes to the assistant first.'),
     heard: (text) => `🎙 <i>“${esc(text)}”</i>`,
+    thinking: 'Thinking …',
     done: '🤖 <b>Done</b>',
     nothing: '🤖 I did nothing.',
     groups: { added: '➕ <b>New tasks</b>', changed: '✏️ <b>Changed</b>', status: '☑️ <b>Status</b>', remove: '🗑 <b>Confirm to delete</b>' },

@@ -148,6 +148,8 @@ function world(ai, at = '2026-10-02T12:00:00Z') {
   const edits = [];
   const toasts = [];
   const typed = [];
+  const reacted = [];
+  const thought = [];
   const state = { now: new Date(at) };
   const vet = (text, buttons) => {
     const problem = validateV2(mod.htmlToMarkdownV2(text));
@@ -163,12 +165,14 @@ function world(ai, at = '2026-10-02T12:00:00Z') {
     answer: async (_id, text) => void toasts.push(text),
     setCommands: async () => undefined,
     typing: async (chat) => void typed.push(chat),
+    thinking: async (chat, html) => void thought.push([chat, html]),
+    react: async (chat, id, emoji) => void reacted.push([chat, id, emoji]),
     download: async (fileId) => new Uint8Array([fileId.length, 7, 7]),
   };
   const deps = { store, tg, pairingCode: 'sesame', now: () => state.now, ...(ai ? { ai } : {}) };
   let id = 100;
   return {
-    store, sent, edits, toasts, typed, state, deps,
+    store, sent, edits, toasts, typed, reacted, thought, state, deps,
     say: (text) => handleUpdate({ message: { chat: { id: 7, type: 'private' }, text, message_id: id++ } }, deps),
     voice: (duration = 5) => handleUpdate({ message: { chat: { id: 7, type: 'private' }, voice: { file_id: 'abc', duration }, message_id: id++ } }, deps),
     press: (data) => handleUpdate({ callback_query: { id: 'cb', data, message: { chat: { id: 7 }, message_id: 555 } } }, deps),
@@ -194,7 +198,9 @@ const plain = (html) => html.replace(/<[^>]+>/g, '');
   const w = await paired(ai);
   await w.say('فردا ساعت ۹ با سارا تماس بگیرم و عصر نان بخرم');
 
-  eq(w.typed, [7], 'the chat shows “typing” while the model thinks');
+  eq(w.thought, [[7, '<tg-thinking>دارم فکر می‌کنم …</tg-thinking>']], 'while the model thinks the chat shows a «Thinking…» placeholder');
+  eq(w.reacted, [[7, 101, '👀'], [7, 101, '👌']], 'and the message itself gets a glance at once, and a thumbs-up when the work is done');
+  eq(w.last().options.replyTo, 101, 'the answer hangs from the message it answers');
   const system = ai.asked[0][0].content;
   eq([ai.asked[0].map((m) => m.role), ai.asked[0][1].content], [['system', 'user'], 'فردا ساعت ۹ با سارا تماس بگیرم و عصر نان بخرم'], 'the model gets its instructions and the words as they were written');
   eq(system.includes('Friday 2026-10-02 (جمعه 10 مهر 1405), 15:30, time zone Asia/Tehran'), true, 'and is told today in the owner’s zone');
@@ -377,6 +383,28 @@ const plain = (html) => html.replace(/<[^>]+>/g, '');
 }
 
 {
+  // Decoration never stops the work: a reaction or a placeholder that fails changes nothing, and a Telegram without them still works.
+  const ai = scripted(says('', call('add_task', { title: 'الف' }), call('add_task', { title: 'ب' })));
+  const w = await paired(ai);
+  w.deps.tg.react = async () => { throw new Error('REACTION_INVALID'); };
+  w.deps.tg.thinking = async () => { throw new Error('method not found'); };
+  await w.say('الف و ب');
+  eq([w.store.tasks.length, plain(w.last().text).includes('تسک تازه')], [2, true], 'a reaction and a placeholder that fail change nothing');
+
+  const bare = scripted(says('', call('add_task', { title: 'ج' }), call('add_task', { title: 'د' })));
+  const x = await paired(bare);
+  delete x.deps.tg.react;
+  delete x.deps.tg.thinking;
+  await x.say('ج و د');
+  eq([x.store.tasks.length, x.typed], [2, [7]], 'and without them it falls back to «typing…»');
+
+  const answer = scripted(says('امروز کاری نداری.'));
+  const y = await paired(answer);
+  await y.say('چه دارم؟');
+  eq(y.reacted.map((r) => r[2]), ['👀', '👍'], 'an answer in words ends with a thumbs-up, not the “done” sign');
+}
+
+{
   // The limits.
   const many = Array.from({ length: 30 }, (_, i) => call('add_task', { title: `کار ${i + 1}`, plan_date: '2026-10-04' }));
   const w = await paired(scripted(says('', ...many)));
@@ -390,6 +418,7 @@ const plain = (html) => html.replace(/<[^>]+>/g, '');
   const quota = new AiError('quota', 'limit');
   const w = await paired(scripted(quota, quota, new AiError('auth', 'no'), new AiError('busy', 'slow')));
   await w.say('buy bread tomorrow 9');
+  eq(w.reacted.at(-1), [7, 101, '🤔'], 'a failure leaves a puzzled face on the message');
   eq(w.store.tasks.map((t) => [t.title, t.plan_date, t.plan_start]), [['buy bread', '2026-10-03', '09:00']], 'if the assistant fails, what was written still becomes a task, the plain way');
   eq(plain(w.sent.at(-2).text).includes('سهمیهٔ رایگان') && plain(w.sent.at(-2).text).includes('مثل همیشه'), true, 'after saying why');
   await w.say('/ai buy milk');
@@ -447,6 +476,8 @@ const plain = (html) => html.replace(/<[^>]+>/g, '');
   eq(ai.heard, { size: 3, language: 'fa' }, 'the recording is downloaded from Telegram and sent to be read, in the owner’s language');
   eq(ai.asked[0].at(-1).content, 'فردا ساعت چهار قرار دکتر دارم', 'the words go to the assistant as if written');
   eq(plain(w.last().text).startsWith('🎙 «فردا ساعت چهار قرار دکتر دارم»'), true, 'the card starts with what was heard, so a misheard word shows at once');
+  eq(w.thought[0][1], '<p>🎙 <i>«فردا ساعت چهار قرار دکتر دارم»</i></p><tg-thinking>دارم فکر می‌کنم …</tg-thinking>', 'and the placeholder shows it already');
+  eq(w.reacted[0], [7, 101, '👀'], 'the glance goes on the voice message');
   eq(w.store.tasks[0].plan_start, '16:00', 'and the task is made');
 
   await w.voice(600);

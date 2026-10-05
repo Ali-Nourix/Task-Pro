@@ -5,6 +5,10 @@
 // that is not markup goes through an escape (code and link addresses through their
 // own, narrower ones), a style is opened only when text comes and closed before a
 // line break inside a quote, and a quote's `>` never lands inside an entity.
+//
+// A date is written <tg-time unix="…" format="…">words</tg-time>: Telegram's own
+// date entity, which shows the moment in the reader's clock (`r` as «in 20 minutes»)
+// and keeps our words for clients that do not know it.
 
 /** Characters MarkdownV2 reserves: each is written with a backslash in front when it is plain text. */
 const RESERVED = /[\\_*[\]()~`>#+\-=|{}.!]/g;
@@ -35,6 +39,14 @@ interface Block {
 
 const TOKEN = /<(\/?)([a-z][a-z0-9-]*)((?:\s+[a-z-]+(?:="[^"]*"|='[^']*')?)*)\s*\/?>|&(?:lt|gt|amp|quot|nbsp|#39);|[^<&]+|[<&]/gi;
 
+/** The address of a date entity from the tag's attributes: `tg://time?unix=…&format=…`, or null when they are not a date Telegram takes. */
+function timeUrl(attributes: string): string | null {
+  const unix = /unix=["'](\d{1,12})["']/.exec(attributes)?.[1];
+  const format = /format=["']([^"']*)["']/.exec(attributes)?.[1] ?? '';
+  if (!unix || !/^(r|w?[dD]?[tT]?)$/.test(format)) return null;
+  return `tg://time?unix=${unix}${format ? `&format=${format}` : ''}`;
+}
+
 /**
  * The HTML of a screen as MarkdownV2. Understands b/strong, i/em, u/ins, s/strike/del,
  * code, pre, a, blockquote (and `expandable`), tg-spoiler and span.tg-spoiler; any
@@ -47,14 +59,16 @@ export function htmlToMarkdownV2(html: string): string {
   const depth: Partial<Record<Style, number>> = {};
   const spans: boolean[] = [];
   const links: Array<{ url: string; base: number }> = [];
+  /** Which of the open links are dates: they are written `![…](…)`. */
+  const dates: boolean[] = [];
   let code: '`' | '```' | null = null;
   let codeText = '';
 
   const top = () => blocks[blocks.length - 1];
-  /** `_` next to `_` would be read as `__`: they are kept apart with a carriage return, as Telegram's own notes say. */
+  /** `_` next to `_` would be read as `__`: they are kept apart by an empty bold entity, as Telegram's formatting notes say. */
   const put = (piece: string) => {
     const block = top();
-    block.out = block.out.endsWith('_') && !block.out.endsWith('\\_') && piece.startsWith('_') ? `${block.out}\r${piece}` : block.out + piece;
+    block.out = block.out.endsWith('_') && !block.out.endsWith('\\_') && piece.startsWith('_') ? `${block.out}**${piece}` : block.out + piece;
   };
 
   /** Makes the marks written match the styles in force: closes the ones that ended, opens the ones that began. */
@@ -181,6 +195,24 @@ export function htmlToMarkdownV2(html: string): string {
         if (!closes) {
           code = name === 'pre' ? '```' : '`';
           codeText = '';
+        }
+        continue;
+      }
+      if (name === 'tg-time') {
+        if (closes) {
+          const link = links.pop();
+          if (dates.pop() && link?.url) {
+            closeWritten(link.base);
+            put(`](${escapeUrl(link.url)})`);
+          }
+        } else {
+          const url = timeUrl(attributes ?? '');
+          dates.push(!!url);
+          if (url) {
+            sync();
+            put(startContent('!['));
+            links.push({ url, base: top().emitted.length });
+          } else links.push({ url: '', base: 0 });
         }
         continue;
       }
