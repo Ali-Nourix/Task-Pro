@@ -224,8 +224,6 @@ export interface Telegram {
   setCommands(chatId: number, commands: BotCommand[]): Promise<void>;
   /** Shows «typing…» in the chat while the assistant thinks. */
   typing?(chatId: number): Promise<void>;
-  /** A «Thinking…» placeholder that is gone when the real message arrives; `html` is rich HTML. Falls back to «typing…». */
-  thinking?(chatId: number, html: string): Promise<void>;
   /** Puts one reaction on a message (null takes it off). */
   react?(chatId: number, messageId: number, emoji: string | null): Promise<void>;
   /** The bytes of a file Telegram holds (a voice message). */

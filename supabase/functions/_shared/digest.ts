@@ -3,7 +3,7 @@
 // rich one, and the buttons under it.
 
 import { byHour, isOverdue, onDay } from './agenda.ts';
-import { dayLabel, digits, taskEntry, taskEntryRich, truncate, words } from './texts.ts';
+import { counted, dayLabel, digits, taskEntry, taskEntryRich, truncate, words } from './texts.ts';
 import { htmlToRich } from './rich.ts';
 import { addDays } from './time.ts';
 import type { Button, OwnerRow, TaskRow } from './types.ts';
@@ -64,7 +64,7 @@ export function briefMessage(owner: Owner, tasks: TaskRow[], today: string, ai: 
   if (first.length) parts.push(block(w.digest.brief.first, first, owner, today));
   if (!planned.length && !first.length) parts.push({ html: w.digest.brief.empty, rich: w.digest.brief.empty });
   const buttons = rows(
-    [{ text: w.digest.buttons.today, data: 'ls:t:0', style: 'primary' }, { text: w.digest.buttons.week, data: 'wk:0' }],
+    [{ text: w.digest.buttons.today, data: 'ls:t:0', style: 'primary' }, { text: w.digest.buttons.overview, data: 'ov' }],
     ai ? [{ text: w.digest.buttons.planDay, data: 'pd' }] : []
   );
   return { text: parts.map((part) => part.html).join('\n\n'), rich: parts.map((part) => part.rich).join('\n\n'), buttons };
@@ -86,8 +86,8 @@ export function reviewMessage(owner: Owner, tasks: TaskRow[], today: string): Ou
   parts.push({ html: tomorrowLine, rich: htmlToRich(tomorrowLine) });
   const buttons = rows(
     left.length ? [{ text: w.digest.review.moveButton(left.length), data: 'mv', style: 'primary' }] : [],
-    [{ text: w.digest.buttons.tomorrow, data: `dy:${tomorrow}` }, { text: w.digest.buttons.week, data: 'wk:0' }],
-    overdue.length ? [{ text: `${w.digest.buttons.overdue} ${digits(overdue.length, owner.language)}`, data: 'ls:o:0', style: 'danger' }] : []
+    [{ text: w.digest.buttons.tomorrow, data: `dy:${tomorrow}` }, { text: w.digest.buttons.overview, data: 'ov' }],
+    overdue.length ? [{ text: counted(w.digest.buttons.overdue, overdue.length, owner.language), data: 'ls:o:0', style: 'danger' }] : []
   );
   return { text: parts.map((part) => part.html).join('\n\n').replace(/\n\n\n+/g, '\n\n'), rich: parts.map((part) => part.rich).join('\n\n'), buttons };
 }

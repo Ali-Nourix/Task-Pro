@@ -13,7 +13,7 @@ import type { Bucket } from './agenda.ts';
 import { buildMonth, monthKeyOf, monthName, partsOf } from './calendar-picker.ts';
 import { htmlToRich, mdEscape } from './rich.ts';
 import { PADS, padOf, widenHtml, widenMarkdown } from './widen.ts';
-import { clockLabel, dateLabel, dayItem, dayLabel, dayNumber, digits, esc, priorityMark, priorityName, repeatLabel, taskCard, taskCardRich, taskEntry, taskEntryRich, truncate, weekdayInitial, words } from './texts.ts';
+import { clockLabel, counted, dateLabel, dayLabel, digits, esc, overviewItem, priorityMark, priorityName, repeatLabel, taskCard, taskCardRich, taskEntry, taskEntryRich, truncate, words } from './texts.ts';
 import type { Relatives } from './texts.ts';
 import type { Words } from './texts.ts';
 import type { AiConfirm, PendingPlan, DeadlineNudge, AddPayload, Button, EditPayload, OwnerRow, PlanPayload, Rich, RemindPayload, StatusPayload, Store, TaskRow, Telegram } from './types.ts';
@@ -31,6 +31,8 @@ export interface BotDeps {
   tg: Telegram;
   /** The code that proves who may use the bot: /start <code>. */
   pairingCode: string;
+  /** Telegram's numeric id of the one person the bot answers (ALLOWED_USER_ID); anyone else is ignored. A value that is not a number answers nobody. */
+  allowedUserId?: number;
   now: () => Date;
   /** The assistant (Cloudflare Workers AI), when its keys are set. */
   ai?: Ai;
@@ -49,12 +51,13 @@ const COMMANDS: Record<string, string> = {
   status: 'status', sync: 'status', وضعیت: 'status',
   settings: 'settings', تنظیمات: 'settings',
   lang: 'lang', زبان: 'lang',
+  id: 'id', شناسه: 'id',
   tz: 'tz', timezone: 'tz',
   cal: 'cal', تقویم: 'cal',
   lead: 'lead',
   tags: 'tags', tag: 'tags', برچسب: 'tags', برچسبها: 'tags',
   ai: 'ai', دستیار: 'ai', هوش: 'ai',
-  week: 'week', هفته: 'week',
+  overview: 'overview', نمایکلی: 'overview', week: 'overview', هفته: 'overview',
   planday: 'planday', روزم: 'planday',
 };
 
@@ -95,6 +98,7 @@ const FILTERS: Filter[] = ['a', 't', 'o', 'd', 'u'];
 
 interface Message {
   chat: { id: number; type?: string };
+  from?: { id: number };
   text?: string;
   message_id: number;
   reply_to_message?: { text?: string };
@@ -110,8 +114,11 @@ interface Voice {
 
 interface Update {
   message?: Message;
-  callback_query?: { id: string; data?: string; message?: Message };
+  callback_query?: { id: string; data?: string; from?: { id: number }; message?: Message };
 }
+
+/** Whether the bot may answer this person: always, unless it was locked to one user id. */
+const mayAnswer = (deps: BotDeps, sender: number | undefined): boolean => deps.allowedUserId === undefined || sender === deps.allowedUserId;
 
 /** Where a request comes from, and what answering it may touch. */
 interface Ctx {
@@ -140,6 +147,8 @@ interface View {
 export async function handleUpdate(update: Update, deps: BotDeps): Promise<void> {
   if (update.callback_query) return handleCallback(update.callback_query, deps);
   const message = update.message;
+  // Locked to one person: everyone else gets no answer at all, not even «send /start».
+  if (message && !mayAnswer(deps, message.from?.id ?? message.chat.id)) return;
   const voice = message?.voice ?? message?.audio;
   if (!message || message.chat.type !== 'private' || (!message.text && !voice)) return;
   const text = message.text?.trim() ?? '';
@@ -211,12 +220,14 @@ async function runCommand(command: string, args: string, ctx: Ctx): Promise<void
       return sendView(ctx, await listView(ctx, 'a', 0));
     case 'status':
       return sendView(ctx, await statusView(ctx));
+    case 'id':
+      return tg.send(chatId, w.userId(chatId));
     case 'tags':
       return sendView(ctx, await tagsView(ctx, 0));
     case 'ai':
       return args ? assist(args, ctx) : sendView(ctx, aiView(ctx));
-    case 'week':
-      return sendView(ctx, await weekView(ctx, 0));
+    case 'overview':
+      return sendView(ctx, await overviewView(ctx));
     case 'planday':
       return planDay(ctx);
     case 'settings':
@@ -331,9 +342,9 @@ async function homeView(ctx: Ctx): Promise<View> {
       { text: w.buttons.today, data: 'ls:t:0', style: 'primary' },
       { text: w.buttons.all, data: 'ls:a:0' },
     ],
-    [{ text: w.buttons.newTask, data: 'new', style: 'success' }, { text: w.digest.buttons.week, data: 'wk:0' }],
+    [{ text: w.buttons.newTask, data: 'new', style: 'success' }, { text: w.digest.buttons.overview, data: 'ov' }],
   ];
-  if (counts.overdue) rows[1].push({ text: `${w.buttons.overdue} ${digits(counts.overdue, owner.language)}`, data: 'ls:o:0', style: 'danger' });
+  if (counts.overdue) rows[1].push({ text: counted(w.buttons.overdue, counts.overdue, owner.language), data: 'ls:o:0', style: 'danger' });
   rows.push([
     { text: w.tagsUi.button, data: 'tg:0' },
     { text: w.buttons.status, data: 'st' },
@@ -539,7 +550,7 @@ async function listView(ctx: Ctx, filter: Filter, requestedPage: number, tag?: s
   const back = tag ? `g${index}~${tag}` : `${filter}${index}`;
 
   const filterRow = FILTERS.filter((f) => f === filter || f === 'a' || counts[f] > 0).map((f) => ({
-    text: `${w.filters[f]} ${digits(counts[f], owner.language)}`,
+    text: counted(w.filters[f], counts[f], owner.language),
     data: `ls:${f}:0`,
     ...(f === filter ? { style: 'primary' as const } : {}),
   }));
@@ -613,18 +624,14 @@ interface ListRef {
   filter: Filter;
   page: number;
   tag?: string;
-  /** Not a list: one day's screen (`y2026-10-05`)… */
+  /** Not a list: one day's screen (`y2026-10-05`). */
   day?: string;
-  /** …or a week's (`w0`, `w-1`). */
-  week?: number;
 }
 
 /** The list a card came from, as its «back» button names it: `a2` is page 3 of all, `g0~home` the first page of #home. */
 function listOf(back: string): ListRef {
   const day = /^y(\d{4}-\d{2}-\d{2})$/.exec(back);
   if (day) return { filter: 'a', page: 0, day: day[1] };
-  const week = /^w(-?\d{1,3})$/.exec(back);
-  if (week) return { filter: 'a', page: 0, week: Number(week[1]) };
   const tagged = /^g(\d+)~(.+)$/u.exec(back);
   if (tagged) return { filter: 'a', page: Number(tagged[1]), tag: tagged[2] };
   const filter = FILTERS.find((f) => f === back[0]) ?? 'a';
@@ -633,10 +640,10 @@ function listOf(back: string): ListRef {
 }
 
 /** The button data that opens a list. */
-const listData = (ref: ListRef): string => (ref.day ? `dy:${ref.day}` : ref.week !== undefined ? `wk:${ref.week}` : ref.tag ? `lg:${ref.page}:${ref.tag}` : `ls:${ref.filter}:${ref.page}`);
+const listData = (ref: ListRef): string => (ref.day ? `dy:${ref.day}` : ref.tag ? `lg:${ref.page}:${ref.tag}` : `ls:${ref.filter}:${ref.page}`);
 
 const showList = (ctx: Ctx, ref: ListRef): Promise<View> =>
-  ref.day ? dayView(ctx, ref.day) : ref.week !== undefined ? weekView(ctx, ref.week) : listView(ctx, ref.filter, ref.page, ref.tag);
+  ref.day ? dayView(ctx, ref.day) : listView(ctx, ref.filter, ref.page, ref.tag);
 
 /** A task's parent and its open subtasks, for its card. */
 async function relativesOf(ctx: Ctx, task: TaskRow): Promise<{ parent: TaskRow | null; children: TaskRow[]; relatives: Relatives }> {
@@ -958,14 +965,7 @@ async function addTask(text: string, ctx: Ctx, forcedDay?: string): Promise<void
   await sendView(ctx, view);
 }
 
-// ── The week and the day ───────────────────────────────────────────────────
-
-/** The seven days of a week, from its first day (Saturday with the Jalali calendar, Monday with the Gregorian), `offset` weeks from this one. */
-function weekDays(ctx: Ctx, offset: number): string[] {
-  const first = ctx.owner.calendar === 'jalali' ? 6 : 1;
-  const start = addDays(todayOf(ctx), -((weekdayOf(todayOf(ctx)) - first + 7) % 7) + offset * 7);
-  return Array.from({ length: 7 }, (_, i) => addDays(start, i));
-}
+// ── The overview and the day ───────────────────────────────────────────────────
 
 /** In Persian the next is to the left: a row of buttons that goes forward is turned round. */
 const readingOrder = <T,>(ctx: Ctx, items: T[]): T[] => (ctx.owner.language === 'fa' ? [...items].reverse() : items);
@@ -978,7 +978,7 @@ function dayNavRow(ctx: Ctx, day: string): Button[] {
   const { w, owner } = ctx;
   const today = todayOf(ctx);
   const label = (date: string) => truncate(dayLabel(date, owner, today), 14);
-  const middle: Button = day === today ? { text: w.digest.buttons.week, data: 'wk:0' } : { text: w.digest.buttons.today, data: 'ls:t:0' };
+  const middle: Button = day === today ? { text: w.digest.buttons.overview, data: 'ov' } : { text: w.digest.buttons.today, data: 'ls:t:0' };
   return readingOrder(ctx, [
     { text: stepLabel(ctx, 'back', label(addDays(day, -1))), data: `dy:${addDays(day, -1)}` },
     middle,
@@ -986,39 +986,53 @@ function dayNavRow(ctx: Ctx, day: string): Button[] {
   ]);
 }
 
-/** A week as seven days with what is on each: a table in the rich message, quotes in the classic one. */
-async function weekView(ctx: Ctx, offset: number): Promise<View> {
+/** Most tasks the overview lists; the rest are a tap away in the lists. */
+const OVERVIEW_MAX = 40;
+
+/**
+ * Every open task at a glance, by when: late, today, tomorrow, later and with no plan at all. Not
+ * a calendar: a task with no day or hour is on it too. Plain lines under headings, which read well
+ * in the rich message and in the classic one alike; the counts are in brackets after each heading.
+ */
+async function overviewView(ctx: Ctx): Promise<View> {
   const { w, owner } = ctx;
   const today = todayOf(ctx);
-  const days = weekDays(ctx, offset);
+  const tomorrow = addDays(today, 1);
   const open = await ctx.deps.store.openTasks();
-  const rowsOf = days.map((day) => ({ day, tasks: open.filter((task) => onDay(task, day, owner.timezone)).sort(byHour) }));
-  const range = `${dateLabel(days[0], owner)} – ${dateLabel(days[6], owner)}`;
-  const SHOW = 5;
+  const entries = open.map((task) => ({ task, bucket: bucketOf(task, today, owner.timezone) }));
+  const dayOf = (bucket: Bucket): string | null => (bucket === 'today' ? today : bucket === 'tomorrow' ? tomorrow : null);
 
-  const html: string[] = [w.week.title(range)];
-  const table: string[] = ['| | |', '|:--|:--|'];
-  for (const { day, tasks } of rowsOf) {
-    const mark = day === today ? ` · <i>${w.week.today}</i>` : '';
-    const head = `<b>${dateLabel(day, owner)}</b>${mark}`;
-    const extra = tasks.length > SHOW ? w.week.more(tasks.length - SHOW) : '';
-    html.push(tasks.length ? `${head}\n<blockquote>${tasks.slice(0, SHOW).map((task) => dayItem(task, day, owner)).join('\n')}${extra ? `\n${extra}` : ''}</blockquote>` : `${head}  <i>${w.week.empty}</i>`);
-    const cell = tasks.length ? [tasks.slice(0, SHOW).map((task) => dayItem(task, day, owner, true)).join(' · '), extra].filter(Boolean).join(' ') : w.week.empty;
-    table.push(`| **${mdEscape(dateLabel(day, owner))}**${day === today ? ` · *${w.week.today}*` : ''} | ${cell} |`);
+  const html: string[] = [w.overview.title(open.length)];
+  const rich: string[] = [`# ${withoutTags(w.overview.title(open.length))}`];
+  let room = OVERVIEW_MAX;
+  for (const bucket of BUCKET_ORDER) {
+    const order = bucket === 'today' || bucket === 'tomorrow' ? byHour : bucket === 'none' ? (a: TaskRow, b: TaskRow) => a.n - b.n : byPlan;
+    const tasks = entries.filter((entry) => entry.bucket === bucket).map((entry) => entry.task).sort(order);
+    if (!tasks.length) continue;
+    const shown = tasks.slice(0, Math.max(0, room));
+    room -= shown.length;
+    const heading = counted(w.sections[bucket], tasks.length, owner.language);
+    const more = tasks.length > shown.length ? w.overview.more(tasks.length - shown.length) : '';
+    html.push(`<b><u>${heading}</u></b>${shown.length ? `\n<blockquote>${shown.map((task) => `• ${overviewItem(task, dayOf(bucket), owner, today)}`).join('\n')}</blockquote>` : ''}${more ? `\n${more}` : ''}`);
+    rich.push(`## ${heading}${shown.length ? `\n\n${shown.map((task) => `- ${overviewItem(task, dayOf(bucket), owner, today, true)}`).join('\n')}` : ''}${more ? `\n\n${htmlToRich(more)}` : ''}`);
   }
-  const overdue = open.filter((task) => isOverdue(task, today)).length;
+  if (!open.length) {
+    html.push(w.empty.a);
+    rich.push(htmlToRich(w.empty.a));
+  }
 
-  const dayButtons: Button[] = days.map((day) => ({
-    text: `${weekdayInitial(day, owner.language)} ${dayNumber(day, owner)}${rowsOf.find((row) => row.day === day)!.tasks.length ? '•' : ''}`,
-    data: `dy:${day}`,
-    ...(day === today ? { style: 'primary' as const } : {}),
+  const counts: Record<Filter, number> = { a: 0, t: 0, o: 0, d: 0, u: 0 };
+  for (const entry of entries) for (const f of FILTERS) if (matches(f, entry)) counts[f]++;
+  const filterRow = FILTERS.filter((f) => f === 'a' || counts[f] > 0).map((f) => ({
+    text: counted(w.filters[f], counts[f], owner.language),
+    data: `ls:${f}:0`,
+    ...(f === 't' ? { style: 'primary' as const } : {}),
   }));
-  const [before, after] = [{ text: stepLabel(ctx, 'back', w.week.weekBack), data: `wk:${offset - 1}` }, { text: stepLabel(ctx, 'forward', w.week.weekNext), data: `wk:${offset + 1}` }];
-  const middle: Button = offset === 0 ? { text: w.digest.buttons.today, data: 'ls:t:0' } : { text: w.week.thisWeek, data: 'wk:0' };
-  const buttons: Button[][] = [readingOrder(ctx, dayButtons), readingOrder(ctx, [before, middle, after])];
-  if (overdue) buttons.push([{ text: `${w.digest.buttons.overdue} ${digits(overdue, owner.language)}`, data: 'ls:o:0', style: 'danger' }]);
+  const buttons: Button[][] = [];
+  for (let i = 0; i < filterRow.length; i += 2) buttons.push(filterRow.slice(i, i + 2));
+  if (ctx.deps.ai) buttons.push([{ text: w.digest.buttons.planDay, data: 'pd' }]);
   buttons.push(navRow(ctx));
-  return { text: html.join('\n'), rich: `# ${withoutTags(w.week.title(range))}\n\n${table.join('\n')}`, buttons };
+  return { text: html.join('\n\n'), rich: rich.join('\n\n'), buttons };
 }
 
 /** One day: its tasks in the order of the day, a button for each, and the way to the days around it. */
@@ -1034,7 +1048,7 @@ async function dayView(ctx: Ctx, day: string): Promise<View> {
     buttons.push(shown.slice(i, i + 2).map((task, j) => ({ text: `${digits(i + j + 1, owner.language)} · ${truncate(task.title, 15)}`, data: `t:${task.n}@y${day}` })));
   }
   buttons.push(dayNavRow(ctx, day));
-  buttons.push([{ text: w.digest.buttons.week, data: 'wk:0' }, { text: w.week.newOnDay, data: `cd:x:0:${day}`, style: 'success' }]);
+  buttons.push([{ text: w.digest.buttons.overview, data: 'ov' }, { text: w.week.newOnDay, data: `cd:x:0:${day}`, style: 'success' }]);
   buttons.push(navRow(ctx));
   return { text, buttons };
 }
@@ -1057,7 +1071,7 @@ async function moveToTomorrow(ctx: Ctx): Promise<void> {
   }
   const done = w.digest.review.moved(moving.length, dayLabel(tomorrow, owner, today));
   ctx.toast = done;
-  await present(ctx, { text: done, buttons: [[{ text: w.digest.buttons.tomorrow, data: `dy:${tomorrow}` }, { text: w.digest.buttons.week, data: 'wk:0' }], navRow(ctx)] });
+  await present(ctx, { text: done, buttons: [[{ text: w.digest.buttons.tomorrow, data: `dy:${tomorrow}` }, { text: w.digest.buttons.overview, data: 'ov' }], navRow(ctx)] });
 }
 
 // ── Notifications ──────────────────────────────────────────────────────────
@@ -1219,13 +1233,13 @@ async function assist(text: string, ctx: Ctx, options: { heard?: string; fallbac
   const { w, owner, chatId } = ctx;
   const { ai, store, tg } = ctx.deps;
   if (!ai) return tg.send(chatId, w.ai.errors.notSetUp);
-  // At once: a glance on the message, and a «Thinking…» that goes away when the answer arrives.
+  // At once: a glance on the message and «typing…» in the chat. No placeholder message: a draft left
+  // an empty gap under the answer on some clients.
   const incoming = ctx.incoming;
   /** Cosmetic: a failure here must never stop the work. */
   const quietly = (step: Promise<void> | undefined): Promise<void> => Promise.resolve(step).catch(() => undefined);
   const react = (emoji: string | null) => quietly(incoming === undefined ? undefined : tg.react?.(chatId, incoming, emoji));
-  const thinking = `${options.heard ? `<p>${w.ai.heard(options.heard)}</p>` : ''}<tg-thinking>${w.ai.thinking}</tg-thinking>`;
-  await Promise.all([react('👀'), quietly(tg.thinking ? tg.thinking(chatId, thinking) : tg.typing?.(chatId))]);
+  await Promise.all([react('👀'), quietly(tg.typing?.(chatId))]);
   const now = ctx.deps.now();
   const memory = freshMemory(owner.ai_memory, now);
   const mode: AiConfirm = options.preview ? 'ask' : (owner.ai_confirm ?? 'big');
@@ -1233,6 +1247,8 @@ async function assist(text: string, ctx: Ctx, options: { heard?: string; fallbac
   const base = { ai, owner, now, text, memory, tags };
   let result: AssistantResult;
   let overlay: OverlayStore | null = null;
+  // «typing…» lasts five seconds and the model can take longer: it is renewed until the answer is ready.
+  const keepTyping = setInterval(() => void quietly(tg.typing?.(chatId)), 4_000);
   try {
     if (mode === 'auto') result = await runAssistant({ ...base, store, effects: effectsFor(ctx) });
     else {
@@ -1268,6 +1284,8 @@ async function assist(text: string, ctx: Ctx, options: { heard?: string; fallbac
     if (!options.fallback) return tg.send(chatId, `${heard}${problem}`);
     await tg.send(chatId, `${problem}\n${w.ai.errors.fellBack}`);
     return addTask(text, ctx);
+  } finally {
+    clearInterval(keepTyping);
   }
   try {
     await store.patchOwner({ ai_memory: remember(memory, text, result, now) });
@@ -1710,7 +1728,7 @@ async function handleCallback(
 ): Promise<void> {
   const owner = await deps.store.getOwner();
   const chatId = callback.message?.chat.id;
-  if (!owner || chatId === undefined || owner.chat_id !== chatId) return deps.tg.answer(callback.id);
+  if (!mayAnswer(deps, callback.from?.id ?? chatId) || !owner || chatId === undefined || owner.chat_id !== chatId) return deps.tg.answer(callback.id);
   const ctx = ctxFor(deps, owner, chatId, callback.message?.message_id);
   try {
     await route(callback.data ?? '', ctx);
@@ -1755,8 +1773,9 @@ async function route(data: string, ctx: Ctx): Promise<void> {
       return present(ctx, aiView(ctx));
     case 'nf':
       return notifications(rawN, ctx);
+    case 'ov':
     case 'wk':
-      return present(ctx, await weekView(ctx, Number(rawN) || 0));
+      return present(ctx, await overviewView(ctx));
     case 'dy':
       return present(ctx, await dayView(ctx, rawN && isRealDate(rawN) ? rawN : todayOf(ctx)));
     case 'mv':
