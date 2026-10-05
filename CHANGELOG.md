@@ -107,12 +107,20 @@
   escaped; a message Telegram still refuses falls back to HTML, then plain text.
   The converter has its own validator in the tests, and every screen the bot
   sends is checked against it.
-- **Accessible mode** (**Settings → Accessible mode** in the bot, off by default):
-  no emoji, decoration or invisible padding in the text (screen readers read
-  them out), buttons and sections named with words instead of symbols, "(selected)"
-  instead of ticks, one task to a button row, a task's facts one per line with
-  their names, a plain list of the next 14 days instead of a calendar grid, and
-  plain reminders. Typed answers still work.
+- **An assistant that understands you** (Cloudflare Workers AI, the same service as
+  Agenter; optional): say or write what you want in your own words, or send a **voice
+  message** (read by Whisper), and the tasks are made on the right days. The model works
+  through commands built for it — `add_task`, `update_task`, `set_status`, `delete_task`
+  (only proposes; a button confirms) and `find_tasks` — and everything it sends is checked
+  before it is done: a Jalali date is converted by code, a day that is not a day, a year
+  that is a slip, an hour that cannot exist and a reminder in the past are left out and
+  said so, and asking twice makes one task. What it makes is queued for your notes exactly
+  as a task you typed is. The card shows each task with its day and hour in plain words,
+  buttons to open them, **Undo**, and what was heard; the next sentence is read with what
+  came before (for 30 minutes). With no keys set, or switched off in **Settings →
+  Assistant**, the bot reads words the plain way as before, and does so too when
+  Cloudflare cannot be reached. `/ai your words` calls it by name. Needs the secrets
+  `CF_ACCOUNT_ID` and `CF_API_TOKEN` (see the setup guide).
 - Notes remain the source of truth; the tables are locked to the service role and
   the bot answers only the chat it was paired with.
 

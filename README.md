@@ -1004,11 +1004,18 @@ only a snapshot of your open tasks and a queue of what you asked for in Telegram
   headings, quotes, expandable quotes for long lists, code — with every reserved
   character escaped, and fall back to HTML and then plain text if Telegram refuses
   one.
-- **Accessible mode.** **Settings → Accessible mode** removes emoji, decoration and
-  the invisible padding from the text, names buttons and sections in words, puts
-  one task on each button row, writes a task's facts one per line, and replaces the
-  calendar grid with a list of the next 14 days, so a screen reader reads each
-  screen once and clearly.
+- **An assistant, on Cloudflare Workers AI** (optional, free allowance). Say it in your
+  own words, or send a **voice message**, and the assistant puts tasks on the right days:
+  “call Sara tomorrow at 9 and buy bread in the evening”, “plan my study for Thursday’s
+  exam”, “move Saturday’s meeting to 5”, “task 12 is done”, “what do I have tomorrow?”.
+  A model (the same service Agenter uses) works through commands we give it — add a task,
+  change one, set a status, propose a deletion, look tasks up — and every field it sends is
+  checked first (a day that is not a day, an hour that cannot be, a reminder in the past,
+  a wrong year). The card that comes back shows what was made, with its day and hour in
+  plain words, a button to open each task, and **Undo**; the next sentence is understood
+  with what came before (“no, Friday”). Voice goes through Whisper on the same account.
+  Needs two secrets (`CF_ACCOUNT_ID`, `CF_API_TOKEN`); see the setup guide. **Settings →
+  Assistant** turns it off, and `/ai your words` calls it by name.
 - **In Obsidian:** a background sync (every 2 minutes by default, and on **Sync
   Telegram now**) uploads the snapshot, then applies what you asked for in
   Telegram to your notes: new tasks go to the board's inbox note, the rest edit

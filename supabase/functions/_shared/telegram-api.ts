@@ -116,5 +116,20 @@ export function telegramApi(token: string): Telegram {
     async setCommands(chatId: number, commands: BotCommand[]) {
       await call('setMyCommands', { commands, scope: { type: 'chat', chat_id: chatId } }).catch(() => undefined);
     },
+    async typing(chatId: number) {
+      await call('sendChatAction', { chat_id: chatId, action: 'typing' }).catch(() => undefined);
+    },
+    async download(fileId: string) {
+      const info = await fetch(`https://api.telegram.org/bot${token}/getFile`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ file_id: fileId }),
+      });
+      const path = ((await info.json()) as { result?: { file_path?: string } }).result?.file_path;
+      if (!info.ok || !path) throw new Error(`Telegram getFile: ${info.status}`);
+      const file = await fetch(`https://api.telegram.org/file/bot${token}/${path}`);
+      if (!file.ok) throw new Error(`Telegram file: ${file.status}`);
+      return new Uint8Array(await file.arrayBuffer());
+    },
   };
 }

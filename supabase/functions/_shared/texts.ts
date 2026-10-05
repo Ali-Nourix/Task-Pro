@@ -34,7 +34,7 @@ const GREGORIAN_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug'
 const FA_WEEKDAYS = ['یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه', 'پنجشنبه', 'جمعه', 'شنبه'];
 const EN_WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-type Owner = Pick<OwnerRow, 'language' | 'calendar' | 'timezone'> & Partial<Pick<OwnerRow, 'a11y'>>;
+type Owner = Pick<OwnerRow, 'language' | 'calendar' | 'timezone'>;
 
 /** "Today", "Tomorrow", or a weekday and date in the owner's calendar. */
 export function dayLabel(date: string, owner: Owner, today: string): string {
@@ -115,7 +115,6 @@ export function taskEntry(task: TaskRow, owner: Owner, today: string, options: E
   const language = owner.language;
   const depth = options.depth ?? 0;
   const pad = depth ? INDENT : '';
-  if (owner.a11y) return accessibleEntry(task, owner, today, options);
   const glyph = task.status === 'doing' ? '🔄 ' : task.pending ? '🕓 ' : '';
   const priority = task.priority ? ` ${PRIORITY_MARK[task.priority]}` : '';
   const arrow = depth ? '↳ ' : '';
@@ -134,36 +133,6 @@ export function taskEntry(task: TaskRow, owner: Owner, today: string, options: E
   const lines = [head];
   if (task.subs_total) lines.push(`${pad}${INDENT}<code>${progressBar(task.subs_done ?? 0, task.subs_total)}</code>`);
   if (parts.length) lines.push(`${pad}${depth ? INDENT : ''}${parts.join(' • ')}`);
-  return lines.join('\n');
-}
-
-/**
- * A task for a list, for a screen reader: its number and title, then a line for each fact in
- * words. Nothing depends on a picture: a priority is its name, "in progress" is written out,
- * and there is no bar, only the count.
- */
-function accessibleEntry(task: TaskRow, owner: Owner, today: string, options: EntryOptions): string {
-  const language = owner.language;
-  const w = words(language);
-  const pad = options.depth ? INDENT : '';
-  const detail = `${pad}${INDENT}`;
-  const comma = language === 'fa' ? '،' : ',';
-  const lines = [`${pad}<b>${digits(options.position, language)}.</b> ${esc(truncate(task.title, 110))}`];
-  const state: string[] = [];
-  if (task.status === 'doing') state.push(w.labels.statuses.doing);
-  if (task.pending) state.push(w.labels.pending);
-  if (task.priority) state.push(`${w.labels.priority} ${PRIORITY_NAME[language][task.priority]}`);
-  if (task.subs_total) state.push(`${w.labels.subtasks} ${ratio(task.subs_done ?? 0, task.subs_total, language)}`);
-  if (state.length) lines.push(`${detail}${state.join(`${comma} `)}`);
-  if (task.parent_title && (options.parentHint || options.depth)) lines.push(`${detail}${w.labels.subOf} «${esc(truncate(task.parent_title, 28))}»`);
-  const plan = planText(task, owner, today);
-  if (plan) lines.push(`${detail}${w.labels.plan}: ${plan}`);
-  if (task.deadline) lines.push(`${detail}${w.labels.deadline}: ${dayLabel(task.deadline, owner, today)}`);
-  const remind = remindText(task, owner, today);
-  if (remind) lines.push(`${detail}${w.labels.remind}: ${remind}`);
-  const repeat = repeatLabel(task.repeat ?? null, language);
-  if (repeat) lines.push(`${detail}${w.labels.repeat}: ${repeat}`);
-  if (task.tags.length) lines.push(`${detail}${w.labels.tags}: ${task.tags.map((tag) => `<code>#${esc(tag)}</code>`).join(`${comma} `)}`);
   return lines.join('\n');
 }
 
@@ -199,8 +168,8 @@ export function taskCard(task: TaskRow, owner: Owner, today: string, relatives: 
     const done = task.subs_done ?? 0;
     const list = children.map((child, i) => `${digits(i + 1, language)}. ${child.status === 'doing' ? '🔄 ' : ''}${esc(truncate(child.title, 60))}`);
     subs =
-      `\n<b>${w.labels.subtasks}</b> <code>${ratio(done, total, language)}</code>${owner.a11y ? '' : ` <code>${progressBar(done, total)}</code>`}` +
-      (list.length ? `\n<blockquote${list.length > 3 && !owner.a11y ? ' expandable' : ''}>${list.join('\n')}</blockquote>` : '');
+      `\n<b>${w.labels.subtasks}</b> <code>${ratio(done, total, language)}</code> <code>${progressBar(done, total)}</code>` +
+      (list.length ? `\n<blockquote${list.length > 3 ? ' expandable' : ''}>${list.join('\n')}</blockquote>` : '');
   }
   const state = `<i>${w.labels.id} #${digits(task.n, language)} · ${w.labels.statuses[task.status]}${task.pending ? ` · ${w.labels.pending}` : ''}</i>`;
   return `${parent}${title}\n${body}${subs}\n${state}`;
@@ -410,7 +379,7 @@ export interface Words {
   newTask: string;
   statusView: (open: number, waiting: number, lastSync: string | null, health: 'ok' | 'stale' | 'never') => string;
   agoMinutes: (minutes: number) => string;
-  settings: (o: { language: string; calendar: string; timezone: string; lead: number; rich: string; pad: string; a11y: string }) => string;
+  settings: (o: { language: string; calendar: string; timezone: string; lead: number; rich: string; pad: string; ai: string }) => string;
   settingButtons: { language: string; calendar: string; lead: (minutes: number) => string; zone: (zone: string) => string; rich: (on: boolean) => string; pad: (pad: string) => string };
   padNames: (pad: number) => string;
   richNames: { on: string; off: string };
@@ -429,24 +398,34 @@ export interface Words {
     askNew: (tag: string) => string;
     hintNew: string;
     allTags: string;
-    pick: (title: string, tags: string[], page: number, pages: number, mark: string) => string;
+    pick: (title: string, tags: string[], page: number, pages: number) => string;
     newTag: string;
     yourTags: string;
     startWith: string;
     tooLong: string;
   };
-  /** The accessible display: for a screen reader, and for reading without pictures. */
-  a11y: {
+  /** The assistant: what you say or write in words becomes tasks. */
+  ai: {
     name: string;
-    button: (on: boolean) => string;
-    names: { on: string; off: string };
-    explain: string;
-    selected: string;
-    subtask: string;
-    parent: string;
-    nav: { home: string; today: string; all: string; newTask: string; settings: string };
-    health: { ok: string; stale: string; never: string };
-    days: { title: (kind: string, task: string | null, current: string | null, from: string, to: string) => string; prev: string; next: string };
+    states: { on: string; off: string; unset: string };
+    button: (state: 'on' | 'off' | 'unset') => string;
+    intro: (state: 'on' | 'off' | 'unset') => string;
+    heard: (text: string) => string;
+    done: string;
+    nothing: string;
+    groups: { added: string; changed: string; status: string; remove: string };
+    undoAll: (count: number) => string;
+    undone: (count: number) => string;
+    warn: {
+      badValue: (detail: string) => string;
+      reminderPast: (detail: string) => string;
+      noTask: (detail: string) => string;
+      duplicate: (detail: string) => string;
+      noTitle: string;
+      tooMany: string;
+    };
+    errors: { notSetUp: string; auth: string; quota: string; busy: string; bad: string; format: string; fellBack: string };
+    voice: { needsAi: string; tooLong: string; empty: string; failed: string };
   };
   zoneHint: string;
   languageNames: { fa: string; en: string };
@@ -479,8 +458,9 @@ const fa: Words = {
     'گزارش <b>مهلت شنبه</b> ← مهلت\n' +
     'جلسه شنبه ۹ تا ۱۰ ← بازهٔ زمانی\n' +
     '<b>#برچسب</b> · <b>!بالا</b> <b>!فوری</b> <b>!کم</b> ← برچسب و اولویت</blockquote>\n' +
+    '🤖 <b>دستیار هوشمند</b> — اگر راه‌اندازی شده باشد، به زبان خودت بگو (یا <b>ویس</b> بفرست) و خودش تسک‌ها را در روز درست می‌گذارد.\n' +
     '<b>دستورها</b> <i>(برای دیدن باز کن)</i>\n' +
-    '<blockquote expandable>/start — منوی اصلی\n/today — امروز\n/list — همهٔ تسک‌ها\n/tags — برچسب‌ها و تسک‌هایشان\n' +
+    '<blockquote expandable>/start — منوی اصلی\n/today — امروز\n/list — همهٔ تسک‌ها\n/tags — برچسب‌ها و تسک‌هایشان\n/ai — دستیار هوشمند (یا /ai و بعدش متن)\n' +
     '/done ۱۲ — انجام شد (عدد = «شناسه» روی صفحهٔ تسک)\n/fail ۱۲ — انجام نشد\n/remind ۱۲ فردا ۸ — یادآوری (یا off)\n/plan ۱۲ شنبه ۹-۱۰ — برنامه (یا off)\n' +
     '/del ۱۲ — حذف\n/status — وضعیت همگام‌سازی\n/settings — تنظیمات\n' +
     '/lang fa|en · /tz Asia/Tehran · /cal jalali|gregorian · /lead ۱۰</blockquote>',
@@ -667,7 +647,7 @@ const fa: Words = {
     minutes < 1 ? 'همین الان' : minutes < 60 ? `${digits(minutes, 'fa')} دقیقه پیش` : minutes < 2880 ? `${digits(Math.floor(minutes / 60), 'fa')} ساعت پیش` : `${digits(Math.floor(minutes / 1440), 'fa')} روز پیش`,
   settings: (o) =>
     '⚙️ <b>تنظیمات</b>\n' +
-    `<blockquote>🌐 <b>زبان</b> · ${o.language}\n📆 <b>تقویم</b> · ${o.calendar}\n🕒 <b>منطقهٔ زمانی</b> · <code>${esc(o.timezone)}</code>\n⏱ <b>یادآوری پیش از برنامه</b> · ${digits(o.lead, 'fa')} دقیقه\n🧩 <b>نمایش پیشرفته</b> · ${o.rich}\n↔️ <b>عرض پیام</b> · ${o.pad}\n♿ <b>حالت دسترسی‌پذیر</b> · ${o.a11y}</blockquote>`,
+    `<blockquote>🌐 <b>زبان</b> · ${o.language}\n📆 <b>تقویم</b> · ${o.calendar}\n🕒 <b>منطقهٔ زمانی</b> · <code>${esc(o.timezone)}</code>\n⏱ <b>یادآوری پیش از برنامه</b> · ${digits(o.lead, 'fa')} دقیقه\n🧩 <b>نمایش پیشرفته</b> · ${o.rich}\n↔️ <b>عرض پیام</b> · ${o.pad}\n🤖 <b>دستیار هوشمند</b> · ${o.ai}</blockquote>`,
   settingButtons: {
     language: '🌐 زبان',
     calendar: '📆 تقویم',
@@ -692,29 +672,59 @@ const fa: Words = {
     askNew: (tag) => `🆕 تسک تازه با برچسب «${tag}»\n#${tag}\n\nعنوان تسک را بنویس؛ زمان و اولویت را هم می‌توانی در همان جمله بنویسی.`,
     hintNew: 'عنوان تسک …',
     allTags: '🏷 همهٔ برچسب‌ها',
-    pick: (title, tags, page, pages, mark) =>
+    pick: (title, tags, page, pages) =>
       `🏷 <b>برچسب‌ها</b>\n<blockquote>${esc(title)}\n${tags.length ? `روی این تسک: <code>${esc(tags.map((tag) => `#${tag}`).join(' '))}</code>` : 'هنوز برچسبی ندارد'}</blockquote>\n` +
-      `یک برچسب را بزن تا اضافه یا برداشته شود؛ ${mark} یعنی روی این تسک است.${pages > 1 ? `\n<i>صفحهٔ ${digits(page, 'fa')} از ${digits(pages, 'fa')}</i>` : ''}`,
+      `یک برچسب را بزن تا اضافه یا برداشته شود؛ ✓ یعنی روی این تسک است.${pages > 1 ? `\n<i>صفحهٔ ${digits(page, 'fa')} از ${digits(pages, 'fa')}</i>` : ''}`,
     newTag: '✏️ برچسب تازه',
     yourTags: 'برچسب‌های تو',
     startWith: 'روی یک برچسب بزن تا تسک تازه‌ای با آن بسازی.',
     tooLong: 'برچسب‌های خیلی بلند را فقط می‌شود نوشت.',
   },
-  a11y: {
-    name: 'حالت دسترسی‌پذیر',
-    button: (on) => `♿ حالت دسترسی‌پذیر: ${on ? 'روشن' : 'خاموش'}`,
-    names: { on: 'روشن', off: 'خاموش' },
-    explain: 'برای صفحه‌خوان و خواندن بی‌تصویر: بدون شکلک و نوار، هر ویژگیِ تسک در یک خطِ جدا، گزینه‌ها یکی‌یکی در هر ردیف، روزها به‌صورت فهرست و بدون نویسه‌های نامرئی.',
-    selected: 'انتخاب‌شده',
-    subtask: 'زیرتسک',
-    parent: 'تسکِ اصلی',
-    nav: { home: 'منو', today: 'امروز', all: 'همه', newTask: 'جدید', settings: 'تنظیمات' },
-    health: { ok: 'Obsidian به‌روز است.', stale: 'مدتی است Obsidian باز نبوده.', never: 'هنوز همگام نشده.' },
-    days: {
-      title: (kind, task, current, from, to) =>
-        `📆 <b>روز را انتخاب کن</b>\n<blockquote>${kind}${task ? ` · ${esc(task)}` : ''}${current ? `\nاکنون: ${current}` : ''}</blockquote>\nروزهای ${from} تا ${to}:`,
-      prev: '‹ ۱۴ روز قبل',
-      next: '۱۴ روز بعد ›',
+  ai: {
+    name: 'دستیار هوشمند',
+    states: { on: 'روشن', off: 'خاموش', unset: 'تنظیم نشده' },
+    button: (state) => `🤖 دستیار هوشمند: ${state === 'on' ? 'روشن' : state === 'off' ? 'خاموش' : 'تنظیم نشده'}`,
+    intro: (state) =>
+      '🤖 <b>دستیار هوشمند</b>\n' +
+      'هر چیزی را به زبان خودت بگو؛ خودش می‌فهمد کدام روز و ساعت بنشیند، برچسب و اولویت می‌گذارد و تسک‌های قبلی را هم عوض می‌کند. <b>ویس</b> هم بفرست.\n' +
+      '<blockquote>«فردا ساعت ۹ با سارا تماس بگیرم و عصر نان بخرم»\n' +
+      '«جلسهٔ شنبه رو ببر ساعت ۵ بعدازظهر»\n' +
+      '«برای امتحان پنج‌شنبه تا آخر هفته برنامهٔ مطالعه بچین»\n' +
+      '«تسک ۱۲ انجام شد»\n' +
+      '«فردا چه کارهایی دارم؟»</blockquote>\n' +
+      (state === 'unset'
+        ? '⚙️ هنوز راه‌اندازی نشده: دو کلید Cloudflare را در Supabase بگذار (راهنما: supabase/README.md، بخش «دستیار هوشمند»).'
+        : state === 'off'
+          ? 'الان خاموش است و نوشته‌هایت مثل قبل تسک ساده می‌شوند. با <code>/ai متن</code> هر وقت خواستی صدایش کن، یا در ⚙️ تنظیمات روشنش کن.'
+          : 'روشن است: هر چه بنویسی یا ویس بدهی، اول به دستیار می‌رسد.'),
+    heard: (text) => `🎙 <i>«${esc(text)}»</i>`,
+    done: '🤖 <b>انجام شد</b>',
+    nothing: '🤖 کاری انجام ندادم.',
+    groups: { added: '➕ <b>تسک تازه</b>', changed: '✏️ <b>تغییر کرد</b>', status: '☑️ <b>وضعیت</b>', remove: '🗑 <b>حذف را تأیید کن</b>' },
+    undoAll: (count) => `↩️ برگردان (${digits(count, 'fa')})`,
+    undone: (count) => `↩️ ${digits(count, 'fa')} تسک برگردانده شد.`,
+    warn: {
+      badValue: (detail) => `⚠️ «${esc(detail)}» را نفهمیدم و نادیده گرفتم.`,
+      reminderPast: (detail) => (detail ? `⚠️ زمان یادآوری (${esc(detail)}) گذشته بود و گذاشته نشد.` : '⚠️ زمان یادآوری گذشته بود و گذاشته نشد.'),
+      noTask: (detail) => `⚠️ تسک باز شمارهٔ ${esc(detail)} پیدا نشد.`,
+      duplicate: (detail) => `ℹ️ ${esc(detail)} از قبل هست؛ دوباره نساختم.`,
+      noTitle: '⚠️ برای یک تسک عنوانی نبود.',
+      tooMany: 'ℹ️ فقط چند کار اول انجام شد؛ بقیه را دوباره بگو.',
+    },
+    errors: {
+      notSetUp: '🤖 دستیار هنوز راه‌اندازی نشده؛ راهنمای نصب را ببین (بخش «دستیار هوشمند»).',
+      auth: '🔑 Cloudflare کلید را نپذیرفت. CF_ACCOUNT_ID و CF_API_TOKEN را در Supabase بررسی کن (دسترسی Workers AI لازم است).',
+      quota: '⏳ سهمیهٔ رایگان امروز Cloudflare تمام شده یا درخواست‌ها زیاد است؛ کمی بعد دوباره امتحان کن.',
+      busy: '🌐 Cloudflare جواب نداد؛ دوباره امتحان کن.',
+      bad: '⚠️ Cloudflare درخواست را قبول نکرد (شاید نام مدل درست نیست: CF_AI_MODEL).',
+      format: '⚠️ جواب Cloudflare قابل خواندن نبود؛ دوباره امتحان کن.',
+      fellBack: 'دستیار در دسترس نبود؛ نوشته‌ات مثل همیشه تسک شد:',
+    },
+    voice: {
+      needsAi: '🎙 برای ویس، دستیار هوشمند باید راه‌اندازی شده باشد (راهنمای نصب، بخش «دستیار هوشمند»).',
+      tooLong: '🎙 این ویس خیلی طولانی است؛ تا ۲ دقیقه بفرست.',
+      empty: '🎙 از ویس چیزی نفهمیدم؛ دوباره و واضح‌تر بفرست.',
+      failed: '🎙 ویس را نتوانستم بخوانم؛ دوباره امتحان کن یا بنویس.',
     },
   },
   zoneHint: 'برای تغییر بنویس: /tz Asia/Tehran',
@@ -744,6 +754,7 @@ const fa: Words = {
     { command: 'today', description: 'تسک‌های امروز' },
     { command: 'list', description: 'همهٔ تسک‌ها' },
     { command: 'tags', description: 'برچسب‌ها' },
+    { command: 'ai', description: 'دستیار هوشمند' },
     { command: 'status', description: 'وضعیت همگام‌سازی' },
     { command: 'settings', description: 'تنظیمات' },
     { command: 'help', description: 'راهنما' },
@@ -766,8 +777,9 @@ const en: Words = {
     'Report <b>due saturday</b> → a deadline\n' +
     'Meeting sat 9-10 → a time range\n' +
     '<b>#tag</b> · <b>!high</b> <b>!highest</b> <b>!low</b> → tag and priority</blockquote>\n' +
+    '🤖 <b>Assistant</b> — once it is set up, say it in your own words (or send a <b>voice message</b>) and it puts the tasks on the right days.\n' +
     '<b>Commands</b> <i>(tap to open)</i>\n' +
-    '<blockquote expandable>/start — main menu\n/today\n/list — everything open\n/tags — your tags and their tasks\n' +
+    '<blockquote expandable>/start — main menu\n/today\n/list — everything open\n/tags — your tags and their tasks\n/ai — the assistant (or /ai and your words)\n' +
     '/done 12 (the number is the task card’s ID)\n/remind 12 tomorrow 8 (or off)\n/plan 12 sat 9-10 (or off)\n' +
     '/del 12\n/status — sync status\n/settings\n' +
     '/lang fa|en · /tz Asia/Tehran · /cal jalali|gregorian · /lead 10</blockquote>',
@@ -954,7 +966,7 @@ const en: Words = {
     minutes < 1 ? 'just now' : minutes < 60 ? `${minutes} min ago` : minutes < 2880 ? `${Math.floor(minutes / 60)} h ago` : `${Math.floor(minutes / 1440)} d ago`,
   settings: (o) =>
     '⚙️ <b>Settings</b>\n' +
-    `<blockquote>🌐 <b>Language</b> · ${o.language}\n📆 <b>Calendar</b> · ${o.calendar}\n🕒 <b>Time zone</b> · <code>${esc(o.timezone)}</code>\n⏱ <b>Remind before a plan</b> · ${o.lead} min\n🧩 <b>Rich display</b> · ${o.rich}\n↔️ <b>Message width</b> · ${o.pad}\n♿ <b>Accessible mode</b> · ${o.a11y}</blockquote>`,
+    `<blockquote>🌐 <b>Language</b> · ${o.language}\n📆 <b>Calendar</b> · ${o.calendar}\n🕒 <b>Time zone</b> · <code>${esc(o.timezone)}</code>\n⏱ <b>Remind before a plan</b> · ${o.lead} min\n🧩 <b>Rich display</b> · ${o.rich}\n↔️ <b>Message width</b> · ${o.pad}\n🤖 <b>Assistant</b> · ${o.ai}</blockquote>`,
   settingButtons: {
     language: '🌐 Language',
     calendar: '📆 Calendar',
@@ -979,29 +991,59 @@ const en: Words = {
     askNew: (tag) => `🆕 New task tagged “${tag}”\n#${tag}\n\nWrite the title; a time and a priority can go in the same sentence.`,
     hintNew: 'Task title …',
     allTags: '🏷 All tags',
-    pick: (title, tags, page, pages, mark) =>
+    pick: (title, tags, page, pages) =>
       `🏷 <b>Tags</b>\n<blockquote>${esc(title)}\n${tags.length ? `On this task: <code>${esc(tags.map((tag) => `#${tag}`).join(' '))}</code>` : 'No tags yet'}</blockquote>\n` +
-      `Tap a tag to add or remove it; ${mark} means it is on this task.${pages > 1 ? `\n<i>Page ${page} of ${pages}</i>` : ''}`,
+      `Tap a tag to add or remove it; ✓ means it is on this task.${pages > 1 ? `\n<i>Page ${page} of ${pages}</i>` : ''}`,
     newTag: '✏️ New tag',
     yourTags: 'Your tags',
     startWith: 'Tap a tag to start a new task with it.',
     tooLong: 'Very long tags can only be typed.',
   },
-  a11y: {
-    name: 'Accessible mode',
-    button: (on) => `♿ Accessible mode: ${on ? 'on' : 'off'}`,
-    names: { on: 'on', off: 'off' },
-    explain: 'For a screen reader and for reading without pictures: no emoji or bars, each property of a task on a line of its own, choices one to a row, days as a list, no invisible characters.',
-    selected: 'selected',
-    subtask: 'Subtask',
-    parent: 'Parent task',
-    nav: { home: 'Menu', today: 'Today', all: 'All', newTask: 'New', settings: 'Settings' },
-    health: { ok: 'Obsidian is up to date.', stale: 'Obsidian has not been open for a while.', never: 'Not synced yet.' },
-    days: {
-      title: (kind, task, current, from, to) =>
-        `📆 <b>Pick a day</b>\n<blockquote>${kind}${task ? ` · ${esc(task)}` : ''}${current ? `\nNow: ${current}` : ''}</blockquote>\nDays ${from} to ${to}:`,
-      prev: '‹ 14 days earlier',
-      next: '14 days later ›',
+  ai: {
+    name: 'Assistant',
+    states: { on: 'on', off: 'off', unset: 'not set up' },
+    button: (state) => `🤖 Assistant: ${state === 'on' ? 'on' : state === 'off' ? 'off' : 'not set up'}`,
+    intro: (state) =>
+      '🤖 <b>The assistant</b>\n' +
+      'Say it in your own words; it works out the day and time, adds tags and a priority, and changes tasks you already have. Send a <b>voice message</b> too.\n' +
+      '<blockquote>“Call Sara tomorrow at 9 and buy bread in the evening”\n' +
+      '“Move Saturday’s meeting to 5 pm”\n' +
+      '“Plan my study for Thursday’s exam until the weekend”\n' +
+      '“Task 12 is done”\n' +
+      '“What do I have tomorrow?”</blockquote>\n' +
+      (state === 'unset'
+        ? '⚙️ Not set up yet: put the two Cloudflare keys into Supabase (see supabase/README.md, “The assistant”).'
+        : state === 'off'
+          ? 'It is off, so what you type becomes a plain task as before. Call it any time with <code>/ai your words</code>, or turn it on in ⚙️ Settings.'
+          : 'It is on: whatever you write or say goes to the assistant first.'),
+    heard: (text) => `🎙 <i>“${esc(text)}”</i>`,
+    done: '🤖 <b>Done</b>',
+    nothing: '🤖 I did nothing.',
+    groups: { added: '➕ <b>New tasks</b>', changed: '✏️ <b>Changed</b>', status: '☑️ <b>Status</b>', remove: '🗑 <b>Confirm to delete</b>' },
+    undoAll: (count) => `↩️ Undo (${count})`,
+    undone: (count) => `↩️ ${count} task${count === 1 ? '' : 's'} taken back.`,
+    warn: {
+      badValue: (detail) => `⚠️ I could not read “${esc(detail)}” and left it out.`,
+      reminderPast: (detail) => (detail ? `⚠️ The reminder time (${esc(detail)}) had passed, so none was set.` : '⚠️ The reminder time had passed, so none was set.'),
+      noTask: (detail) => `⚠️ There is no open task number ${esc(detail)}.`,
+      duplicate: (detail) => `ℹ️ ${esc(detail)} is already there; I did not add it again.`,
+      noTitle: '⚠️ A task had no title.',
+      tooMany: 'ℹ️ Only the first few things were done; say the rest again.',
+    },
+    errors: {
+      notSetUp: '🤖 The assistant is not set up yet; see the setup guide (“The assistant”).',
+      auth: '🔑 Cloudflare refused the key. Check CF_ACCOUNT_ID and CF_API_TOKEN in Supabase (it needs Workers AI access).',
+      quota: '⏳ Today’s free Cloudflare allowance is used up, or there are too many requests; try again a little later.',
+      busy: '🌐 Cloudflare did not answer; try again.',
+      bad: '⚠️ Cloudflare did not accept the request (maybe the model name in CF_AI_MODEL is wrong).',
+      format: '⚠️ Cloudflare’s answer could not be read; try again.',
+      fellBack: 'The assistant was not available; your words became a task as usual:',
+    },
+    voice: {
+      needsAi: '🎙 Voice needs the assistant to be set up (see the setup guide, “The assistant”).',
+      tooLong: '🎙 That voice message is too long; send up to 2 minutes.',
+      empty: '🎙 I could not make out anything; send it again, a little clearer.',
+      failed: '🎙 I could not read that voice message; try again or type it.',
     },
   },
   zoneHint: 'To change it, send: /tz Asia/Tehran',
@@ -1031,6 +1073,7 @@ const en: Words = {
     { command: 'today', description: 'Today’s tasks' },
     { command: 'list', description: 'All tasks' },
     { command: 'tags', description: 'Tags' },
+    { command: 'ai', description: 'The assistant' },
     { command: 'status', description: 'Sync status' },
     { command: 'settings', description: 'Settings' },
     { command: 'help', description: 'Help' },
