@@ -171,7 +171,7 @@ async function paired() {
   eq(w.store.owner.chat_id, 7, 'the right code pairs the chat');
   eq([w.store.owner.language, w.store.owner.timezone, w.store.owner.calendar], ['fa', 'Asia/Tehran', 'jalali'], 'in Persian, Tehran time and the Jalali calendar to begin with');
   eq(w.sent.slice(-2).map((m) => m.text.startsWith('👋 <b>') ? 'greeting' : m.text.startsWith('✨ <b>') ? 'menu' : '?'), ['greeting', 'menu'], 'it greets, then shows the main menu');
-  eq(w.commands[0], ['start', 'today', 'list', 'tags', 'status', 'settings', 'help'], 'and puts its commands in the chat’s menu');
+  eq(w.commands[0], ['start', 'today', 'list', 'tags', 'ai', 'status', 'settings', 'help'], 'and puts its commands in the chat’s menu');
   eq(w.data(w.last()), ['ls:t:0', 'ls:a:0', 'new', 'tg:0', 'st', 'set', 'help'], 'the menu: today, all, new, tags, status, settings, help');
   eq(w.last().buttons[0][0].style, 'primary', 'the first button is blue');
   w.sent.length = 0;
@@ -313,7 +313,7 @@ async function paired() {
 
   // Settings, in place.
   await w.say('/settings');
-  eq(w.data(w.last()), ['set:lang', 'set:cal', 'set:lead', 'set:tz', 'set:rich', 'set:pad', 'set:a11y', 'home', 'ls:t:0', 'ls:a:0', 'new', 'set'], 'settings, with the tab bar');
+  eq(w.data(w.last()), ['set:lang', 'set:cal', 'set:lead', 'set:tz', 'set:rich', 'set:pad', 'set:ai', 'home', 'ls:t:0', 'ls:a:0', 'new', 'set'], 'settings, with the tab bar');
   await w.press('set:cal');
   eq([w.store.owner.calendar, w.lastEdit().text.includes('میلادی')], ['gregorian', true], 'the calendar flips');
   await w.press('set:lead');
@@ -476,137 +476,12 @@ async function paired() {
   eq(none.data(none.lastEdit()).some((d) => d.startsWith('nt:')), false, 'and the new-task screen has no tag buttons');
 }
 
-// ── The accessible display ──────────────────────────────────────────────────
-{
-  const w = await paired();
-  await w.sync({
-    snapshot: [
-      { key: 'A.md|^a|0', title: 'Buy bread', status: 'doing', tags: ['home'], plan_date: '2026-10-03', plan_start: '09:00', priority: 'high', repeat: '1w', subs_total: 3, subs_done: 1 },
-      { key: 'A.md|^b|0', title: 'Call the bank', status: 'open', tags: ['errand', 'home'], deadline: '2026-10-01', parent_key: 'A.md|^a|0', parent_title: 'Buy bread' },
-      { key: 'B.md|^c|0', title: 'Write report', status: 'open', tags: ['work'], remind_at: '2026-10-03T05:00:00Z' },
-    ],
-    tags: [{ key: 'work', name: 'کار', count: 14 }, { key: 'home', count: 6 }],
-  });
-  // What a screen reader would trip over: pictures, bars, invisible blanks.
-  const decor = /[\p{Extended_Pictographic}▰▱⠀]|↳/u;
-  const plain = (view, label) => {
-    const words = view.text.replace(/<[^>]+>/g, '');
-    eq([decor.test(words), view.buttons.flat().some((b) => decor.test(b.text))], [false, false], `${label}: no pictures, bars or blanks in the text or on the buttons`);
-  };
-
-  // Before: a list with pictures, two buttons to a row.
-  await w.press('ls:a:0');
-  eq([decor.test(w.lastEdit().text), w.lastEdit().buttons[0].length, w.lastEdit().text.includes('▰')], [true, 2, true], 'by default a list has pictures, a bar, and two buttons to a row');
-
-  await w.press('set:a11y');
-  eq([w.store.owner.a11y, w.lastEdit().data === undefined, w.lastEdit().rich], [true, true, undefined], 'the setting is kept, and a screen is no longer sent as a rich message');
-  plain(w.lastEdit(), 'settings');
-  eq(w.lastEdit().buttons.flat().find((b) => b.data === 'set:a11y').text, 'حالت دسترسی‌پذیر: روشن', 'the button says it is on');
-  eq(w.lastEdit().buttons.at(-1).map((b) => b.text), ['منو', 'امروز', 'همه', 'جدید', 'تنظیمات'], 'and the tab bar is words, not pictures');
-
-  await w.press('home');
-  plain(w.lastEdit(), 'home');
-  eq(w.lastEdit().text.includes('Obsidian به‌روز است.'), true, 'the home screen says the sync’s state in words, not by a coloured dot');
-  await w.press('st');
-  plain(w.lastEdit(), 'status');
-
-  await w.press('ls:a:0');
-  const list = w.lastEdit();
-  plain(list, 'list');
-  eq(list.buttons.slice(0, 3).map((row) => row.length), [1, 1, 1], 'a list has one task to a button row');
-  eq(list.buttons[0][0].text, '۱. Buy bread', 'whose label is its number and as much of its title as fits');
-  eq(['در حال انجام، اولویت بالا، زیرتسک‌ها ۱ از ۳', 'برنامه: فردا ۰۹:۰۰', 'تکرار: هر هفته', 'برچسب: <code>#home</code>'].every((line) => list.text.includes(line)), true, 'each task says its state, plan and tags in words, a fact to a line');
-  eq(list.text.includes('زیرتسکِ «Buy bread»') && list.text.includes('مهلت: دیروز'), true, 'a subtask says whose it is, and a deadline says it is a deadline');
-  eq(list.text.includes('🔴') || list.text.includes('🔄'), false, 'a priority and a state are never only a picture');
-
-  await w.press('t:1@a0');
-  plain(w.lastEdit(), 'card');
-  eq(w.lastEdit().buttons.flat().find((b) => b.data === 't:2@a0').text, 'زیرتسک: Call the bank', 'a subtask button says it is one');
-  eq(w.lastEdit().text.includes('<code>۱ از ۳</code>') && !w.lastEdit().text.includes('▰'), true, 'a count, not a bar');
-  eq(w.lastEdit().buttons.flat().find((b) => b.data === 'pm:1@a0').text, 'اولویت: بالا', 'each setting button says what it is and its value');
-
-  await w.press('sm:1@a0');
-  plain(w.lastEdit(), 'status menu');
-  eq(w.lastEdit().buttons.flat().find((b) => b.data === 'ss:1:doing@a0').text, 'در حال انجام (انتخاب‌شده)', 'the current choice says it is selected, instead of a tick');
-  await w.press('pm:1@a0');
-  plain(w.lastEdit(), 'priority menu');
-  eq(w.lastEdit().buttons.flat().find((b) => b.data === 'pr:1:high@a0').text, 'بالا (انتخاب‌شده)', 'in the priority menu too');
-  await w.press('tm:1@a0');
-  plain(w.lastEdit(), 'tags');
-  eq([w.lastEdit().buttons.flat().find((b) => b.data.startsWith('tt:1:0~home')).text, w.lastEdit().text.includes('«انتخاب‌شده» یعنی')], ['#home (انتخاب‌شده)', true], 'the tag picker says selected, and explains it in the same words');
-  await w.press('tg:0');
-  plain(w.lastEdit(), 'tag overview');
-  await w.press('lg:0:home');
-  plain(w.lastEdit(), 'a tag’s list');
-  for (const data of ['dm:1@a0', 'qm:1@a0', 'rm:1@a0', 'pl:1@a0']) {
-    await w.press(data);
-    plain(w.lastEdit(), data);
-  }
-
-  // The days: a list that says the weekday and the date, in place of a grid of bare numbers.
-  await w.press('cn:p:1:1405-7@a0');
-  const days = w.lastEdit();
-  plain(days, 'days');
-  eq(days.buttons.flat().filter((b) => b.data.startsWith('cd:p:1:')).length, 14, 'fourteen days to choose from');
-  eq(days.buttons.flat().filter((b) => b.data.startsWith('cd:p:1:')).slice(0, 3).map((b) => b.text), ['امروز', 'فردا (انتخاب‌شده، ۱ تسک)', 'یکشنبه ۱۲ مهر'], 'each button names the day, the one already chosen says so, and a day with tasks says how many');
-  eq(days.buttons.flat().some((b) => b.data === 'cn:p:1:2026-10-16@a0') && !days.buttons.flat().some((b) => b.text.startsWith('‹')), true, 'with a way forward, and none back from today');
-  await w.press('cn:p:1:2026-10-16@a0');
-  eq(w.lastEdit().buttons.flat().some((b) => b.data === 'cn:p:1:2026-10-02@a0'), true, 'a way back once it has gone forward');
-  await w.press('cd:p:1:2026-10-17@a0');
-  plain(w.lastEdit(), 'hours');
-  await w.press('ct:p:1:2026-10-17:1400@a0');
-  plain(w.lastEdit(), 'durations');
-  await w.press('cu:p:1:2026-10-17:1400:60@a0');
-  eq([w.store.tasks[0].plan_date, w.store.tasks[0].plan_start, w.store.tasks[0].plan_end], ['2026-10-17', '14:00', '15:00'], 'and the plan is set through them as usual');
-
-  // Questions that ask for a reply keep the picture they start with: it is how the answer finds its task.
-  await w.press('ed:1');
-  eq(w.last().text.startsWith('✏️'), true, 'a question that asks for an answer is left as it is');
-  await w.reply('Buy rye bread', w.last().text);
-  eq(w.store.tasks[0].title, 'Buy rye bread', 'and its answer is still understood');
-
-  // A task typed in: the confirmation is plain too.
-  await w.say('Pay rent tomorrow 10 #home');
-  plain(w.last(), 'a new task');
-
-  // Reminders arrive plain.
-  w.store.tasks[2].remind_at = '2026-10-02T12:00:00.000Z';
-  await runTick({ store: w.store, tg: w.deps.tg, now: () => w.state.now });
-  plain(w.sent.at(-1), 'a reminder');
-  eq([w.sent.at(-1).options?.rich, w.sent.at(-1).text.includes('⠀')], [undefined, false], 'with no rich message and no invisible padding');
-
-  // Off again: pictures and padding return.
-  await w.press('set:a11y');
-  eq(w.store.owner.a11y, false, 'turned off');
-  eq(w.lastEdit().text.includes('♿'), true, 'the settings screen is drawn with pictures again');
-  await w.press('ls:a:0');
-  eq([decor.test(w.lastEdit().text), w.lastEdit().buttons[0].length], [true, 2], 'and so is a list');
-
-  // A database that has not learnt the column yet.
-  const x = await paired();
-  x.store.patchOwner = async () => { throw new Error('column "a11y" does not exist'); };
-  const quiet = console.error;
-  console.error = () => {};
-  await x.press('set:a11y');
-  console.error = quiet;
-  eq(x.toasts.at(-1).includes('دیتابیس'), true, 'if the database cannot keep it yet, the owner is told');
-
-  // English reads in English.
-  const en = await paired();
-  await en.sync({ snapshot: [{ key: 'A.md|^a|0', title: 'Buy bread', status: 'doing', tags: ['home'], plan_date: '2026-10-03', plan_start: '09:00', priority: 'high' }] });
-  await en.press('set:lang');
-  await en.press('set:a11y');
-  await en.press('ls:a:0');
-  plain(en.lastEdit(), 'English list');
-  eq(['In progress, Priority High', 'Plan: Tomorrow 09:00'].every((line) => en.lastEdit().text.includes(line)), true, 'the same lines, in English, with English commas');
-}
-
 // The statements the functions run to update the database are the migrations'.
 {
   const fs = await import('fs');
   const read = (name) => fs.readFileSync(new URL(`../supabase/migrations/${name}`, import.meta.url), 'utf8');
   const code = (text) => text.split('\n').filter((line) => !line.startsWith('--')).join(' ').replace(/\s+/g, ' ').trim();
-  eq(code(mod.TASK_SETTINGS_SQL), code(read('20261003000000_task_settings.sql') + '\n' + read('20261004000000_subtasks.sql') + '\n' + read('20261005000000_rich_messages.sql') + '\n' + read('20261006000000_message_width.sql') + '\n' + read('20261007000000_tags_accessibility.sql')), 'the update the functions run is the migration files, in order');
+  eq(code(mod.TASK_SETTINGS_SQL), code(read('20261003000000_task_settings.sql') + '\n' + read('20261004000000_subtasks.sql') + '\n' + read('20261005000000_rich_messages.sql') + '\n' + read('20261006000000_message_width.sql') + '\n' + read('20261007000000_tags.sql') + '\n' + read('20261008000000_ai_assistant.sql')), 'the update the functions run is the migration files, in order');
 }
 
 // ── Every setting of a task ────────────────────────────────────────────────

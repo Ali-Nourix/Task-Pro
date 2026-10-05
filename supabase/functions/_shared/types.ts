@@ -12,6 +12,13 @@ export interface TagInfo {
 /** Open, in progress, done, not done: the marker between a task line's brackets, in words. */
 export type Status = 'open' | 'doing' | 'done' | 'failed';
 
+/** A line of the conversation with the assistant, kept for a while so «make it Friday» can follow «call Sara». */
+export interface Remembered {
+  role: 'user' | 'assistant';
+  content: string;
+  at: string;
+}
+
 export type Language = 'fa' | 'en';
 export type CalendarKind = 'jalali' | 'gregorian';
 
@@ -25,8 +32,10 @@ export interface OwnerRow {
   rich?: boolean | null;
   /** How many invisible characters widen a short message (0: none). */
   pad?: number | null;
-  /** Accessible display: words instead of emoji, no bars or invisible padding, one choice to a line, days as a list. */
-  a11y?: boolean | null;
+  /** The assistant answers what is written, unless turned off. It also needs its keys (see the setup guide). */
+  ai?: boolean | null;
+  /** The last lines of the conversation with the assistant. */
+  ai_memory?: Remembered[] | null;
   /** The tags the notes use or define, with how many tasks have each, as the plugin last uploaded them. */
   tag_catalog?: TagInfo[] | null;
   last_sync_at: string | null;
@@ -178,6 +187,10 @@ export interface Telegram {
   answer(callbackId: string, text?: string): Promise<void>;
   /** The list of commands in the chat's menu. */
   setCommands(chatId: number, commands: BotCommand[]): Promise<void>;
+  /** Shows «typing…» in the chat while the assistant thinks. */
+  typing?(chatId: number): Promise<void>;
+  /** The bytes of a file Telegram holds (a voice message). */
+  download?(fileId: string): Promise<Uint8Array>;
 }
 
 export const OPEN: readonly Status[] = ['open', 'doing'];

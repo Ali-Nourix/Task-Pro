@@ -4,11 +4,11 @@
 // a card for each task with its actions, and menus for a reminder and a plan.
 // Moving between them edits the one message in place, so the chat stays clean.
 
-import { accessibleTelegram } from './a11y.ts';
 import { normalize, parseQuickAdd } from './quickadd.ts';
+import { MAX_TAGS, OFF, cleanTitle, parseRepeat, parseTags } from './taskfields.ts';
 import type { Moment, Plan } from './quickadd.ts';
 import { addDays, clockMinutes, isRealDate, isZone, localNow, localToUtc, toClock, utcToLocal } from './time.ts';
-import { buildMonth, dayOf, monthKeyOf, monthName, partsOf } from './calendar-picker.ts';
+import { buildMonth, monthKeyOf, monthName, partsOf } from './calendar-picker.ts';
 import { htmlToRich, mdEscape } from './rich.ts';
 import { PADS, padOf, widenHtml, widenMarkdown } from './widen.ts';
 import { clockLabel, dayLabel, digits, esc, priorityMark, priorityName, repeatLabel, taskCard, taskCardRich, taskEntry, taskEntryRich, truncate, words } from './texts.ts';
@@ -16,6 +16,12 @@ import type { Relatives } from './texts.ts';
 import type { Words } from './texts.ts';
 import type { AddPayload, Button, EditPayload, OwnerRow, PlanPayload, Rich, RemindPayload, StatusPayload, Store, TaskRow, Telegram } from './types.ts';
 import { isOpen } from './types.ts';
+import { AiError } from './ai.ts';
+import type { Ai } from './ai.ts';
+import { freshMemory, remember, runAssistant } from './assistant.ts';
+import type { AssistantResult, Effects, NewTask } from './assistant.ts';
+
+export { cleanTitle, parseRepeat, parseTags };
 
 export interface BotDeps {
   store: Store;
@@ -23,6 +29,8 @@ export interface BotDeps {
   /** The code that proves who may use the bot: /start <code>. */
   pairingCode: string;
   now: () => Date;
+  /** The assistant (Cloudflare Workers AI), when its keys are set. */
+  ai?: Ai;
 }
 
 const COMMANDS: Record<string, string> = {
@@ -42,12 +50,12 @@ const COMMANDS: Record<string, string> = {
   cal: 'cal', تقویم: 'cal',
   lead: 'lead',
   tags: 'tags', tag: 'tags', برچسب: 'tags', برچسبها: 'tags',
+  ai: 'ai', دستیار: 'ai', هوش: 'ai',
 };
 
 /** Words said on their own, without a slash, that are commands rather than tasks. */
 const BARE = new Set(['امروز', 'لیست', 'راهنما', 'وضعیت', 'منو', 'تنظیمات', 'help', 'today', 'list', 'status', 'menu', 'settings']);
 
-const OFF = new Set(['off', 'none', 'no', 'خاموش', 'هیچ', 'نه', 'حذف']);
 const DEFAULT = new Set(['default', 'پیشفرض']);
 
 /** Tasks to a page of the list. */
@@ -56,7 +64,6 @@ const PAGE = 8;
 const STALE_MINUTES = 30;
 const LEADS = [5, 10, 15, 30, 60];
 const PRIORITIES = ['highest', 'high', 'medium', 'low', 'lowest'] as const;
-const MAX_TAGS = 20;
 /** Tags to a page of the tag list and of the picker. */
 const TAG_PAGE = 10;
 /** The most bytes of a tag that fit in a button's data beside the rest of it (Telegram allows 64). */
@@ -86,6 +93,14 @@ interface Message {
   text?: string;
   message_id: number;
   reply_to_message?: { text?: string };
+  voice?: Voice;
+  audio?: Voice;
+}
+
+/** A voice message, or an audio file. */
+interface Voice {
+  file_id: string;
+  duration?: number;
 }
 
 interface Update {
@@ -95,10 +110,7 @@ interface Update {
 
 /** Where a request comes from, and what answering it may touch. */
 interface Ctx {
-  /** What the bot talks to Telegram through: plain when the display is accessible. */
   deps: BotDeps;
-  /** The same, as it came in, for making the next screen when the setting has just changed. */
-  base: BotDeps;
   owner: OwnerRow;
   w: Words;
   chatId: number;
@@ -118,8 +130,9 @@ interface View {
 export async function handleUpdate(update: Update, deps: BotDeps): Promise<void> {
   if (update.callback_query) return handleCallback(update.callback_query, deps);
   const message = update.message;
-  if (!message?.text || message.chat.type !== 'private') return;
-  const text = message.text.trim();
+  const voice = message?.voice ?? message?.audio;
+  if (!message || message.chat.type !== 'private' || (!message.text && !voice)) return;
+  const text = message.text?.trim() ?? '';
   const chatId = message.chat.id;
 
   const owner = await deps.store.getOwner();
@@ -140,6 +153,7 @@ export async function handleUpdate(update: Update, deps: BotDeps): Promise<void>
   // Nobody but the owner gets an answer.
   if (owner.chat_id !== chatId) return;
   const ctx = ctxFor(deps, owner, chatId);
+  if (!text && voice) return handleVoice(voice, ctx);
 
   if (text.startsWith('/')) {
     const name = normalize(first.slice(1).replace(/@\w+$/, ''));
@@ -160,12 +174,13 @@ export async function handleUpdate(update: Update, deps: BotDeps): Promise<void>
 
   const bare = COMMANDS[normalize(text)];
   if (BARE.has(normalize(text)) && bare) return runCommand(bare, '', ctx);
+  // With the assistant on, what is written goes to it first; the plain reading of the words is its fallback.
+  if (deps.ai && owner.ai !== false) return assist(text, ctx, { fallback: true });
   return addTask(text, ctx);
 }
 
-function ctxFor(base: BotDeps, owner: OwnerRow, chatId: number, messageId?: number): Ctx {
-  const deps = owner.a11y === true ? { ...base, tg: accessibleTelegram(base.tg, owner.language) } : base;
-  return { deps, base, owner, w: words(owner.language), chatId, messageId };
+function ctxFor(deps: BotDeps, owner: OwnerRow, chatId: number, messageId?: number): Ctx {
+  return { deps, owner, w: words(owner.language), chatId, messageId };
 }
 
 // ── Commands ───────────────────────────────────────────────────────────────
@@ -188,6 +203,8 @@ async function runCommand(command: string, args: string, ctx: Ctx): Promise<void
       return sendView(ctx, await statusView(ctx));
     case 'tags':
       return sendView(ctx, await tagsView(ctx, 0));
+    case 'ai':
+      return args ? assist(args, ctx) : sendView(ctx, aiView(ctx));
     case 'settings':
       return sendView(ctx, settingsView(ctx));
     case 'done': {
@@ -246,13 +263,13 @@ async function runCommand(command: string, args: string, ctx: Ctx): Promise<void
 
 /** The screen as a rich message, unless the owner turned that off. */
 function richOf(ctx: Ctx, view: View): Rich | undefined {
-  if (ctx.owner.rich === false || ctx.owner.a11y === true) return undefined;
+  if (ctx.owner.rich === false) return undefined;
   const markdown = view.rich ?? htmlToRich(view.text);
   return { markdown: widenMarkdown(markdown, view.text, view.buttons.length > 0, padOf(ctx.owner.pad)), rtl: ctx.owner.language === 'fa' };
 }
 
 /** The classic text of a screen, widened so a short message does not hang its buttons out from under it. */
-const textOf = (ctx: Ctx, view: View): string => widenHtml(view.text, view.buttons.length > 0, ctx.owner.a11y === true ? 0 : padOf(ctx.owner.pad));
+const textOf = (ctx: Ctx, view: View): string => widenHtml(view.text, view.buttons.length > 0, padOf(ctx.owner.pad));
 
 /** Shows a view: in place over the message a button was pressed on, otherwise as a new message. */
 async function present(ctx: Ctx, view: View): Promise<void> {
@@ -272,7 +289,7 @@ const sendView = (ctx: Ctx, view: View): Promise<void> => ctx.deps.tg.send(ctx.c
 
 /** The tab bar under the main screens: home, today, all, new, settings. */
 function navRow(ctx: Ctx, active?: 'home' | 'today' | 'all' | 'new' | 'settings'): Button[] {
-  const n = ctx.owner.a11y === true ? ctx.w.a11y.nav : ctx.w.nav;
+  const n = ctx.w.nav;
   const tab = (key: NonNullable<typeof active>, text: string, data: string): Button => ({ text, data, ...(active === key ? { style: 'primary' as const } : {}) });
   return [tab('home', n.home, 'home'), tab('today', n.today, 'ls:t:0'), tab('all', n.all, 'ls:a:0'), tab('new', n.newTask, 'new'), tab('settings', n.settings, 'set')];
 }
@@ -307,12 +324,12 @@ async function homeView(ctx: Ctx): Promise<View> {
     { text: w.tagsUi.button, data: 'tg:0' },
     { text: w.buttons.status, data: 'st' },
   ]);
+  if (ctx.deps.ai) rows.push([{ text: `🤖 ${w.ai.name}`, data: 'ai' }]);
   rows.push([
     { text: w.buttons.settings, data: 'set' },
     { text: w.buttons.help, data: 'help' },
   ]);
-  const state = owner.a11y === true ? `\n${w.a11y.health[sync.health]}` : '';
-  return { text: w.home(counts, sync.text, sync.health) + state, buttons: rows };
+  return { text: w.home(counts, sync.text, sync.health), buttons: rows };
 }
 
 function helpView(ctx: Ctx): View {
@@ -350,8 +367,8 @@ function settingsView(ctx: Ctx): View {
       lead: owner.lead_minutes,
       rich: w.richNames[owner.rich === false ? 'off' : 'on'],
       pad: w.padNames(padOf(owner.pad)),
-      a11y: w.a11y.names[owner.a11y === true ? 'on' : 'off'],
-    }) + `\n<i>${w.a11y.explain}</i>`,
+      ai: w.ai.states[aiState(ctx)],
+    }),
     buttons: [
       [
         { text: `${w.settingButtons.language}: ${w.languageNames[owner.language]}`, data: 'set:lang' },
@@ -360,7 +377,7 @@ function settingsView(ctx: Ctx): View {
       [{ text: w.settingButtons.lead(owner.lead_minutes), data: 'set:lead' }],
       [{ text: w.settingButtons.zone(owner.timezone), data: 'set:tz' }, { text: w.settingButtons.rich(owner.rich !== false), data: 'set:rich' }],
       [{ text: w.settingButtons.pad(w.padNames(padOf(owner.pad))), data: 'set:pad' }],
-      [{ text: w.a11y.button(owner.a11y === true), data: 'set:a11y', ...(owner.a11y === true ? { style: 'primary' as const } : {}) }],
+      [{ text: w.ai.button(aiState(ctx)), data: 'set:ai', ...(aiState(ctx) === 'on' ? { style: 'primary' as const } : {}) }],
       navRow(ctx, 'settings'),
     ],
   };
@@ -554,12 +571,10 @@ async function listView(ctx: Ctx, filter: Filter, requestedPage: number, tag?: s
     flush();
 
     const rows = slice.flat();
-    // Accessible: one to a row, with as much of the title as a label can hold.
-    const perRow = owner.a11y === true ? 1 : 2;
-    for (let i = 0; i < rows.length; i += perRow) {
+    for (let i = 0; i < rows.length; i += 2) {
       buttons.push(
-        rows.slice(i, i + perRow).map(({ task }) => ({
-          text: owner.a11y === true ? `${digits(position.get(task.key)!, owner.language)}. ${truncate(task.title, 44)}` : `${digits(position.get(task.key)!, owner.language)} · ${truncate(task.title, 15)}`,
+        rows.slice(i, i + 2).map(({ task }) => ({
+          text: `${digits(position.get(task.key)!, owner.language)} · ${truncate(task.title, 15)}`,
           data: `t:${task.n}@${back}`,
         }))
       );
@@ -633,12 +648,12 @@ async function taskView(ctx: Ctx, task: TaskRow, back: string, header?: string, 
   for (let i = 0; i < Math.min(children.length, 6); i += 2) {
     family.push(
       children.slice(i, i + 2).map((child) => ({
-        text: owner.a11y === true ? `${w.a11y.subtask}: ${truncate(child.title, 36)}` : `↳ ${truncate(child.title, 18)}`,
+        text: `↳ ${truncate(child.title, 18)}`,
         data: `t:${child.n}${at}`,
       }))
     );
   }
-  if (parent) family.push([{ text: owner.a11y === true ? `${w.a11y.parent}: ${truncate(parent.title, 40)}` : `⬆️ ${truncate(parent.title, 24)}`, data: `t:${parent.n}${at}` }]);
+  if (parent) family.push([{ text: `⬆️ ${truncate(parent.title, 24)}`, data: `t:${parent.n}${at}` }]);
 
   const buttons: Button[][] = [
     [
@@ -671,11 +686,8 @@ async function taskView(ctx: Ctx, task: TaskRow, back: string, header?: string, 
   };
 }
 
-/** A choice that is the current one: ticked, or, for a screen reader, said to be selected. */
-function selected(ctx: Ctx, on: boolean, text: string): string {
-  if (!on) return text;
-  return ctx.owner.a11y === true ? `${text} (${ctx.w.a11y.selected})` : `✓ ${text}`;
-}
+/** A choice that is the current one, ticked. */
+const selected = (on: boolean, text: string): string => (on ? `✓ ${text}` : text);
 
 /** A small menu of choices for one setting, with a way back to the panel. */
 function choiceView(ctx: Ctx, task: TaskRow, back: string, text: string, rows: Button[][]): View {
@@ -687,7 +699,7 @@ function statusMenuView(ctx: Ctx, task: TaskRow, back: string): View {
   const { w } = ctx;
   const at = back ? `@${back}` : '';
   const names = w.task.statusNames;
-  const mark = (status: string, text: string) => selected(ctx, task.status === status, text);
+  const mark = (status: string, text: string) => selected(task.status === status, text);
   return choiceView(ctx, task, back, w.task.statusMenu(task.title), [
     [
       { text: mark('open', `⚪ ${names.open}`), data: `ss:${task.n}:open${at}` },
@@ -704,7 +716,7 @@ function priorityMenuView(ctx: Ctx, task: TaskRow, back: string): View {
   const { w, owner } = ctx;
   const at = back ? `@${back}` : '';
   const buttons = PRIORITIES.map((level) => ({
-    text: selected(ctx, task.priority === level, `${priorityMark(level)} ${priorityName(owner.language, level)}`),
+    text: selected(task.priority === level, `${priorityMark(level)} ${priorityName(owner.language, level)}`),
     data: `pr:${task.n}:${level}${at}`,
   }));
   return choiceView(ctx, task, back, w.task.priorityMenu(task.title), [
@@ -746,7 +758,7 @@ async function tagsMenuView(ctx: Ctx, task: TaskRow, back: string, requestedPage
       slice.slice(i, i + 2).map((tag) => {
         const on = task.tags.includes(tag.key);
         return {
-          text: truncate(selected(ctx, on, `#${tag.key}`), ctx.owner.a11y === true ? 40 : 24),
+          text: truncate(selected(on, `#${tag.key}`), 24),
           data: `tt:${task.n}:${index}~${tag.key}${at}`,
           ...(on ? { style: 'primary' as const } : {}),
         };
@@ -761,7 +773,7 @@ async function tagsMenuView(ctx: Ctx, task: TaskRow, back: string, requestedPage
     ]);
   }
   rows.push([{ text: w.tagsUi.newTag, data: `ta:${task.n}` }, ...(task.tags.length ? [{ text: w.task.clearTags, data: `tx:${task.n}${at}` }] : [])]);
-  return choiceView(ctx, task, back, w.tagsUi.pick(task.title, task.tags, index + 1, pages, ctx.owner.a11y === true ? `«${w.a11y.selected}»` : '✓'), rows);
+  return choiceView(ctx, task, back, w.tagsUi.pick(task.title, task.tags, index + 1, pages), rows);
 }
 
 function repeatMenuView(ctx: Ctx, task: TaskRow, back: string): View {
@@ -769,7 +781,7 @@ function repeatMenuView(ctx: Ctx, task: TaskRow, back: string): View {
   const at = back ? `@${back}` : '';
   const p = w.task.repeatPresets;
   const set = (token: string) => `qs:${task.n}:${token}${at}`;
-  const mark = (token: string, text: string) => selected(ctx, task.repeat === token, text);
+  const mark = (token: string, text: string) => selected(task.repeat === token, text);
   return choiceView(ctx, task, back, w.task.repeatMenu(task.title, repeatLabel(task.repeat ?? null, owner.language)), [
     [{ text: mark('1d', p.daily), data: set('1d') }, { text: mark('1w', p.weekly), data: set('1w') }],
     [{ text: mark('2w', p.biweekly), data: set('2w') }, { text: mark('1m', p.monthly), data: set('1m') }],
@@ -830,39 +842,23 @@ function planMenuView(ctx: Ctx, task: TaskRow, back: string): View {
 
 // ── A new task ─────────────────────────────────────────────────────────────
 
-/** A title safe to write into a note: no markers of ours, no block ID. */
-export function cleanTitle(title: string): string {
-  return title
-    .replace(/\s+/g, ' ')
-    .replace(/@(?=[a-z]+\()/gi, '')
-    .replace(/\s*\^[\w-]+$/, '')
-    .replace(/^[-*+]\s+(\[.\]\s*)?/, '')
-    .trim()
-    .slice(0, 300);
-}
-
-/** `forcedDay`: the day was chosen on the calendar, so the task is for that day. */
-async function addTask(text: string, ctx: Ctx, forcedDay?: string): Promise<void> {
-  const { w, owner, chatId } = ctx;
+/** Makes a task and queues it for the notes, as if it had been typed in. `warning` says what was left out. */
+async function createTask(ctx: Ctx, spec: NewTask): Promise<{ row: TaskRow; warning?: string }> {
+  const { w, owner } = ctx;
   const now = ctx.deps.now();
   const clock = localNow(owner.timezone, now);
-  const parsed = parseQuickAdd(text, { today: clock.date, minutes: clock.minutes });
-  // A day chosen on the calendar wins over a day in the words; an hour in the words is kept.
-  if (forcedDay) parsed.plan = { ...parsed.plan, date: forcedDay };
-  const title = cleanTitle(parsed.title);
-  if (!title) return ctx.deps.tg.send(chatId, w.needTitle);
 
-  let warning = '';
+  let warning: string | undefined;
   let remindAt: string | null = null;
-  let remind = parsed.remind;
+  let remind = spec.remind;
   if (remind) {
     const at = localToUtc(owner.timezone, remind.date, remind.time);
     if (at.getTime() < now.getTime()) {
       warning = w.reminderPast;
       remind = undefined;
     } else remindAt = at.toISOString();
-  } else if (parsed.plan?.start) {
-    const start = localToUtc(owner.timezone, parsed.plan.date, parsed.plan.start);
+  } else if (spec.plan?.start) {
+    const start = localToUtc(owner.timezone, spec.plan.date, spec.plan.start);
     const at = new Date(start.getTime() - owner.lead_minutes * 60_000);
     if (at.getTime() >= now.getTime()) remindAt = at.toISOString();
   }
@@ -870,16 +866,16 @@ async function addTask(text: string, ctx: Ctx, forcedDay?: string): Promise<void
   const key = `tg:${crypto.randomUUID()}`;
   const row = await ctx.deps.store.insertTask({
     key,
-    title,
+    title: spec.title,
     status: 'open',
-    priority: parsed.priority ?? null,
-    deadline: parsed.deadline ?? null,
-    plan_date: parsed.plan?.date ?? null,
-    plan_start: parsed.plan?.start ?? null,
-    plan_end: parsed.plan?.end ?? null,
+    priority: spec.priority ?? null,
+    deadline: spec.deadline ?? null,
+    plan_date: spec.plan?.date ?? null,
+    plan_start: spec.plan?.start ?? null,
+    plan_end: spec.plan?.end ?? null,
     remind_at: remindAt,
-    tags: parsed.tags,
-    repeat: null,
+    tags: spec.tags,
+    repeat: spec.repeat ?? null,
     parent_key: null,
     parent_title: null,
     subs_done: null,
@@ -889,19 +885,190 @@ async function addTask(text: string, ctx: Ctx, forcedDay?: string): Promise<void
     pending: true,
   });
   // The task is made for the day it is planned, reminded or due on (else today), and written into that day's note.
-  const day = parsed.plan?.date ?? remind?.date ?? parsed.deadline ?? clock.date;
-  const payload: AddPayload = { key, day, title, tags: parsed.tags };
-  if (parsed.priority) payload.priority = parsed.priority;
-  if (parsed.deadline) payload.deadline = parsed.deadline;
-  if (parsed.plan) payload.plan = parsed.plan;
+  const day = spec.plan?.date ?? remind?.date ?? spec.deadline ?? clock.date;
+  const payload: AddPayload = { key, day, title: spec.title, tags: spec.tags };
+  if (spec.priority) payload.priority = spec.priority;
+  if (spec.deadline) payload.deadline = spec.deadline;
+  if (spec.plan) payload.plan = spec.plan;
   if (remind) payload.remind = remind;
   await ctx.deps.store.addCommand('add', payload);
+  if (spec.repeat) {
+    try {
+      await ctx.deps.store.addCommand('edit', { key, repeat: spec.repeat });
+    } catch (error) {
+      console.error('repeat not queued', error);
+      await ctx.deps.store.patchTask(key, { repeat: null });
+    }
+  }
+  return { row, warning };
+}
+
+/** `forcedDay`: the day was chosen on the calendar, so the task is for that day. */
+async function addTask(text: string, ctx: Ctx, forcedDay?: string): Promise<void> {
+  const { w, owner, chatId } = ctx;
+  const clock = localNow(owner.timezone, ctx.deps.now());
+  const parsed = parseQuickAdd(text, { today: clock.date, minutes: clock.minutes });
+  // A day chosen on the calendar wins over a day in the words; an hour in the words is kept.
+  if (forcedDay) parsed.plan = { ...parsed.plan, date: forcedDay };
+  const title = cleanTitle(parsed.title);
+  if (!title) return ctx.deps.tg.send(chatId, w.needTitle);
+
+  const spec: NewTask = { title, tags: parsed.tags };
+  if (parsed.priority) spec.priority = parsed.priority;
+  if (parsed.deadline) spec.deadline = parsed.deadline;
+  if (parsed.plan) spec.plan = parsed.plan;
+  if (parsed.remind) spec.remind = parsed.remind;
+  const { row, warning } = await createTask(ctx, spec);
 
   const view = await taskView(ctx, row, '', w.added, [warning, w.waitingForNotes].filter(Boolean).join('\n'));
   // A task just typed can be taken back with one tap.
   const undo = view.buttons.flat().find((button) => button.data.startsWith('del:'));
   if (undo) Object.assign(undo, { text: w.buttons.undo, data: `undo:${row.n}` });
   await sendView(ctx, view);
+}
+
+// ── The assistant ──────────────────────────────────────────────────────────
+
+const aiState = (ctx: Ctx): 'on' | 'off' | 'unset' => (!ctx.deps.ai ? 'unset' : ctx.owner.ai === false ? 'off' : 'on');
+
+/** What the assistant is for, with the switch when it can be switched. */
+function aiView(ctx: Ctx): View {
+  const state = aiState(ctx);
+  const rows: Button[][] = [];
+  if (state !== 'unset') rows.push([{ text: ctx.w.ai.button(state), data: 'set:ai', ...(state === 'on' ? { style: 'primary' as const } : {}) }]);
+  rows.push(navRow(ctx));
+  return { text: ctx.w.ai.intro(state), buttons: rows };
+}
+
+/** What the assistant may do to the bot's tasks: the same things a tap or a typed command does. */
+function effectsFor(ctx: Ctx): Effects {
+  return {
+    create: (spec) => createTask(ctx, spec),
+    setPlan: async (task, plan) => {
+      await applyPlan(ctx, task, plan);
+    },
+    setRemind: async (task, moment) => {
+      await applyReminder(ctx, task, moment);
+    },
+    edit: (task, fields, patch) => saveEdit(ctx, task, fields, patch),
+    setStatus: async (task, status) => {
+      await ctx.deps.store.patchTask(task.key, { status });
+      const payload: StatusPayload = { key: task.key, status };
+      await ctx.deps.store.addCommand('status', payload);
+    },
+  };
+}
+
+/** The most tasks listed in full on the assistant's card. */
+const SHOWN = 15;
+
+async function assistantView(ctx: Ctx, result: AssistantResult, heard?: string): Promise<View> {
+  const { w, owner } = ctx;
+  const { store } = ctx.deps;
+  const today = todayOf(ctx);
+  const load = async (keys: string[]): Promise<TaskRow[]> => (await Promise.all(keys.map((key) => store.taskByKey(key)))).filter((task): task is TaskRow => !!task);
+  const keysOf = (kind: 'added' | 'changed' | 'status') => result.changes.filter((change) => change.kind === kind).map((change) => change.key);
+  const added = await load(keysOf('added'));
+  const changed = await load(keysOf('changed'));
+  const statuses = await load(keysOf('status'));
+  const removing = await load(result.proposals);
+
+  const entries = (tasks: TaskRow[]): string => {
+    const lines = tasks.slice(0, SHOWN).map((task) => taskEntry(task, owner, today, { position: task.n }));
+    if (tasks.length > SHOWN) lines.push(`<i>+${digits(tasks.length - SHOWN, owner.language)}</i>`);
+    return `<blockquote>${lines.join('\n')}</blockquote>`;
+  };
+
+  const acted = added.length + changed.length + statuses.length + removing.length > 0;
+  const sections: string[] = [];
+  if (heard) sections.push(w.ai.heard(heard));
+  const say = result.say ? esc(result.say) : '';
+  if (acted) sections.push([w.ai.done, say].filter(Boolean).join('\n'));
+  else if (say) sections.push(`🤖 ${say}`);
+  else if (!result.warnings.length) sections.push(w.ai.nothing);
+  if (added.length) sections.push(`${w.ai.groups.added}\n${entries(added)}`);
+  if (changed.length) sections.push(`${w.ai.groups.changed}\n${entries(changed)}`);
+  if (statuses.length) {
+    const lines = statuses.slice(0, SHOWN).map((task) => `${task.status === 'done' ? '✅' : task.status === 'failed' ? '❌' : '🔄'} <b>${digits(task.n, owner.language)}.</b> ${esc(truncate(task.title, 80))} · ${w.labels.statuses[task.status]}`);
+    sections.push(`${w.ai.groups.status}\n<blockquote>${lines.join('\n')}</blockquote>`);
+  }
+  if (removing.length) sections.push(`${w.ai.groups.remove}\n${entries(removing)}`);
+  if (result.warnings.length) {
+    sections.push(result.warnings.map((warning) => (warning.kind === 'noTitle' || warning.kind === 'tooMany' ? w.ai.warn[warning.kind] : w.ai.warn[warning.kind](warning.detail ?? ''))).join('\n'));
+  }
+
+  const buttons: Button[][] = [];
+  const opened = [...added, ...changed].slice(0, 8);
+  for (let i = 0; i < opened.length; i += 2) {
+    buttons.push(opened.slice(i, i + 2).map((task) => ({ text: `${digits(task.n, owner.language)} · ${truncate(task.title, 15)}`, data: `t:${task.n}@a0` })));
+  }
+  // The numbers ride in the button's data (64 bytes): ten tasks at most.
+  const undoable = added.slice(0, 10);
+  if (undoable.length) buttons.push([{ text: w.ai.undoAll(undoable.length), data: `ux:${undoable.map((task) => task.n).join('.')}` }]);
+  for (const task of removing.slice(0, 4)) buttons.push([{ text: `🗑 ${truncate(task.title, 24)}`, data: `del:${task.n}@a0`, style: 'danger' }]);
+  buttons.push(navRow(ctx));
+  return { text: sections.join('\n\n'), buttons };
+}
+
+/** Writes to the assistant, or says what it is. `heard`: the words came from a voice message. */
+async function assist(text: string, ctx: Ctx, options: { heard?: string; fallback?: boolean } = {}): Promise<void> {
+  const { w, owner, chatId } = ctx;
+  const { ai, store, tg } = ctx.deps;
+  if (!ai) return tg.send(chatId, w.ai.errors.notSetUp);
+  await tg.typing?.(chatId).catch(() => undefined);
+  const now = ctx.deps.now();
+  const memory = freshMemory(owner.ai_memory, now);
+  let result: AssistantResult;
+  try {
+    result = await runAssistant({ ai, store, effects: effectsFor(ctx), owner, now, text, memory, tags: (await knownTags(ctx)).map((tag) => tag.key) });
+  } catch (error) {
+    console.error('assistant failed', error);
+    const problem = w.ai.errors[error instanceof AiError ? error.kind : 'busy'];
+    const heard = options.heard ? `${w.ai.heard(options.heard)}\n\n` : '';
+    if (!options.fallback) return tg.send(chatId, `${heard}${problem}`);
+    await tg.send(chatId, `${problem}\n${w.ai.errors.fellBack}`);
+    return addTask(text, ctx);
+  }
+  try {
+    await store.patchOwner({ ai_memory: remember(memory, text, result, now) });
+  } catch (error) {
+    // The database has not learnt the column yet: the assistant just forgets between messages.
+    console.error('assistant memory not kept', error);
+  }
+  await sendView(ctx, await assistantView(ctx, result, options.heard));
+}
+
+/** A voice message becomes words, and the words go to the assistant. */
+async function handleVoice(voice: Voice, ctx: Ctx): Promise<void> {
+  const { w, owner, chatId } = ctx;
+  const { ai, tg } = ctx.deps;
+  if (!ai || !tg.download) return tg.send(chatId, w.ai.voice.needsAi);
+  if ((voice.duration ?? 0) > 120) return tg.send(chatId, w.ai.voice.tooLong);
+  await tg.typing?.(chatId).catch(() => undefined);
+  let heard: string;
+  try {
+    heard = (await ai.transcribe(await tg.download(voice.file_id), owner.language)).trim();
+  } catch (error) {
+    console.error('voice not read', error);
+    return tg.send(chatId, error instanceof AiError && error.kind !== 'bad' && error.kind !== 'format' ? w.ai.errors[error.kind] : w.ai.voice.failed);
+  }
+  if (!heard) return tg.send(chatId, w.ai.voice.empty);
+  return assist(heard, ctx, { heard });
+}
+
+/** Takes back the tasks the assistant just made. */
+async function undoAssistant(numbers: string, ctx: Ctx): Promise<void> {
+  const { w } = ctx;
+  let count = 0;
+  for (const n of numbers.split('.').map(Number).filter((n) => Number.isInteger(n) && n > 0).slice(0, 10)) {
+    const task = await ctx.deps.store.taskByN(n);
+    // Only what the bot itself made and is still open: a number in an old message must not reach a task that has moved on.
+    if (!task || task.origin !== 'telegram' || !isOpen(task.status)) continue;
+    await removeTask(task, ctx.deps);
+    count++;
+  }
+  ctx.toast = w.deletedToast;
+  await present(ctx, { text: w.ai.undone(count), buttons: [[{ text: w.buttons.all, data: 'ls:a:0' }, { text: w.buttons.menu, data: 'home' }]] });
 }
 
 // ── Changing a task ────────────────────────────────────────────────────────
@@ -1025,48 +1192,8 @@ function currentDay(ctx: Ctx, kind: Pick, task: TaskRow | null): string | null {
   return null;
 }
 
-/** Where an accessible list of days begins: the day in the key, or the first of the month in it (never before today). */
-function daysStart(ctx: Ctx, key: string, today: string): string {
-  if (isRealDate(key)) return key < today ? today : key;
-  const [year, month] = key.split('-').map(Number);
-  if (!year || !month || month < 1 || month > 12) return today;
-  const first = dayOf(ctx.owner.calendar, year, month, 1);
-  return first < today ? today : first;
-}
-
-/** Fourteen days as a list of buttons that each say the weekday and the date, for a screen reader (a grid of bare numbers says nothing). */
-async function daysListView(ctx: Ctx, kind: Pick, task: TaskRow | null, key: string, back: string): Promise<View> {
-  const { w, owner } = ctx;
-  const today = todayOf(ctx);
-  const at = back ? `@${back}` : '';
-  const n = task?.n ?? 0;
-  const start = daysStart(ctx, key, today);
-  const days = Array.from({ length: 14 }, (_, i) => addDays(start, i));
-  const current = currentDay(ctx, kind, task);
-  const busy = new Map<string, number>();
-  for (const candidate of await ctx.deps.store.openTasks()) if (candidate.plan_date) busy.set(candidate.plan_date, (busy.get(candidate.plan_date) ?? 0) + 1);
-  const comma = owner.language === 'fa' ? '،' : ',';
-  const label = (iso: string) => {
-    const count = busy.get(iso);
-    const tasks = owner.language === 'fa' ? 'تسک' : count === 1 ? 'task' : 'tasks';
-    const marks = [iso === current ? w.a11y.selected : '', count ? `${digits(count, owner.language)} ${tasks}` : ''].filter(Boolean);
-    return `${dayLabel(iso, owner, today)}${marks.length ? ` (${marks.join(`${comma} `)})` : ''}`;
-  };
-  const buttons: Button[][] = [];
-  for (let i = 0; i < days.length; i += 2) buttons.push(days.slice(i, i + 2).map((iso) => ({ text: truncate(label(iso), 40), data: `cd:${kind}:${n}:${iso}${at}` })));
-  const previous = addDays(start, -14);
-  const nav: Button[] = [];
-  if (start > today) nav.push({ text: w.a11y.days.prev, data: `cn:${kind}:${n}:${previous < today ? today : previous}${at}` });
-  nav.push({ text: w.a11y.days.next, data: `cn:${kind}:${n}:${addDays(start, 14)}${at}` });
-  buttons.push(nav);
-  buttons.push([{ text: w.buttons.back, data: kind === 'x' ? 'new' : `t:${n}${at}` }]);
-  const currentLabel = current ? dayLabel(current, owner, today) : null;
-  return { text: w.a11y.days.title(w.cal.kinds[kind], task?.title ?? null, currentLabel, dayLabel(days[0], owner, today), dayLabel(days[13], owner, today)), buttons };
-}
-
 /** A month drawn as buttons; the day to pick is a tap away. */
 async function calendarView(ctx: Ctx, kind: Pick, task: TaskRow | null, key: string, back: string): Promise<View> {
-  if (ctx.owner.a11y === true) return daysListView(ctx, kind, task, key, back);
   const { w, owner } = ctx;
   const system = owner.calendar;
   const language = owner.language;
@@ -1226,35 +1353,6 @@ async function closeTask(task: TaskRow, status: 'done' | 'failed', ctx: Ctx): Pr
   await ctx.deps.store.addCommand('status', payload);
 }
 
-/** The words after "every" as a repeat token: «هر ۳ روز» is 3d. Null for none, undefined when unreadable. */
-export function parseRepeat(text: string): string | null | undefined {
-  const t = normalize(text).replace(/\s+/g, ' ').trim();
-  if (!t) return undefined;
-  if (OFF.has(t) || /^(بدون|هیچ|no|none|never)/.test(t)) return null;
-  const named: Record<string, string> = { روزانه: '1d', daily: '1d', هفتگی: '1w', weekly: '1w', ماهانه: '1m', monthly: '1m' };
-  if (named[t]) return named[t];
-  const units: Record<string, string> = { روز: 'd', day: 'd', days: 'd', d: 'd', هفته: 'w', week: 'w', weeks: 'w', w: 'w', ماه: 'm', month: 'm', months: 'm', m: 'm' };
-  const match = /^(?:هر|every|each)?\s*(\d{1,3})?\s*([a-z\u0600-\u06ff]+)$/.exec(t);
-  const unit = match && units[match[2]];
-  const every = match?.[1] ? Number(match[1]) : 1;
-  return unit && every >= 1 ? `${every}${unit}` : undefined;
-}
-
-/** Tag keys from what was typed: «#کار  خانه, home» is three. */
-export function parseTags(text: string): string[] {
-  const keys: string[] = [];
-  for (const part of text.split(/[\s,،#]+/)) {
-    const key = part
-      .normalize('NFC')
-      .toLowerCase()
-      .replace(/[^\p{L}\p{N}\p{M}_\-/\u200c]/gu, '')
-      .replace(/-{2,}/g, '-')
-      .replace(/^[-/]+|[-/]+$/g, '');
-    if (key && !keys.includes(key)) keys.push(key);
-  }
-  return keys.slice(0, MAX_TAGS);
-}
-
 /** What came back for a question the bot asked: a title, a deadline, tags, a repeat, a reminder or a plan. */
 async function answerAsked(kind: string, n: number, text: string, replied: string, ctx: Ctx): Promise<void> {
   const { w, owner } = ctx;
@@ -1351,6 +1449,10 @@ async function route(data: string, ctx: Ctx): Promise<void> {
     }
     case 'set':
       return settings(rawN, ctx);
+    case 'ai':
+      return present(ctx, aiView(ctx));
+    case 'ux':
+      return undoAssistant(rawN ?? '', ctx);
     case 'cn':
     case 'cd':
     case 'ct':
@@ -1560,13 +1662,17 @@ async function settings(what: string | undefined, ctx: Ctx): Promise<void> {
       ctx.toast = w.richUnavailable;
       return;
     }
-  } else if (what === 'a11y') {
-    const a11y = owner.a11y !== true;
+  } else if (what === 'ai') {
+    if (!ctx.deps.ai) {
+      ctx.toast = w.ai.errors.notSetUp;
+      return;
+    }
+    const ai = owner.ai === false;
     try {
-      await store.patchOwner({ a11y });
-      next = { ...owner, a11y };
+      await store.patchOwner({ ai });
+      next = { ...owner, ai };
     } catch (error) {
-      console.error('accessible setting not saved', error);
+      console.error('assistant setting not saved', error);
       ctx.toast = w.richUnavailable;
       return;
     }
@@ -1574,7 +1680,7 @@ async function settings(what: string | undefined, ctx: Ctx): Promise<void> {
     ctx.toast = w.zoneHint;
     return;
   }
-  const fresh = ctxFor(ctx.base, next, ctx.chatId, ctx.messageId);
+  const fresh = ctxFor(ctx.deps, next, ctx.chatId, ctx.messageId);
   fresh.toast = ctx.toast;
   await present(fresh, settingsView(fresh));
 }
