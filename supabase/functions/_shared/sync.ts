@@ -3,7 +3,7 @@
 
 import { addDays, isClock, isRealDate } from './time.ts';
 import { words } from './texts.ts';
-import type { CommandRow, SnapshotTask, Status, Store, Telegram } from './types.ts';
+import type { CommandRow, SnapshotTask, Status, Store, TagInfo, Telegram } from './types.ts';
 
 const STATUSES = new Set<string>(['open', 'doing', 'done', 'failed']);
 const PRIORITIES = new Set<string>(['highest', 'high', 'medium', 'low', 'lowest']);
@@ -19,6 +19,8 @@ export interface Ack {
 export interface SyncRequest {
   snapshot?: unknown[];
   acks?: Ack[];
+  /** The tags the notes know, with how many tasks have each. */
+  tags?: unknown[];
 }
 
 export interface SyncResponse {
@@ -62,6 +64,26 @@ export function cleanTask(value: unknown): SnapshotTask | null {
   };
 }
 
+export const MAX_TAGS_KNOWN = 300;
+
+/** The tag catalog from the upload: keys the bot can put in a button, with names and counts, most used first. */
+export function cleanTagCatalog(value: unknown): TagInfo[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  const out: TagInfo[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== 'object') continue;
+    const v = item as Record<string, unknown>;
+    const key = text(v.key, 60);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    const name = text(v.name, 60);
+    out.push({ key, ...(name && name !== key ? { name } : {}), count: count(v.count) ?? 0 });
+    if (out.length >= MAX_TAGS_KNOWN) break;
+  }
+  return out.sort((a, b) => b.count - a.count || a.key.localeCompare(b.key));
+}
+
 export async function handleSync(
   request: SyncRequest,
   deps: { store: Store; tg?: Telegram; now: () => Date }
@@ -99,6 +121,15 @@ export async function handleSync(
       if (typeof command.payload.key === 'string') keep.add(command.payload.key);
     }
     await store.replaceSnapshot(rows, keep);
+  }
+
+  if (owner && Array.isArray(request.tags)) {
+    try {
+      await store.patchOwner({ tag_catalog: cleanTagCatalog(request.tags) });
+    } catch (error) {
+      // A database that has not learnt the column yet (it updates itself on first use) still syncs the tasks.
+      console.error('tag catalog not saved', error);
+    }
   }
 
   if (owner) await store.patchOwner({ last_sync_at: deps.now().toISOString() });

@@ -4,10 +4,11 @@
 // a card for each task with its actions, and menus for a reminder and a plan.
 // Moving between them edits the one message in place, so the chat stays clean.
 
+import { accessibleTelegram } from './a11y.ts';
 import { normalize, parseQuickAdd } from './quickadd.ts';
 import type { Moment, Plan } from './quickadd.ts';
 import { addDays, clockMinutes, isRealDate, isZone, localNow, localToUtc, toClock, utcToLocal } from './time.ts';
-import { buildMonth, monthKeyOf, monthName, partsOf } from './calendar-picker.ts';
+import { buildMonth, dayOf, monthKeyOf, monthName, partsOf } from './calendar-picker.ts';
 import { htmlToRich, mdEscape } from './rich.ts';
 import { PADS, padOf, widenHtml, widenMarkdown } from './widen.ts';
 import { clockLabel, dayLabel, digits, esc, priorityMark, priorityName, repeatLabel, taskCard, taskCardRich, taskEntry, taskEntryRich, truncate, words } from './texts.ts';
@@ -40,6 +41,7 @@ const COMMANDS: Record<string, string> = {
   tz: 'tz', timezone: 'tz',
   cal: 'cal', تقویم: 'cal',
   lead: 'lead',
+  tags: 'tags', tag: 'tags', برچسب: 'tags', برچسبها: 'tags',
 };
 
 /** Words said on their own, without a slash, that are commands rather than tasks. */
@@ -55,11 +57,22 @@ const STALE_MINUTES = 30;
 const LEADS = [5, 10, 15, 30, 60];
 const PRIORITIES = ['highest', 'high', 'medium', 'low', 'lowest'] as const;
 const MAX_TAGS = 20;
+/** Tags to a page of the tag list and of the picker. */
+const TAG_PAGE = 10;
+/** The most bytes of a tag that fit in a button's data beside the rest of it (Telegram allows 64). */
+const TAG_PICK_BYTES = 36;
+const TAG_LIST_BYTES = 24;
+const TAG_SAFE = /^[\p{L}\p{N}\p{M}_\-/\u200c]+$/u;
+const byteLength = (text: string): number => new TextEncoder().encode(text).length;
+/** A tag that can ride in a button's data. */
+const fits = (tag: string, limit: number): boolean => TAG_SAFE.test(tag) && byteLength(tag) <= limit;
 
 /** A message that answers one of the bot's questions starts with the property's emoji and ends its first line with the task's number. */
 const ASKED = /^(🔔|📅|✏|⏳|🏷|🔁|⏰|🕒)[^\n#]*#([\d۰-۹]+)[ \t]*(?:\n|$)/u;
 /** The question "what is the task?" asked for a day chosen on the calendar: the day is on the second line. */
 const ASKED_DAY = /^🗓[^\n]*\n(\d{4}-\d{2}-\d{2})/u;
+/** The question "what is the task?" asked for a new task that starts with a tag: the tag is on the second line. */
+const ASKED_TAGGED = /^🆕[^\n]*\n#(\S+)/u;
 
 /** What the calendar is picking a day for: a reminder, a plan, a deadline, or a new task. */
 type Pick = 'r' | 'p' | 'd' | 'x';
@@ -82,7 +95,10 @@ interface Update {
 
 /** Where a request comes from, and what answering it may touch. */
 interface Ctx {
+  /** What the bot talks to Telegram through: plain when the display is accessible. */
   deps: BotDeps;
+  /** The same, as it came in, for making the next screen when the setting has just changed. */
+  base: BotDeps;
   owner: OwnerRow;
   w: Words;
   chatId: number;
@@ -137,6 +153,8 @@ export async function handleUpdate(update: Update, deps: BotDeps): Promise<void>
   const replied = message.reply_to_message?.text ?? '';
   const askedDay = ASKED_DAY.exec(replied);
   if (askedDay) return addTask(text, ctx, askedDay[1]);
+  const askedTag = ASKED_TAGGED.exec(replied);
+  if (askedTag) return addTask(`${text} #${askedTag[1]}`, ctx);
   const asked = ASKED.exec(replied);
   if (asked) return answerAsked(asked[1], numbersIn(asked[2])[0], text, replied, ctx);
 
@@ -145,8 +163,9 @@ export async function handleUpdate(update: Update, deps: BotDeps): Promise<void>
   return addTask(text, ctx);
 }
 
-function ctxFor(deps: BotDeps, owner: OwnerRow, chatId: number, messageId?: number): Ctx {
-  return { deps, owner, w: words(owner.language), chatId, messageId };
+function ctxFor(base: BotDeps, owner: OwnerRow, chatId: number, messageId?: number): Ctx {
+  const deps = owner.a11y === true ? { ...base, tg: accessibleTelegram(base.tg, owner.language) } : base;
+  return { deps, base, owner, w: words(owner.language), chatId, messageId };
 }
 
 // ── Commands ───────────────────────────────────────────────────────────────
@@ -167,6 +186,8 @@ async function runCommand(command: string, args: string, ctx: Ctx): Promise<void
       return sendView(ctx, await listView(ctx, 'a', 0));
     case 'status':
       return sendView(ctx, await statusView(ctx));
+    case 'tags':
+      return sendView(ctx, await tagsView(ctx, 0));
     case 'settings':
       return sendView(ctx, settingsView(ctx));
     case 'done': {
@@ -225,13 +246,13 @@ async function runCommand(command: string, args: string, ctx: Ctx): Promise<void
 
 /** The screen as a rich message, unless the owner turned that off. */
 function richOf(ctx: Ctx, view: View): Rich | undefined {
-  if (ctx.owner.rich === false) return undefined;
+  if (ctx.owner.rich === false || ctx.owner.a11y === true) return undefined;
   const markdown = view.rich ?? htmlToRich(view.text);
   return { markdown: widenMarkdown(markdown, view.text, view.buttons.length > 0, padOf(ctx.owner.pad)), rtl: ctx.owner.language === 'fa' };
 }
 
 /** The classic text of a screen, widened so a short message does not hang its buttons out from under it. */
-const textOf = (ctx: Ctx, view: View): string => widenHtml(view.text, view.buttons.length > 0, padOf(ctx.owner.pad));
+const textOf = (ctx: Ctx, view: View): string => widenHtml(view.text, view.buttons.length > 0, ctx.owner.a11y === true ? 0 : padOf(ctx.owner.pad));
 
 /** Shows a view: in place over the message a button was pressed on, otherwise as a new message. */
 async function present(ctx: Ctx, view: View): Promise<void> {
@@ -251,7 +272,7 @@ const sendView = (ctx: Ctx, view: View): Promise<void> => ctx.deps.tg.send(ctx.c
 
 /** The tab bar under the main screens: home, today, all, new, settings. */
 function navRow(ctx: Ctx, active?: 'home' | 'today' | 'all' | 'new' | 'settings'): Button[] {
-  const n = ctx.w.nav;
+  const n = ctx.owner.a11y === true ? ctx.w.a11y.nav : ctx.w.nav;
   const tab = (key: NonNullable<typeof active>, text: string, data: string): Button => ({ text, data, ...(active === key ? { style: 'primary' as const } : {}) });
   return [tab('home', n.home, 'home'), tab('today', n.today, 'ls:t:0'), tab('all', n.all, 'ls:a:0'), tab('new', n.newTask, 'new'), tab('settings', n.settings, 'set')];
 }
@@ -283,20 +304,29 @@ async function homeView(ctx: Ctx): Promise<View> {
   ];
   if (counts.overdue) rows[1].push({ text: `${w.buttons.overdue} ${digits(counts.overdue, owner.language)}`, data: 'ls:o:0', style: 'danger' });
   rows.push([
+    { text: w.tagsUi.button, data: 'tg:0' },
     { text: w.buttons.status, data: 'st' },
+  ]);
+  rows.push([
     { text: w.buttons.settings, data: 'set' },
     { text: w.buttons.help, data: 'help' },
   ]);
-  return { text: w.home(counts, sync.text, sync.health), buttons: rows };
+  const state = owner.a11y === true ? `\n${w.a11y.health[sync.health]}` : '';
+  return { text: w.home(counts, sync.text, sync.health) + state, buttons: rows };
 }
 
 function helpView(ctx: Ctx): View {
   return { text: ctx.w.help, buttons: [navRow(ctx)] };
 }
 
-function newTaskView(ctx: Ctx): View {
+async function newTaskView(ctx: Ctx): Promise<View> {
   const key = monthKeyOf(ctx.owner.calendar, localNow(ctx.owner.timezone, ctx.deps.now()).date);
-  return { text: ctx.w.newTask, buttons: [[{ text: ctx.w.cal.newOnDay, data: `cn:x:0:${key}`, style: 'primary' }], navRow(ctx, 'new')] };
+  const tags = (await knownTags(ctx)).filter((tag) => fits(tag.key, TAG_LIST_BYTES)).slice(0, 6);
+  const buttons: Button[][] = [[{ text: ctx.w.cal.newOnDay, data: `cn:x:0:${key}`, style: 'primary' }]];
+  for (let i = 0; i < tags.length; i += 3) buttons.push(tags.slice(i, i + 3).map((tag) => ({ text: truncate(`#${tag.key}`, 18), data: `nt:${tag.key}` })));
+  buttons.push(navRow(ctx, 'new'));
+  const hint = tags.length ? `\n\n<b>${ctx.w.tagsUi.yourTags}</b> — <i>${ctx.w.tagsUi.startWith}</i>` : '';
+  return { text: `${ctx.w.newTask}${hint}`, buttons };
 }
 
 async function statusView(ctx: Ctx): Promise<View> {
@@ -320,7 +350,8 @@ function settingsView(ctx: Ctx): View {
       lead: owner.lead_minutes,
       rich: w.richNames[owner.rich === false ? 'off' : 'on'],
       pad: w.padNames(padOf(owner.pad)),
-    }),
+      a11y: w.a11y.names[owner.a11y === true ? 'on' : 'off'],
+    }) + `\n<i>${w.a11y.explain}</i>`,
     buttons: [
       [
         { text: `${w.settingButtons.language}: ${w.languageNames[owner.language]}`, data: 'set:lang' },
@@ -329,9 +360,65 @@ function settingsView(ctx: Ctx): View {
       [{ text: w.settingButtons.lead(owner.lead_minutes), data: 'set:lead' }],
       [{ text: w.settingButtons.zone(owner.timezone), data: 'set:tz' }, { text: w.settingButtons.rich(owner.rich !== false), data: 'set:rich' }],
       [{ text: w.settingButtons.pad(w.padNames(padOf(owner.pad))), data: 'set:pad' }],
+      [{ text: w.a11y.button(owner.a11y === true), data: 'set:a11y', ...(owner.a11y === true ? { style: 'primary' as const } : {}) }],
       navRow(ctx, 'settings'),
     ],
   };
+}
+
+// ── Tags ───────────────────────────────────────────────────────────────────
+
+/** A tag the bot can offer: how many tasks the notes have with it, and how many of those are open. */
+interface KnownTag {
+  key: string;
+  name?: string;
+  uses: number;
+  open: number;
+}
+
+/** The tags the notes know (as the plugin last uploaded them) with the ones open tasks carry, most used first. */
+async function knownTags(ctx: Ctx): Promise<KnownTag[]> {
+  const known = new Map<string, KnownTag>();
+  for (const info of ctx.owner.tag_catalog ?? []) known.set(info.key, { key: info.key, name: info.name, uses: info.count, open: 0 });
+  for (const task of await ctx.deps.store.openTasks()) {
+    for (const key of new Set(task.tags)) {
+      const entry = known.get(key) ?? { key, uses: 0, open: 0 };
+      entry.open++;
+      entry.uses = Math.max(entry.uses, entry.open);
+      known.set(key, entry);
+    }
+  }
+  return [...known.values()].sort((a, b) => b.uses - a.uses || b.open - a.open || a.key.localeCompare(b.key));
+}
+
+/** All the tags, a page at a time: tap one for its open tasks. */
+async function tagsView(ctx: Ctx, requestedPage: number): Promise<View> {
+  const { w, owner } = ctx;
+  const all = await knownTags(ctx);
+  const tags = all.filter((tag) => fits(tag.key, TAG_LIST_BYTES));
+  const pages = Math.max(1, Math.ceil(tags.length / TAG_PAGE));
+  const index = Math.min(Math.max(0, requestedPage), pages - 1);
+  const slice = tags.slice(index * TAG_PAGE, (index + 1) * TAG_PAGE);
+  const u = w.tagsUi;
+
+  const lines = slice.map((tag) => `<code>#${esc(tag.key)}</code>${tag.name ? ` — ${esc(tag.name)}` : ''} · ${u.openCount(tag.open).replace(/\d+/g, (d) => digits(d, owner.language))}`);
+  const text = tags.length
+    ? `${u.viewTitle(tags.length, index + 1, pages)}\n<blockquote>${lines.join('\n')}</blockquote>\n${u.viewHelp}${all.length > tags.length ? `\n<i>${u.tooLong}</i>` : ''}`
+    : `${u.viewTitle(0, 1, 1)}\n\n${u.none}`;
+
+  const buttons: Button[][] = [];
+  for (let i = 0; i < slice.length; i += 2) {
+    buttons.push(slice.slice(i, i + 2).map((tag) => ({ text: truncate(`#${tag.key} · ${digits(tag.open, owner.language)}`, 24), data: `lg:0:${tag.key}` })));
+  }
+  if (pages > 1) {
+    buttons.push([
+      index > 0 ? { text: w.buttons.prev, data: `tg:${index - 1}` } : { text: '·', data: 'noop' },
+      { text: w.page(index + 1, pages), data: 'noop' },
+      index < pages - 1 ? { text: w.buttons.next, data: `tg:${index + 1}` } : { text: '·', data: 'noop' },
+    ]);
+  }
+  buttons.push(navRow(ctx));
+  return { text, buttons };
 }
 
 type Bucket = 'overdue' | 'today' | 'tomorrow' | 'later' | 'none';
@@ -393,7 +480,7 @@ function families(shown: { task: TaskRow; bucket: Bucket }[]): Row[][] {
   return out;
 }
 
-async function listView(ctx: Ctx, filter: Filter, requestedPage: number): Promise<View> {
+async function listView(ctx: Ctx, filter: Filter, requestedPage: number, tag?: string): Promise<View> {
   const { w, owner } = ctx;
   const now = ctx.deps.now();
   const today = localNow(owner.timezone, now).date;
@@ -404,7 +491,7 @@ async function listView(ctx: Ctx, filter: Filter, requestedPage: number): Promis
   const counts: Record<Filter, number> = { a: 0, t: 0, o: 0, d: 0, u: 0 };
   for (const entry of entries) for (const f of FILTERS) if (matches(f, entry)) counts[f]++;
 
-  const shown = entries.filter((entry) => matches(filter, entry));
+  const shown = entries.filter((entry) => (tag ? entry.task.tags.includes(tag) : matches(filter, entry)));
   const all = families(shown);
   // Numbered 1 to the end across every page, so the numbers read in order.
   const position = new Map<string, number>();
@@ -426,7 +513,7 @@ async function listView(ctx: Ctx, filter: Filter, requestedPage: number): Promis
   const pages = Math.max(1, pageList.length);
   const index = Math.min(Math.max(0, requestedPage), pages - 1);
   const slice = pageList[index] ?? [];
-  const back = `${filter}${index}`;
+  const back = tag ? `g${index}~${tag}` : `${filter}${index}`;
 
   const filterRow = FILTERS.filter((f) => f === filter || f === 'a' || counts[f] > 0).map((f) => ({
     text: `${w.filters[f]} ${digits(counts[f], owner.language)}`,
@@ -434,19 +521,22 @@ async function listView(ctx: Ctx, filter: Filter, requestedPage: number): Promis
     ...(f === filter ? { style: 'primary' as const } : {}),
   }));
 
-  let text = `<b>${w.listTitle[filter]}</b>${shown.length ? ` — <i>${w.openCount(shown.length)}</i>` : ''}`;
-  let rich = `# ${w.listTitle[filter]}${shown.length ? ` — *${w.openCount(shown.length)}*` : ''}`;
+  const tagName = tag ? (await knownTags(ctx)).find((known) => known.key === tag)?.name : undefined;
+  const title = tag ? w.tagsUi.listTitle(tag, tagName) : `<b>${w.listTitle[filter]}</b>`;
+  let text = `${title}${shown.length ? ` — <i>${w.openCount(shown.length)}</i>` : ''}`;
+  let rich = `# ${htmlToRich(title).replace(/^#+ /, '')}${shown.length ? ` — *${w.openCount(shown.length)}*` : ''}`;
   const buttons: Button[][] = [];
   if (!slice.length) {
-    text += `\n\n${w.empty[filter]}`;
-    rich += `\n\n${w.empty[filter]}`;
+    const empty = tag ? w.tagsUi.listEmpty(tag) : w.empty[filter];
+    text += `\n\n${empty}`;
+    rich += `\n\n${htmlToRich(empty)}`;
   } else {
     let current: Bucket | null = null;
     let group: string[] = [];
     let richGroup: string[] = [];
     const flush = () => {
       if (current !== null && group.length) {
-        text += `\n\n<b>${w.sections[current]}</b>\n<blockquote>${group.join('\n\n')}</blockquote>`;
+        text += `\n\n<b><u>${w.sections[current]}</u></b>\n<blockquote>${group.join('\n\n')}</blockquote>`;
         rich += `\n\n## ${w.sections[current]}\n\n${richGroup.join('\n')}`;
       }
       group = [];
@@ -464,21 +554,28 @@ async function listView(ctx: Ctx, filter: Filter, requestedPage: number): Promis
     flush();
 
     const rows = slice.flat();
-    for (let i = 0; i < rows.length; i += 2) {
+    // Accessible: one to a row, with as much of the title as a label can hold.
+    const perRow = owner.a11y === true ? 1 : 2;
+    for (let i = 0; i < rows.length; i += perRow) {
       buttons.push(
-        rows.slice(i, i + 2).map(({ task }) => ({
-          text: `${digits(position.get(task.key)!, owner.language)} · ${truncate(task.title, 15)}`,
+        rows.slice(i, i + perRow).map(({ task }) => ({
+          text: owner.a11y === true ? `${digits(position.get(task.key)!, owner.language)}. ${truncate(task.title, 44)}` : `${digits(position.get(task.key)!, owner.language)} · ${truncate(task.title, 15)}`,
           data: `t:${task.n}@${back}`,
         }))
       );
     }
     if (pages > 1) {
       buttons.push([
-        index > 0 ? { text: w.buttons.prev, data: `ls:${filter}:${index - 1}` } : { text: '·', data: 'noop' },
+        index > 0 ? { text: w.buttons.prev, data: listData({ filter, page: index - 1, tag }) } : { text: '·', data: 'noop' },
         { text: w.page(index + 1, pages), data: 'noop' },
-        index < pages - 1 ? { text: w.buttons.next, data: `ls:${filter}:${index + 1}` } : { text: '·', data: 'noop' },
+        index < pages - 1 ? { text: w.buttons.next, data: listData({ filter, page: index + 1, tag }) } : { text: '·', data: 'noop' },
       ]);
     }
+  }
+  if (tag) {
+    buttons.push([{ text: w.tagsUi.newWith(tag), data: `nt:${tag}`, style: 'primary' }], [{ text: w.tagsUi.allTags, data: 'tg:0' }]);
+    buttons.push(navRow(ctx));
+    return { text, buttons, rich };
   }
   // Two to a row, so a label is never cut short.
   if (filterRow.length > 1) for (let i = 0; i < filterRow.length; i += 2) buttons.push(filterRow.slice(i, i + 2));
@@ -486,12 +583,26 @@ async function listView(ctx: Ctx, filter: Filter, requestedPage: number): Promis
   return { text, buttons, rich };
 }
 
-/** The list a card came from, as its «back» button names it. */
-function listOf(back: string): { filter: Filter; page: number } {
+/** A list a card came from: a filter and a page, or the open tasks with one tag. */
+interface ListRef {
+  filter: Filter;
+  page: number;
+  tag?: string;
+}
+
+/** The list a card came from, as its «back» button names it: `a2` is page 3 of all, `g0~home` the first page of #home. */
+function listOf(back: string): ListRef {
+  const tagged = /^g(\d+)~(.+)$/u.exec(back);
+  if (tagged) return { filter: 'a', page: Number(tagged[1]), tag: tagged[2] };
   const filter = FILTERS.find((f) => f === back[0]) ?? 'a';
   const page = Number(back.slice(1)) || 0;
   return { filter, page };
 }
+
+/** The button data that opens a list. */
+const listData = (ref: ListRef): string => (ref.tag ? `lg:${ref.page}:${ref.tag}` : `ls:${ref.filter}:${ref.page}`);
+
+const showList = (ctx: Ctx, ref: ListRef): Promise<View> => listView(ctx, ref.filter, ref.page, ref.tag);
 
 /** A task's parent and its open subtasks, for its card. */
 async function relativesOf(ctx: Ctx, task: TaskRow): Promise<{ parent: TaskRow | null; children: TaskRow[]; relatives: Relatives }> {
@@ -520,9 +631,14 @@ async function taskView(ctx: Ctx, task: TaskRow, back: string, header?: string, 
 
   const family: Button[][] = [];
   for (let i = 0; i < Math.min(children.length, 6); i += 2) {
-    family.push(children.slice(i, i + 2).map((child) => ({ text: `↳ ${truncate(child.title, 18)}`, data: `t:${child.n}${at}` })));
+    family.push(
+      children.slice(i, i + 2).map((child) => ({
+        text: owner.a11y === true ? `${w.a11y.subtask}: ${truncate(child.title, 36)}` : `↳ ${truncate(child.title, 18)}`,
+        data: `t:${child.n}${at}`,
+      }))
+    );
   }
-  if (parent) family.push([{ text: `⬆️ ${truncate(parent.title, 24)}`, data: `t:${parent.n}${at}` }]);
+  if (parent) family.push([{ text: owner.a11y === true ? `${w.a11y.parent}: ${truncate(parent.title, 40)}` : `⬆️ ${truncate(parent.title, 24)}`, data: `t:${parent.n}${at}` }]);
 
   const buttons: Button[][] = [
     [
@@ -546,13 +662,19 @@ async function taskView(ctx: Ctx, task: TaskRow, back: string, header?: string, 
       { text: label('🔁', f.repeat, repeatLabel(task.repeat ?? null, owner.language) ?? dash), data: `qm:${task.n}${at}` },
     ],
     ...family,
-    [back ? { text: w.buttons.back, data: `ls:${listOf(back).filter}:${listOf(back).page}` } : { text: w.buttons.menu, data: 'home' }],
+    [back ? { text: w.buttons.back, data: listData(listOf(back)) } : { text: w.buttons.menu, data: 'home' }],
   ];
   return {
     text: [header, taskCard(task, owner, today, relatives), footer].filter(Boolean).join('\n\n'),
     rich: taskCardRich(task, owner, today, relatives, header, footer),
     buttons,
   };
+}
+
+/** A choice that is the current one: ticked, or, for a screen reader, said to be selected. */
+function selected(ctx: Ctx, on: boolean, text: string): string {
+  if (!on) return text;
+  return ctx.owner.a11y === true ? `${text} (${ctx.w.a11y.selected})` : `✓ ${text}`;
 }
 
 /** A small menu of choices for one setting, with a way back to the panel. */
@@ -565,7 +687,7 @@ function statusMenuView(ctx: Ctx, task: TaskRow, back: string): View {
   const { w } = ctx;
   const at = back ? `@${back}` : '';
   const names = w.task.statusNames;
-  const mark = (status: string, text: string) => (task.status === status ? `✓ ${text}` : text);
+  const mark = (status: string, text: string) => selected(ctx, task.status === status, text);
   return choiceView(ctx, task, back, w.task.statusMenu(task.title), [
     [
       { text: mark('open', `⚪ ${names.open}`), data: `ss:${task.n}:open${at}` },
@@ -582,7 +704,7 @@ function priorityMenuView(ctx: Ctx, task: TaskRow, back: string): View {
   const { w, owner } = ctx;
   const at = back ? `@${back}` : '';
   const buttons = PRIORITIES.map((level) => ({
-    text: `${task.priority === level ? '✓ ' : ''}${priorityMark(level)} ${priorityName(owner.language, level)}`,
+    text: selected(ctx, task.priority === level, `${priorityMark(level)} ${priorityName(owner.language, level)}`),
     data: `pr:${task.n}:${level}${at}`,
   }));
   return choiceView(ctx, task, back, w.task.priorityMenu(task.title), [
@@ -606,16 +728,40 @@ function deadlineMenuView(ctx: Ctx, task: TaskRow, back: string): View {
   ]);
 }
 
-function tagsMenuView(ctx: Ctx, task: TaskRow, back: string): View {
-  const { w } = ctx;
+/** A task's tags as a picker: every tag the notes know, ticked when it is on the task; a tap adds or removes it. */
+async function tagsMenuView(ctx: Ctx, task: TaskRow, back: string, requestedPage = 0): Promise<View> {
+  const { w, owner } = ctx;
   const at = back ? `@${back}` : '';
+  const known = await knownTags(ctx);
+  // The task's own tags are in the list even when the notes' catalog has not got them yet.
+  for (const key of task.tags) if (!known.some((tag) => tag.key === key)) known.push({ key, uses: 0, open: 0 });
+  const offered = known.filter((tag) => fits(tag.key, TAG_PICK_BYTES));
+  const pages = Math.max(1, Math.ceil(offered.length / TAG_PAGE));
+  const index = Math.min(Math.max(0, requestedPage), pages - 1);
+  const slice = offered.slice(index * TAG_PAGE, (index + 1) * TAG_PAGE);
+
   const rows: Button[][] = [];
-  for (let i = 0; i < task.tags.length; i += 2) {
-    rows.push(task.tags.slice(i, i + 2).map((tag, j) => ({ text: truncate(`✖️ #${tag}`, 24), data: `tr:${task.n}:${i + j}${at}` })));
+  for (let i = 0; i < slice.length; i += 2) {
+    rows.push(
+      slice.slice(i, i + 2).map((tag) => {
+        const on = task.tags.includes(tag.key);
+        return {
+          text: truncate(selected(ctx, on, `#${tag.key}`), ctx.owner.a11y === true ? 40 : 24),
+          data: `tt:${task.n}:${index}~${tag.key}${at}`,
+          ...(on ? { style: 'primary' as const } : {}),
+        };
+      })
+    );
   }
-  rows.push([{ text: w.task.addTag, data: `ta:${task.n}`, style: 'primary' }]);
-  if (task.tags.length > 1) rows.push([{ text: w.task.clearTags, data: `tx:${task.n}${at}` }]);
-  return choiceView(ctx, task, back, w.task.tagsMenu(task.title, task.tags), rows);
+  if (pages > 1) {
+    rows.push([
+      index > 0 ? { text: w.buttons.prev, data: `tp:${task.n}:${index - 1}${at}` } : { text: '·', data: 'noop' },
+      { text: w.page(index + 1, pages), data: 'noop' },
+      index < pages - 1 ? { text: w.buttons.next, data: `tp:${task.n}:${index + 1}${at}` } : { text: '·', data: 'noop' },
+    ]);
+  }
+  rows.push([{ text: w.tagsUi.newTag, data: `ta:${task.n}` }, ...(task.tags.length ? [{ text: w.task.clearTags, data: `tx:${task.n}${at}` }] : [])]);
+  return choiceView(ctx, task, back, w.tagsUi.pick(task.title, task.tags, index + 1, pages, ctx.owner.a11y === true ? `«${w.a11y.selected}»` : '✓'), rows);
 }
 
 function repeatMenuView(ctx: Ctx, task: TaskRow, back: string): View {
@@ -623,7 +769,7 @@ function repeatMenuView(ctx: Ctx, task: TaskRow, back: string): View {
   const at = back ? `@${back}` : '';
   const p = w.task.repeatPresets;
   const set = (token: string) => `qs:${task.n}:${token}${at}`;
-  const mark = (token: string, text: string) => (task.repeat === token ? `✓ ${text}` : text);
+  const mark = (token: string, text: string) => selected(ctx, task.repeat === token, text);
   return choiceView(ctx, task, back, w.task.repeatMenu(task.title, repeatLabel(task.repeat ?? null, owner.language)), [
     [{ text: mark('1d', p.daily), data: set('1d') }, { text: mark('1w', p.weekly), data: set('1w') }],
     [{ text: mark('2w', p.biweekly), data: set('2w') }, { text: mark('1m', p.monthly), data: set('1m') }],
@@ -879,8 +1025,48 @@ function currentDay(ctx: Ctx, kind: Pick, task: TaskRow | null): string | null {
   return null;
 }
 
+/** Where an accessible list of days begins: the day in the key, or the first of the month in it (never before today). */
+function daysStart(ctx: Ctx, key: string, today: string): string {
+  if (isRealDate(key)) return key < today ? today : key;
+  const [year, month] = key.split('-').map(Number);
+  if (!year || !month || month < 1 || month > 12) return today;
+  const first = dayOf(ctx.owner.calendar, year, month, 1);
+  return first < today ? today : first;
+}
+
+/** Fourteen days as a list of buttons that each say the weekday and the date, for a screen reader (a grid of bare numbers says nothing). */
+async function daysListView(ctx: Ctx, kind: Pick, task: TaskRow | null, key: string, back: string): Promise<View> {
+  const { w, owner } = ctx;
+  const today = todayOf(ctx);
+  const at = back ? `@${back}` : '';
+  const n = task?.n ?? 0;
+  const start = daysStart(ctx, key, today);
+  const days = Array.from({ length: 14 }, (_, i) => addDays(start, i));
+  const current = currentDay(ctx, kind, task);
+  const busy = new Map<string, number>();
+  for (const candidate of await ctx.deps.store.openTasks()) if (candidate.plan_date) busy.set(candidate.plan_date, (busy.get(candidate.plan_date) ?? 0) + 1);
+  const comma = owner.language === 'fa' ? '،' : ',';
+  const label = (iso: string) => {
+    const count = busy.get(iso);
+    const tasks = owner.language === 'fa' ? 'تسک' : count === 1 ? 'task' : 'tasks';
+    const marks = [iso === current ? w.a11y.selected : '', count ? `${digits(count, owner.language)} ${tasks}` : ''].filter(Boolean);
+    return `${dayLabel(iso, owner, today)}${marks.length ? ` (${marks.join(`${comma} `)})` : ''}`;
+  };
+  const buttons: Button[][] = [];
+  for (let i = 0; i < days.length; i += 2) buttons.push(days.slice(i, i + 2).map((iso) => ({ text: truncate(label(iso), 40), data: `cd:${kind}:${n}:${iso}${at}` })));
+  const previous = addDays(start, -14);
+  const nav: Button[] = [];
+  if (start > today) nav.push({ text: w.a11y.days.prev, data: `cn:${kind}:${n}:${previous < today ? today : previous}${at}` });
+  nav.push({ text: w.a11y.days.next, data: `cn:${kind}:${n}:${addDays(start, 14)}${at}` });
+  buttons.push(nav);
+  buttons.push([{ text: w.buttons.back, data: kind === 'x' ? 'new' : `t:${n}${at}` }]);
+  const currentLabel = current ? dayLabel(current, owner, today) : null;
+  return { text: w.a11y.days.title(w.cal.kinds[kind], task?.title ?? null, currentLabel, dayLabel(days[0], owner, today), dayLabel(days[13], owner, today)), buttons };
+}
+
 /** A month drawn as buttons; the day to pick is a tap away. */
 async function calendarView(ctx: Ctx, kind: Pick, task: TaskRow | null, key: string, back: string): Promise<View> {
+  if (ctx.owner.a11y === true) return daysListView(ctx, kind, task, key, back);
   const { w, owner } = ctx;
   const system = owner.calendar;
   const language = owner.language;
@@ -1129,7 +1315,7 @@ async function handleCallback(
   try {
     await route(callback.data ?? '', ctx);
   } finally {
-    await deps.tg.answer(callback.id, ctx.toast);
+    await ctx.deps.tg.answer(callback.id, ctx.toast);
   }
 }
 
@@ -1147,11 +1333,22 @@ async function route(data: string, ctx: Ctx): Promise<void> {
     case 'help':
       return present(ctx, helpView(ctx));
     case 'new':
-      return present(ctx, newTaskView(ctx));
+      return present(ctx, await newTaskView(ctx));
     case 'st':
       return present(ctx, await statusView(ctx));
     case 'ls':
       return present(ctx, await listView(ctx, FILTERS.find((f) => f === rawN) ?? 'a', Number(arg) || 0));
+    case 'tg':
+      return present(ctx, await tagsView(ctx, Number(rawN) || 0));
+    case 'lg':
+      // The page, then the tag: a tag has no colon in it, so the rest is the tag.
+      return present(ctx, await listView(ctx, 'a', Number(rawN) || 0, core.slice(core.indexOf(':', core.indexOf(':') + 1) + 1)));
+    case 'nt': {
+      const tag = core.slice(core.indexOf(':') + 1);
+      if (!tag) return;
+      await tg.send(ctx.chatId, esc(w.tagsUi.askNew(tag)), undefined, { forceReply: w.tagsUi.hintNew });
+      return;
+    }
     case 'set':
       return settings(rawN, ctx);
     case 'cn':
@@ -1197,7 +1394,7 @@ async function route(data: string, ctx: Ctx): Promise<void> {
       await store.addCommand('status', payload);
       ctx.toast = w.doneToast;
       // From a list, straight back to it: the next task is one tap away.
-      if (back) return present(ctx, await listView(ctx, backTo.filter, backTo.page));
+      if (back) return present(ctx, await showList(ctx, backTo));
       return present(ctx, { text: `${w.doneTitle}\n<s>${esc(task.title)}</s>`, buttons: [[{ text: w.buttons.all, data: 'ls:a:0' }, { text: w.buttons.menu, data: 'home' }]] });
     }
     case 'del':
@@ -1206,7 +1403,7 @@ async function route(data: string, ctx: Ctx): Promise<void> {
     case 'delok': {
       await removeTask(task, deps);
       ctx.toast = w.deletedToast;
-      if (back) return present(ctx, await listView(ctx, backTo.filter, backTo.page));
+      if (back) return present(ctx, await showList(ctx, backTo));
       return present(ctx, { text: w.deleted(task.title), buttons: [[{ text: w.buttons.all, data: 'ls:a:0' }, { text: w.buttons.menu, data: 'home' }]] });
     }
     case 'snz':
@@ -1250,7 +1447,18 @@ async function route(data: string, ctx: Ctx): Promise<void> {
     case 'dm':
       return present(ctx, deadlineMenuView(ctx, task, back));
     case 'tm':
-      return present(ctx, tagsMenuView(ctx, task, back));
+      return present(ctx, await tagsMenuView(ctx, task, back));
+    case 'tp':
+      return present(ctx, await tagsMenuView(ctx, task, back, Number(arg) || 0));
+    case 'tt': {
+      // `page~tag`: the page to come back to, and the tag to switch.
+      const [page, ...rest] = (arg ?? '').split('~');
+      const key = rest.join('~');
+      if (!key) return;
+      const tags = task.tags.includes(key) ? task.tags.filter((tag) => tag !== key) : [...task.tags, key].slice(0, MAX_TAGS);
+      if (await saveEdit(ctx, task, { tags }, { tags })) ctx.toast = w.task.editToast;
+      return present(ctx, await tagsMenuView(ctx, (await store.taskByN(n)) ?? task, back, Number(page) || 0));
+    }
     case 'qm':
       return present(ctx, repeatMenuView(ctx, task, back));
     case 'ed':
@@ -1273,7 +1481,7 @@ async function route(data: string, ctx: Ctx): Promise<void> {
         if (!isOpen(task.status)) return;
         await closeTask(task, arg, ctx);
         ctx.toast = arg === 'done' ? w.doneToast : w.failedToast;
-        if (back) return present(ctx, await listView(ctx, backTo.filter, backTo.page));
+        if (back) return present(ctx, await showList(ctx, backTo));
         const heading = arg === 'done' ? w.doneTitle : w.failedTitle;
         return present(ctx, { text: `${heading}\n<s>${esc(task.title)}</s>`, buttons: [[{ text: w.buttons.all, data: 'ls:a:0' }, { text: w.buttons.menu, data: 'home' }]] });
       }
@@ -1303,7 +1511,7 @@ async function route(data: string, ctx: Ctx): Promise<void> {
     case 'tx': {
       const tags = action === 'tx' ? [] : task.tags.filter((_, i) => i !== Number(arg));
       if (await saveEdit(ctx, task, { tags }, { tags })) ctx.toast = w.task.editToast;
-      return present(ctx, tagsMenuView(ctx, (await store.taskByN(n)) ?? task, back));
+      return present(ctx, await tagsMenuView(ctx, (await store.taskByN(n)) ?? task, back));
     }
     case 'qs': {
       const repeat = arg === 'off' ? null : /^\d{1,3}[dwm]$/.test(arg ?? '') ? arg! : undefined;
@@ -1352,11 +1560,21 @@ async function settings(what: string | undefined, ctx: Ctx): Promise<void> {
       ctx.toast = w.richUnavailable;
       return;
     }
+  } else if (what === 'a11y') {
+    const a11y = owner.a11y !== true;
+    try {
+      await store.patchOwner({ a11y });
+      next = { ...owner, a11y };
+    } catch (error) {
+      console.error('accessible setting not saved', error);
+      ctx.toast = w.richUnavailable;
+      return;
+    }
   } else if (what === 'tz') {
     ctx.toast = w.zoneHint;
     return;
   }
-  const fresh = ctxFor(ctx.deps, next, ctx.chatId, ctx.messageId);
+  const fresh = ctxFor(ctx.base, next, ctx.chatId, ctx.messageId);
   fresh.toast = ctx.toast;
   await present(fresh, settingsView(fresh));
 }

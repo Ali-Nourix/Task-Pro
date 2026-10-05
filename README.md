@@ -995,6 +995,20 @@ only a snapshot of your open tasks and a queue of what you asked for in Telegram
 - **Subtasks, and lists that read in order.** Lists number the tasks 1 to the end,
   a parent is followed by its subtasks (marked ↳, with a count and a bar), and a
   card shows a parent's open subtasks or whose subtask it is.
+- **Your tags are listed.** `/tags` (and the 🏷 button on the menu) lists every tag
+  you have used, plus those defined under **Settings → Tags**, with how many tasks
+  are open under each; tap one for its tasks or to start a new task with it. When a
+  task's tags or a new task's tags are asked for, the tags you already have are
+  buttons.
+- **MarkdownV2.** Screens are sent as Telegram MarkdownV2 — bold labels, underlined
+  headings, quotes, expandable quotes for long lists, code — with every reserved
+  character escaped, and fall back to HTML and then plain text if Telegram refuses
+  one.
+- **Accessible mode.** **Settings → Accessible mode** removes emoji, decoration and
+  the invisible padding from the text, names buttons and sections in words, puts
+  one task on each button row, writes a task's facts one per line, and replaces the
+  calendar grid with a list of the next 14 days, so a screen reader reads each
+  screen once and clearly.
 - **In Obsidian:** a background sync (every 2 minutes by default, and on **Sync
   Telegram now**) uploads the snapshot, then applies what you asked for in
   Telegram to your notes: new tasks go to the board's inbox note, the rest edit
