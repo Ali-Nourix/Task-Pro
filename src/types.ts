@@ -525,6 +525,8 @@ export interface TelegramSettings {
   token: string;
   /** How often to ask for changes while Obsidian is open, in minutes. */
   intervalMinutes: number;
+  /** Seconds the notes must be quiet before an edit is sent to the bot. */
+  quietSeconds?: number;
   lastSyncAt?: string;
   lastError?: string;
   /** Changes made in the notes that the bot has not yet confirmed. */
@@ -536,6 +538,7 @@ export const DEFAULT_TELEGRAM_SETTINGS: TelegramSettings = {
   url: '',
   token: '',
   intervalMinutes: 2,
+  quietSeconds: 4,
 };
 
 export interface TaskProSettings {

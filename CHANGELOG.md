@@ -134,6 +134,31 @@
   message it answers, and the message ends with 👌 (or 👍 for an answer in words, 🤔
   when something failed). Each of these falls back by itself on a Telegram that does
   not know it.
+- **Messages the bot sends by itself** (the ticker, once a minute; **Settings → Notifications**
+  sets each): a **morning summary** (what is planned, due and late today, and what to
+  start with), an **evening review** (what is left, tomorrow's count, and one button that
+  moves what is left to tomorrow at the same hours, its reminder with it), a **nudge the
+  evening before a deadline** (or the morning of it) listing what is due, and a **reminder that
+  comes again** every ten minutes up to three times until the task is ticked or snoozed.
+  Everything is written down before it is sent, so nothing goes out twice, and without a
+  place to write it down nothing goes out at all.
+- **The week and the day**: `/week` (and a button on the menu) draws the week from Saturday
+  to Friday (Monday to Sunday with the Gregorian calendar) as a table in the rich message and as
+  a block for each day in the classic one, with a button for each day and the weeks around it;
+  a day's screen lists its tasks with the days around it, and the Today list has
+  yesterday / week / tomorrow under it.
+- **Plan my day** (`/planday`, a button on Today and in the morning summary): the assistant
+  fits the tasks that have no plan, or are late, into the free hours, leaving alone what already
+  has an hour. It **shows its plan first** and does nothing until you tap Apply; **Settings →
+  Notifications → Assistant confirmation** chooses between always showing first, only for big jobs
+  (more than four changes: the default) and never. The preview is the commands run on a copy of
+  your tasks, and Apply runs the same commands again on the real ones.
+- **Subtasks from Telegram**: a card has **Add a subtask**, and the assistant breaks a task into
+  steps (`parent_n`). The plugin writes each under its task, indented, in that task's note.
+- **Edits reach the bot when you stop typing**: a few seconds after the notes stop changing
+  (set in the Telegram settings; 4 seconds by default, and at least once a minute while you keep
+  going) instead of after a fixed 20 seconds, and an edit made while a sync is running is sent right
+  after it. What you ask for in Telegram can be fetched as often as every 30 seconds.
 - Notes remain the source of truth; the tables are locked to the service role and
   the bot answers only the chat it was paired with.
 

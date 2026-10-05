@@ -21,6 +21,8 @@ export interface NewTask {
   priority?: Priority;
   tags: string[];
   repeat?: string;
+  /** The task it is a subtask of. */
+  parent?: TaskRow;
 }
 
 /** What the assistant may do to the bot's tasks; the bot provides them. */
@@ -172,7 +174,18 @@ function createExecutor(input: ExecInput) {
     if (has(args, 'repeat') && repeat === undefined) warn('badValue', String(args.repeat));
 
     // The model repeating itself (or the user asking twice) must not make two tasks.
-    const twin = (await store.openTasks()).find((task) => task.title.trim().toLowerCase() === title.toLowerCase() && task.plan_date === (plan?.date ?? null));
+    let parent: TaskRow | undefined;
+    if (has(args, 'parent_n')) {
+      const found = await openTask({ n: args.parent_n });
+      if (!found) return 'not created: no such task to put it under';
+      if (found.parent_key) {
+        // The lists show one level of subtasks.
+        warn('badValue', `#${found.n} ${found.title}`);
+        return 'not created: that task is itself a subtask';
+      }
+      parent = found;
+    }
+    const twin = (await store.openTasks()).find((task) => task.title.trim().toLowerCase() === title.toLowerCase() && task.plan_date === (plan?.date ?? null) && (task.parent_key ?? null) === (parent?.key ?? null));
     if (twin) {
       warn('duplicate', `#${twin.n} ${twin.title}`);
       return `not created: #${twin.n} is already the same task`;
@@ -188,11 +201,12 @@ function createExecutor(input: ExecInput) {
     if (has(args, 'priority') && !priority) warn('badValue', String(args.priority));
     if (priority) spec.priority = priority;
     if (repeat) spec.repeat = repeat;
+    if (parent) spec.parent = parent;
 
     const { row, warning } = await effects.create(spec);
     if (warning) warn('reminderPast');
     record('added', row);
-    summary.push(`Created ${taskLine(row, owner.timezone)}`);
+    summary.push(`Created ${taskLine(row, owner.timezone)}${parent ? ` under #${parent.n}` : ''}`);
     return row.n >= PROVISIONAL_N ? 'created' : `created #${row.n}`;
   };
 

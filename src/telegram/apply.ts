@@ -38,6 +38,8 @@ export interface ApplyHost {
    */
   dayTarget?(day: string): string | null;
   addTaskOnDay?(day: string, line: string): Promise<string | null>;
+  /** Writes a task as the last subtask of another, indented under it. False when it could not. */
+  insertChild?(parent: BoardTask, line: string): Promise<boolean>;
   setStatus(task: BoardTask, status: TaskStatus): Promise<void>;
   setRemind(task: BoardTask, value: RemindAt | null | undefined): Promise<void>;
   setSchedule(task: BoardTask, schedule: TaskSchedule | null): Promise<void>;
@@ -125,8 +127,14 @@ async function applyOne(command: Command, host: ApplyHost, aliases: Map<string, 
     const line = lineForNewTask(payload);
     const before = host.tasks();
     let path: string | null = null;
-    // A task made for a day goes into that day's note, as one added on the calendar would.
-    if (day && DAY.test(day) && host.addTaskOnDay && host.dayTarget?.(day)) {
+    // A subtask goes under its task, in that task's note; the task may be one made earlier in this batch.
+    const parentKey = str(payload.parent);
+    const parent = parentKey && host.insertChild ? keyTasks(before).get(aliases.get(parentKey) ?? parentKey) : undefined;
+    if (parent) {
+      if (!(await host.insertChild!(parent, line))) return void (result.error = 'the subtask could not be written under its task');
+      path = parent.filePath;
+    } else if (day && DAY.test(day) && host.addTaskOnDay && host.dayTarget?.(day)) {
+      // A task made for a day goes into that day's note, as one added on the calendar would.
       path = await host.addTaskOnDay(day, line);
       if (!path) return void (result.error = "the day's note could not be written");
     } else {
