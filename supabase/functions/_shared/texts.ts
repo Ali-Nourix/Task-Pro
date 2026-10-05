@@ -34,6 +34,29 @@ export function truncate(text: string, length: number): string {
 const GREGORIAN_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const FA_WEEKDAYS = ['یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه', 'پنجشنبه', 'جمعه', 'شنبه'];
 const EN_WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const FA_INITIALS = ['ی', 'د', 'س', 'چ', 'پ', 'ج', 'ش'];
+const EN_INITIALS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+
+/** The short name of a weekday for a button: «ش» or «Sa». */
+export const weekdayInitial = (date: string, language: Language): string => (language === 'fa' ? FA_INITIALS : EN_INITIALS)[weekdayOf(date)];
+
+/** The day of the month as the owner's calendar writes it, for a button. */
+export function dayNumber(date: string, owner: Owner): string {
+  const [y, m, d] = parseIso(date);
+  return digits(owner.calendar === 'jalali' ? gregorianToJalali(y, m, d)[2] : d, owner.language);
+}
+
+/** One task on a day, short: its hour (or a dot, or the mark of a deadline or reminder), then its title. */
+export function dayItem(task: TaskRow, day: string, owner: Owner, rich = false): string {
+  const title = (rich ? mdEscape : esc)(truncate(task.title, 38));
+  if (task.plan_date === day) {
+    const mark = task.plan_start ? clockLabel(task.plan_start, owner.language) : '•';
+    return `${mark} ${title}${task.deadline === day ? ' ⏳' : ''}`;
+  }
+  if (task.deadline === day) return `⏳ ${title}`;
+  const at = task.remind_at ? utcToLocal(owner.timezone, new Date(task.remind_at)).time : '';
+  return `🔔 ${at ? `${clockLabel(at, owner.language)} ` : ''}${title}`;
+}
 
 type Owner = Pick<OwnerRow, 'language' | 'calendar' | 'timezone'>;
 
@@ -44,6 +67,12 @@ export function dayLabel(date: string, owner: Owner, today: string): string {
   if (offset === 0) return language === 'fa' ? 'امروز' : 'Today';
   if (offset === 1) return language === 'fa' ? 'فردا' : 'Tomorrow';
   if (offset === -1) return language === 'fa' ? 'دیروز' : 'Yesterday';
+  return dateLabel(date, owner);
+}
+
+/** A weekday and date in the owner's calendar, whatever day it is: «شنبه ۱۱ مهر». */
+export function dateLabel(date: string, owner: Owner): string {
+  const language = owner.language;
   const [y, m, d] = parseIso(date);
   const weekday = (language === 'fa' ? FA_WEEKDAYS : EN_WEEKDAYS)[weekdayOf(date)];
   if (owner.calendar === 'jalali') {
@@ -132,6 +161,8 @@ export interface EntryOptions {
   depth?: 0 | 1;
   /** A subtask whose parent is not in the list says whose it is. */
   parentHint?: boolean;
+  /** A dot in place of the number: a task that has none yet. */
+  bullet?: boolean;
 }
 
 const INDENT = '\u2003';
@@ -145,7 +176,7 @@ export function taskEntry(task: TaskRow, owner: Owner, today: string, options: E
   const priority = task.priority ? ` ${PRIORITY_MARK[task.priority]}` : '';
   const arrow = depth ? '↳ ' : '';
   const progress = task.subs_total ? ` <code>${ratio(task.subs_done ?? 0, task.subs_total, language)}</code>` : '';
-  const head = `${pad}${arrow}${glyph}<b>${digits(options.position, language)}.</b> ${esc(truncate(task.title, 110))}${priority}${progress}`;
+  const head = `${pad}${arrow}${glyph}<b>${options.bullet ? '•' : `${digits(options.position, language)}.`}</b> ${esc(truncate(task.title, 110))}${priority}${progress}`;
   const parts: string[] = [];
   if (options.parentHint && task.parent_title) parts.push(`↳ <i>${words(language).labels.subOf} «${esc(truncate(task.parent_title, 28))}»</i>`);
   const plan = planText(task, owner, today);
@@ -451,8 +482,62 @@ export interface Words {
       noTitle: string;
       tooMany: string;
     };
+    preview: { title: string; apply: string; cancel: string; gone: string; cancelled: string; planDay: string };
     errors: { notSetUp: string; auth: string; quota: string; busy: string; bad: string; format: string; fellBack: string };
     voice: { needsAi: string; tooLong: string; empty: string; failed: string };
+  };
+  /** The messages the bot sends by itself, and the screen that sets them. */
+  digest: {
+    brief: {
+      title: (day: string) => string;
+      counts: (c: { today: number; deadline: number; overdue: number }) => string;
+      empty: string;
+      planned: string;
+      first: string;
+    };
+    review: {
+      title: (day: string) => string;
+      left: (n: number) => string;
+      overdue: (n: number) => string;
+      allDone: string;
+      tomorrow: (n: number) => string;
+      moveButton: (n: number) => string;
+      moved: (n: number, day: string) => string;
+      nothingToMove: string;
+    };
+    nudge: { eve: (n: number) => string; morn: (n: number) => string };
+    nag: (n: number, of: number) => string;
+    buttons: { today: string; week: string; planDay: string; tomorrow: string; overdue: string };
+    more: (n: number) => string;
+  };
+  notif: {
+    title: string;
+    hint: string;
+    brief: (time: string | null) => string;
+    review: (time: string | null) => string;
+    nudge: (mode: 'off' | 'eve' | 'morn' | 'both') => string;
+    nag: (on: boolean) => string;
+    confirm: (mode: 'ask' | 'big' | 'auto') => string;
+    open: string;
+    off: string;
+    on: string;
+    nudgeNames: { off: string; eve: string; morn: string; both: string };
+    confirmNames: { ask: string; big: string; auto: string };
+    unavailable: string;
+  };
+  /** The week and the day screens. */
+  week: {
+    title: (range: string) => string;
+    dayTitle: (label: string, count: number) => string;
+    today: string;
+    empty: string;
+    dayEmpty: string;
+    thisWeek: string;
+    weekBack: string;
+    weekNext: string;
+    newOnDay: string;
+    more: (n: number) => string;
+    column: { day: string; tasks: string };
   };
   zoneHint: string;
   languageNames: { fa: string; en: string };
@@ -487,7 +572,7 @@ const fa: Words = {
     '<b>#برچسب</b> · <b>!بالا</b> <b>!فوری</b> <b>!کم</b> ← برچسب و اولویت</blockquote>\n' +
     '🤖 <b>دستیار هوشمند</b> — اگر راه‌اندازی شده باشد، به زبان خودت بگو (یا <b>ویس</b> بفرست) و خودش تسک‌ها را در روز درست می‌گذارد.\n' +
     '<b>دستورها</b> <i>(برای دیدن باز کن)</i>\n' +
-    '<blockquote expandable>/start — منوی اصلی\n/today — امروز\n/list — همهٔ تسک‌ها\n/tags — برچسب‌ها و تسک‌هایشان\n/ai — دستیار هوشمند (یا /ai و بعدش متن)\n' +
+    '<blockquote expandable>/start — منوی اصلی\n/today — امروز\n/week — برنامهٔ هفته\n/list — همهٔ تسک‌ها\n/planday — روزم را بچین\n/tags — برچسب‌ها و تسک‌هایشان\n/ai — دستیار هوشمند (یا /ai و بعدش متن)\n' +
     '/done ۱۲ — انجام شد (عدد = «شناسه» روی صفحهٔ تسک)\n/fail ۱۲ — انجام نشد\n/remind ۱۲ فردا ۸ — یادآوری (یا off)\n/plan ۱۲ شنبه ۹-۱۰ — برنامه (یا off)\n' +
     '/del ۱۲ — حذف\n/status — وضعیت همگام‌سازی\n/settings — تنظیمات\n' +
     '/lang fa|en · /tz Asia/Tehran · /cal jalali|gregorian · /lead ۱۰</blockquote>',
@@ -739,6 +824,14 @@ const fa: Words = {
       noTitle: '⚠️ برای یک تسک عنوانی نبود.',
       tooMany: 'ℹ️ فقط چند کار اول انجام شد؛ بقیه را دوباره بگو.',
     },
+    preview: {
+      title: '🤖 <b>پیش‌نمایش</b> — هنوز چیزی اعمال نشده',
+      apply: '✅ اعمال کن',
+      cancel: '✖ لغو',
+      gone: 'این پیشنهاد دیگر معتبر نیست؛ دوباره بخواه.',
+      cancelled: '✖ لغو شد؛ چیزی تغییر نکرد.',
+      planDay: 'روز من را بچین: تسک‌های بازی که برنامه ندارند یا عقب افتاده‌اند را در ساعت‌های خالیِ امروز (از همین الان تا ساعت ۲۱) بگذار، و اگر جا نشد برای فردا. به تسک‌هایی که از قبل ساعت دارند دست نزن و تسک تازه نساز.',
+    },
     errors: {
       notSetUp: '🤖 دستیار هنوز راه‌اندازی نشده؛ راهنمای نصب را ببین (بخش «دستیار هوشمند»).',
       auth: '🔑 Cloudflare کلید را نپذیرفت. CF_ACCOUNT_ID و CF_API_TOKEN را در Supabase بررسی کن (دسترسی Workers AI لازم است).',
@@ -754,6 +847,66 @@ const fa: Words = {
       empty: '🎙 از ویس چیزی نفهمیدم؛ دوباره و واضح‌تر بفرست.',
       failed: '🎙 ویس را نتوانستم بخوانم؛ دوباره امتحان کن یا بنویس.',
     },
+  },
+  digest: {
+    brief: {
+      title: (day) => `☀️ <b>صبح بخیر</b> — <i>${day}</i>`,
+      counts: (c) => {
+        const rows: string[] = [];
+        if (c.today) rows.push(`📅 <b>${digits(c.today, 'fa')}</b> برنامه برای امروز`);
+        if (c.deadline) rows.push(`⏳ <b>${digits(c.deadline, 'fa')}</b> مهلت امروز`);
+        if (c.overdue) rows.push(`⚠️ <b>${digits(c.overdue, 'fa')}</b> عقب‌افتاده`);
+        return rows.length ? `<blockquote>${rows.join('\n')}</blockquote>` : '';
+      },
+      empty: 'برای امروز برنامه‌ای نداری. هر چه خواستی بنویس یا بگو تا بچینم. ✨',
+      planned: '<b>برنامهٔ امروز</b>',
+      first: '<b>اول سراغ این‌ها برو</b>',
+    },
+    review: {
+      title: (day) => `🌙 <b>مرور شب</b> — <i>${day}</i>`,
+      left: (n) => `📋 <b>${digits(n, 'fa')}</b> کار امروز هنوز مانده`,
+      overdue: (n) => `⚠️ <b>${digits(n, 'fa')}</b> عقب‌افتاده`,
+      allDone: '🎉 همهٔ برنامهٔ امروز انجام شد. خسته نباشی!',
+      tomorrow: (n) => (n ? `فردا <b>${digits(n, 'fa')}</b> برنامه داری.` : 'فردا هنوز برنامه‌ای نداری.'),
+      moveButton: (n) => `➡️ بریزشان فردا (${digits(n, 'fa')})`,
+      moved: (n, day) => `➡️ ${digits(n, 'fa')} تسک به ${day} رفت.`,
+      nothingToMove: 'چیزی برای جابه‌جا کردن نمانده.',
+    },
+    nudge: {
+      eve: (n) => `⏳ <b>${digits(n, 'fa')} مهلت فردا</b>`,
+      morn: (n) => `⏳ <b>${digits(n, 'fa')} مهلت امروز</b>`,
+    },
+    nag: (n, of) => `🔁 <b>هنوز انجام نشده</b> · بار ${digits(n, 'fa')} از ${digits(of, 'fa')}`,
+    buttons: { today: '📅 امروز', week: '🗓 هفته', planDay: '🪄 روزم را بچین', tomorrow: '📅 فردا', overdue: '⚠️ عقب‌افتاده' },
+    more: (n) => `<i>و ${digits(n, 'fa')} مورد دیگر</i>`,
+  },
+  notif: {
+    title: '🔔 <b>اعلان‌ها</b>',
+    hint: '<i>با هر بار زدن یک دکمه، گزینهٔ بعدی انتخاب می‌شود.</i>',
+    brief: (time) => `☀️ <b>خلاصهٔ صبح</b> · ${time ? digits(time, 'fa') : 'خاموش'}`,
+    review: (time) => `🌙 <b>مرور شب</b> · ${time ? digits(time, 'fa') : 'خاموش'}`,
+    nudge: (mode) => `⏳ <b>یادآوری مهلت</b> · ${{ off: 'خاموش', eve: 'شب قبل (۲۰:۰۰)', morn: 'صبح همان روز (۰۸:۰۰)', both: 'شب قبل و صبح' }[mode]}`,
+    nag: (on) => `🔁 <b>یادآوری پافشار</b> · ${on ? 'روشن (۱۰ دقیقه، تا ۳ بار)' : 'خاموش'}`,
+    confirm: (mode) => `🤖 <b>تأیید دستیار</b> · ${{ ask: 'همیشه پیش‌نمایش', big: 'فقط کارهای بزرگ', auto: 'بدون پرسش' }[mode]}`,
+    open: '🔔 اعلان‌ها',
+    off: 'خاموش',
+    on: 'روشن',
+    nudgeNames: { off: 'خاموش', eve: 'شب قبل', morn: 'صبح همان روز', both: 'شب قبل و صبح' },
+    confirmNames: { ask: 'همیشه پیش‌نمایش', big: 'فقط کارهای بزرگ', auto: 'بدون پرسش' },
+    unavailable: 'این گزینه بعد از به‌روزرسانی دیتابیس فعال می‌شود؛ چند ثانیه بعد دوباره امتحان کن.',
+  },
+  week: {
+    title: (range) => `🗓 <b>هفته</b> — <i>${range}</i>`,
+    dayTitle: (label, count) => `📅 <b>${label}</b> — <i>${count ? `${digits(count, 'fa')} تسک` : 'خالی'}</i>`,
+    today: 'امروز',
+    empty: '—',
+    dayEmpty: 'برای این روز برنامه‌ای نیست.',
+    thisWeek: '🗓 این هفته',
+    weekBack: 'هفتهٔ قبل',
+    weekNext: 'هفتهٔ بعد',
+    newOnDay: '➕ تسک برای این روز',
+    more: (n) => `+${digits(n, 'fa')}`,
+    column: { day: 'روز', tasks: 'تسک‌ها' },
   },
   zoneHint: 'برای تغییر بنویس: /tz Asia/Tehran',
   languageNames: { fa: 'فارسی', en: 'English' },
@@ -781,8 +934,10 @@ const fa: Words = {
     { command: 'start', description: 'منوی اصلی' },
     { command: 'today', description: 'تسک‌های امروز' },
     { command: 'list', description: 'همهٔ تسک‌ها' },
+    { command: 'week', description: 'برنامهٔ این هفته' },
     { command: 'tags', description: 'برچسب‌ها' },
     { command: 'ai', description: 'دستیار هوشمند' },
+    { command: 'planday', description: 'روزم را بچین' },
     { command: 'status', description: 'وضعیت همگام‌سازی' },
     { command: 'settings', description: 'تنظیمات' },
     { command: 'help', description: 'راهنما' },
@@ -807,7 +962,7 @@ const en: Words = {
     '<b>#tag</b> · <b>!high</b> <b>!highest</b> <b>!low</b> → tag and priority</blockquote>\n' +
     '🤖 <b>Assistant</b> — once it is set up, say it in your own words (or send a <b>voice message</b>) and it puts the tasks on the right days.\n' +
     '<b>Commands</b> <i>(tap to open)</i>\n' +
-    '<blockquote expandable>/start — main menu\n/today\n/list — everything open\n/tags — your tags and their tasks\n/ai — the assistant (or /ai and your words)\n' +
+    '<blockquote expandable>/start — main menu\n/today\n/week — this week\n/list — everything open\n/planday — plan my day\n/tags — your tags and their tasks\n/ai — the assistant (or /ai and your words)\n' +
     '/done 12 (the number is the task card’s ID)\n/remind 12 tomorrow 8 (or off)\n/plan 12 sat 9-10 (or off)\n' +
     '/del 12\n/status — sync status\n/settings\n' +
     '/lang fa|en · /tz Asia/Tehran · /cal jalali|gregorian · /lead 10</blockquote>',
@@ -1059,6 +1214,14 @@ const en: Words = {
       noTitle: '⚠️ A task had no title.',
       tooMany: 'ℹ️ Only the first few things were done; say the rest again.',
     },
+    preview: {
+      title: '🤖 <b>Preview</b> — nothing is applied yet',
+      apply: '✅ Apply',
+      cancel: '✖ Cancel',
+      gone: 'This proposal is no longer valid; ask again.',
+      cancelled: '✖ Cancelled; nothing was changed.',
+      planDay: 'Plan my day: put the open tasks that have no plan, or are overdue, into the free hours of today (from now until 21:00), and into tomorrow if they do not fit. Do not touch tasks that already have an hour, and do not create new tasks.',
+    },
     errors: {
       notSetUp: '🤖 The assistant is not set up yet; see the setup guide (“The assistant”).',
       auth: '🔑 Cloudflare refused the key. Check CF_ACCOUNT_ID and CF_API_TOKEN in Supabase (it needs Workers AI access).',
@@ -1074,6 +1237,66 @@ const en: Words = {
       empty: '🎙 I could not make out anything; send it again, a little clearer.',
       failed: '🎙 I could not read that voice message; try again or type it.',
     },
+  },
+  digest: {
+    brief: {
+      title: (day) => `☀️ <b>Good morning</b> — <i>${day}</i>`,
+      counts: (c) => {
+        const rows: string[] = [];
+        if (c.today) rows.push(`📅 <b>${c.today}</b> planned for today`);
+        if (c.deadline) rows.push(`⏳ <b>${c.deadline}</b> due today`);
+        if (c.overdue) rows.push(`⚠️ <b>${c.overdue}</b> overdue`);
+        return rows.length ? `<blockquote>${rows.join('\n')}</blockquote>` : '';
+      },
+      empty: 'Nothing is planned for today. Write or say what you need and I will fit it in. ✨',
+      planned: '<b>Today’s plan</b>',
+      first: '<b>Start with these</b>',
+    },
+    review: {
+      title: (day) => `🌙 <b>Evening review</b> — <i>${day}</i>`,
+      left: (n) => `📋 <b>${n}</b> of today’s tasks still open`,
+      overdue: (n) => `⚠️ <b>${n}</b> overdue`,
+      allDone: '🎉 Everything planned for today is done. Well done!',
+      tomorrow: (n) => (n ? `Tomorrow you have <b>${n}</b> planned.` : 'Nothing is planned for tomorrow yet.'),
+      moveButton: (n) => `➡️ Move them to tomorrow (${n})`,
+      moved: (n, day) => `➡️ ${n} task${n === 1 ? '' : 's'} moved to ${day}.`,
+      nothingToMove: 'Nothing is left to move.',
+    },
+    nudge: {
+      eve: (n) => `⏳ <b>${n} due tomorrow</b>`,
+      morn: (n) => `⏳ <b>${n} due today</b>`,
+    },
+    nag: (n, of) => `🔁 <b>Still not done</b> · ${n} of ${of}`,
+    buttons: { today: '📅 Today', week: '🗓 Week', planDay: '🪄 Plan my day', tomorrow: '📅 Tomorrow', overdue: '⚠️ Overdue' },
+    more: (n) => `<i>and ${n} more</i>`,
+  },
+  notif: {
+    title: '🔔 <b>Notifications</b>',
+    hint: '<i>Each tap on a button moves to the next choice.</i>',
+    brief: (time) => `☀️ <b>Morning summary</b> · ${time ?? 'off'}`,
+    review: (time) => `🌙 <b>Evening review</b> · ${time ?? 'off'}`,
+    nudge: (mode) => `⏳ <b>Deadline reminder</b> · ${{ off: 'off', eve: 'the evening before (20:00)', morn: 'the morning of (08:00)', both: 'evening before and morning of' }[mode]}`,
+    nag: (on) => `🔁 <b>Persistent reminders</b> · ${on ? 'on (every 10 minutes, up to 3 times)' : 'off'}`,
+    confirm: (mode) => `🤖 <b>Assistant confirmation</b> · ${{ ask: 'always show first', big: 'only big jobs', auto: 'never ask' }[mode]}`,
+    open: '🔔 Notifications',
+    off: 'off',
+    on: 'on',
+    nudgeNames: { off: 'off', eve: 'evening before', morn: 'morning of', both: 'both' },
+    confirmNames: { ask: 'always show first', big: 'only big jobs', auto: 'never ask' },
+    unavailable: 'This option works once the database is updated; try again in a few seconds.',
+  },
+  week: {
+    title: (range) => `🗓 <b>Week</b> — <i>${range}</i>`,
+    dayTitle: (label, count) => `📅 <b>${label}</b> — <i>${count ? `${count} task${count === 1 ? '' : 's'}` : 'empty'}</i>`,
+    today: 'Today',
+    empty: '—',
+    dayEmpty: 'Nothing is planned for this day.',
+    thisWeek: '🗓 This week',
+    weekBack: 'Previous week',
+    weekNext: 'Next week',
+    newOnDay: '➕ Task for this day',
+    more: (n) => `+${n}`,
+    column: { day: 'Day', tasks: 'Tasks' },
   },
   zoneHint: 'To change it, send: /tz Asia/Tehran',
   languageNames: { fa: 'فارسی', en: 'English' },
@@ -1101,8 +1324,10 @@ const en: Words = {
     { command: 'start', description: 'Main menu' },
     { command: 'today', description: 'Today’s tasks' },
     { command: 'list', description: 'All tasks' },
+    { command: 'week', description: 'This week’s plan' },
     { command: 'tags', description: 'Tags' },
     { command: 'ai', description: 'The assistant' },
+    { command: 'planday', description: 'Plan my day' },
     { command: 'status', description: 'Sync status' },
     { command: 'settings', description: 'Settings' },
     { command: 'help', description: 'Help' },
@@ -1113,11 +1338,12 @@ const en: Words = {
 export const words = (language: Language): Words => (language === 'fa' ? fa : en);
 
 /** The message a reminder arrives as, and the buttons under it. */
-export function reminderMessage(task: TaskRow, owner: Owner, today: string): { text: string; rich: string; buttons: Button[][] } {
+export function reminderMessage(task: TaskRow, owner: Owner, today: string, header?: string): { text: string; rich: string; buttons: Button[][] } {
   const w = words(owner.language);
+  const title = header ?? w.reminder;
   return {
-    text: `${w.reminder}\n\n${taskCard(task, owner, today)}`,
-    rich: `${htmlToRich(w.reminder)}\n\n${taskCardRich(task, owner, today)}`,
+    text: `${title}\n\n${taskCard(task, owner, today)}`,
+    rich: `${htmlToRich(title)}\n\n${taskCardRich(task, owner, today)}`,
     buttons: [
       [{ text: w.buttons.done, data: `done:${task.n}`, style: 'success' }],
       [

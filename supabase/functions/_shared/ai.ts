@@ -7,6 +7,7 @@ import { JALALI_MONTHS, partsOf } from './calendar-picker.ts';
 import { jalaliToGregorian } from './jalali.ts';
 import type { Priority } from './quickadd.ts';
 import { addDays, isRealDate, isoDate, utcToLocal, weekdayOf } from './time.ts';
+import { PROVISIONAL_N } from './types.ts';
 import type { CalendarKind, Language, TaskRow } from './types.ts';
 
 // ── The commands ───────────────────────────────────────────────────────────
@@ -144,7 +145,7 @@ export function taskLine(task: TaskRow, timezone: string): string {
   if (task.repeat) parts.push(`repeats ${task.repeat}`);
   if (task.tags.length) parts.push(`tags ${task.tags.join(',')}`);
   const title = task.title.replace(/\s+/g, ' ').slice(0, 80);
-  return `#${task.n} ${title}${parts.length ? ` — ${parts.join('; ')}` : ''}`;
+  return `${task.n >= PROVISIONAL_N ? 'new' : `#${task.n}`} ${title}${parts.length ? ` — ${parts.join('; ')}` : ''}`;
 }
 
 export function systemPrompt(input: PromptInput): string {
@@ -168,6 +169,7 @@ export function systemPrompt(input: PromptInput): string {
     '- When a part of the day is said and no hour: morning 09:00, noon 12:00, afternoon 15:00, evening 18:00, night 21:00. An hour on its own after "at" is that hour, not a duration. A duration ("for 2 hours") sets plan_end.',
     '- In Iran the week starts on Saturday and Friday is the weekend. "Next Saturday" is the first Saturday after today.',
     '- For a goal or a project ("study for the exam in 5 days", "plan my week"), break it into concrete tasks on different days at sensible times, and keep clear of the times already taken in the list below.',
+    '- When asked to plan or organise the day: only touch tasks that have no plan or are overdue, with update_task (plan_date, plan_start, plan_end); never move a task that already has an hour; begin no earlier than the next quarter hour from now; work until 21:00; give a task 30 to 60 minutes by its kind (a call 15 to 30, deep work 60 to 90); leave 10 minutes between; never overlap the hours already taken in the list; put the most urgent first (overdue, due soon, high priority); what does not fit goes to tomorrow from 09:00.',
     '- To change or finish a task use its number (#n) from the list below; never guess a number. If two tasks fit, ask which.',
     '- delete_task only proposes: the user confirms with a button, so say so in one short sentence.',
     '- If something essential is missing or unclear, call nothing and ask one short question.',

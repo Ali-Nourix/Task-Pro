@@ -19,6 +19,23 @@ export interface Remembered {
   at: string;
 }
 
+/** What the bot has already sent, and when, so that a message goes out once. */
+export interface Notice {
+  at: string;
+  /** For a reminder that repeats: how many times it has. */
+  n?: number;
+}
+
+/** What the assistant would do, shown to the owner and kept until it is accepted or dropped. */
+export interface PendingPlan {
+  at: string;
+  text: string;
+  calls: { name: string; args: Record<string, unknown> }[];
+}
+
+export type DeadlineNudge = 'off' | 'eve' | 'morn' | 'both';
+export type AiConfirm = 'ask' | 'big' | 'auto';
+
 export type Language = 'fa' | 'en';
 export type CalendarKind = 'jalali' | 'gregorian';
 
@@ -34,6 +51,20 @@ export interface OwnerRow {
   pad?: number | null;
   /** The assistant answers what is written, unless turned off. It also needs its keys (see the setup guide). */
   ai?: boolean | null;
+  /** When the morning summary comes (HH:MM), or null for never. */
+  brief_time?: string | null;
+  /** When the evening review comes, or null. */
+  review_time?: string | null;
+  /** A message the evening before a deadline (eve), the morning of it (morn), both, or none. */
+  deadline_nudge?: DeadlineNudge | null;
+  /** A reminder that is not answered comes again, up to three times. */
+  nag?: boolean | null;
+  /** What was sent by itself already: the key says what and for which day. */
+  notified?: Record<string, Notice> | null;
+  /** Whether the assistant shows its plan first: always, only when it is big, or never. */
+  ai_confirm?: AiConfirm | null;
+  /** The plan waiting for a yes. */
+  ai_pending?: PendingPlan | null;
   /** The last lines of the conversation with the assistant. */
   ai_memory?: Remembered[] | null;
   /** The tags the notes use or define, with how many tasks have each, as the plugin last uploaded them. */
@@ -198,6 +229,9 @@ export interface Telegram {
   /** The bytes of a file Telegram holds (a voice message). */
   download?(fileId: string): Promise<Uint8Array>;
 }
+
+/** The number a task has in a preview, before it is made: far above any real one. */
+export const PROVISIONAL_N = 1_000_000;
 
 export const OPEN: readonly Status[] = ['open', 'doing'];
 

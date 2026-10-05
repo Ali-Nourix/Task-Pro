@@ -10,7 +10,7 @@ import type { Moment, Plan, Priority } from './quickadd.ts';
 import { MAX_TAGS, cleanTitle, parseRepeat, parseTags } from './taskfields.ts';
 import { clockMinutes, daysBetween, localNow, localToUtc } from './time.ts';
 import type { EditPayload, OwnerRow, Remembered, Status, Store, TaskRow } from './types.ts';
-import { isOpen } from './types.ts';
+import { PROVISIONAL_N, isOpen } from './types.ts';
 
 /** A task to make, with every field already checked. */
 export interface NewTask {
@@ -54,6 +54,8 @@ export interface AssistantResult {
   warnings: AssistantWarning[];
   /** What was done, in plain lines with the task numbers: the model reads it next time. */
   summary: string;
+  /** The commands that changed or would change something, as sent: to be done again when the owner accepts them. */
+  calls: AiCall[];
 }
 
 export interface AssistantInput {
@@ -95,10 +97,17 @@ export function remember(memory: Remembered[], text: string, result: AssistantRe
 const has = (args: Record<string, unknown>, key: string): boolean => args[key] !== undefined && args[key] !== null && args[key] !== '';
 const strings = (value: unknown): string[] => (Array.isArray(value) ? value.map((v) => String(v)) : typeof value === 'string' ? [value] : []);
 
-export async function runAssistant(input: AssistantInput): Promise<AssistantResult> {
-  const { ai, store, effects, owner, now } = input;
-  const started = Date.now();
+/** What it takes to do commands, without a model. */
+export type ExecInput = Pick<AssistantInput, 'store' | 'effects' | 'owner' | 'now'>;
+
+/** The commands that change something: these are what is kept to be done again later. */
+const KNOWN = new Set(AI_TOOLS.map((tool) => tool.name));
+
+/** Does what the model's commands say, checking every field; `finish` is the report of it. */
+function createExecutor(input: ExecInput) {
+  const { store, effects, owner, now } = input;
   const clock = localNow(owner.timezone, now);
+  const writes: AiCall[] = [];
   const changes = new Map<string, Change>();
   const proposals = new Set<string>();
   const warnings: AssistantWarning[] = [];
@@ -184,7 +193,7 @@ export async function runAssistant(input: AssistantInput): Promise<AssistantResu
     if (warning) warn('reminderPast');
     record('added', row);
     summary.push(`Created ${taskLine(row, owner.timezone)}`);
-    return `created #${row.n}`;
+    return row.n >= PROVISIONAL_N ? 'created' : `created #${row.n}`;
   };
 
   const update = async (args: Record<string, unknown>): Promise<string> => {
@@ -310,6 +319,7 @@ export async function runAssistant(input: AssistantInput): Promise<AssistantResu
   };
 
   const run = async (call: AiCall): Promise<string> => {
+    if (KNOWN.has(call.name) && !READ_ONLY.has(call.name)) writes.push(call);
     try {
       switch (call.name) {
         case 'add_task':
@@ -331,6 +341,30 @@ export async function runAssistant(input: AssistantInput): Promise<AssistantResu
     }
   };
 
+  const finish = (say: string): AssistantResult => ({ say, changes: [...changes.values()], proposals: [...proposals], warnings, summary: summary.join('\n'), calls: writes });
+
+  return { run, finish, tooMany: () => warn('tooMany') };
+}
+
+/** Does commands again that an earlier run recorded (the owner has accepted them): the same checks, no model. */
+export async function replayCalls(calls: AiCall[], input: ExecInput): Promise<AssistantResult> {
+  const executor = createExecutor(input);
+  let executed = 0;
+  for (const call of calls) {
+    if (executed++ >= MAX_CALLS) {
+      executor.tooMany();
+      break;
+    }
+    await executor.run(call);
+  }
+  return executor.finish('');
+}
+
+export async function runAssistant(input: AssistantInput): Promise<AssistantResult> {
+  const { ai, store, owner, now } = input;
+  const started = Date.now();
+  const clock = localNow(owner.timezone, now);
+  const executor = createExecutor(input);
   const messages: AiMessage[] = [
     {
       role: 'system',
@@ -369,11 +403,11 @@ export async function runAssistant(input: AssistantInput): Promise<AssistantResu
     let writes = 0;
     for (const call of reply.calls) {
       if (executed >= MAX_CALLS) {
-        warn('tooMany');
+        executor.tooMany();
         break;
       }
       executed++;
-      results.push(`${call.name}: ${await run(call)}`);
+      results.push(`${call.name}: ${await executor.run(call)}`);
       if (READ_ONLY.has(call.name)) reads = true;
       else writes++;
     }
@@ -387,5 +421,5 @@ export async function runAssistant(input: AssistantInput): Promise<AssistantResu
     );
   }
 
-  return { say, changes: [...changes.values()], proposals: [...proposals], warnings, summary: summary.join('\n') };
+  return executor.finish(say);
 }
