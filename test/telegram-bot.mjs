@@ -171,8 +171,8 @@ async function paired() {
   eq(w.store.owner.chat_id, 7, 'the right code pairs the chat');
   eq([w.store.owner.language, w.store.owner.timezone, w.store.owner.calendar], ['fa', 'Asia/Tehran', 'jalali'], 'in Persian, Tehran time and the Jalali calendar to begin with');
   eq(w.sent.slice(-2).map((m) => m.text.startsWith('👋 <b>') ? 'greeting' : m.text.startsWith('✨ <b>') ? 'menu' : '?'), ['greeting', 'menu'], 'it greets, then shows the main menu');
-  eq(w.commands[0], ['start', 'today', 'list', 'tags', 'ai', 'status', 'settings', 'help'], 'and puts its commands in the chat’s menu');
-  eq(w.data(w.last()), ['ls:t:0', 'ls:a:0', 'new', 'tg:0', 'st', 'set', 'help'], 'the menu: today, all, new, tags, status, settings, help');
+  eq(w.commands[0], ['start', 'today', 'list', 'week', 'tags', 'ai', 'planday', 'status', 'settings', 'help'], 'and puts its commands in the chat’s menu');
+  eq(w.data(w.last()), ['ls:t:0', 'ls:a:0', 'new', 'wk:0', 'tg:0', 'st', 'set', 'help'], 'the menu: today, all, new, the week, tags, status, settings, help');
   eq(w.last().buttons[0][0].style, 'primary', 'the first button is blue');
   w.sent.length = 0;
   await w.say('hello', 99);
@@ -234,7 +234,7 @@ async function paired() {
   const today = w.last().text;
   eq([today.includes('Late'), today.includes('Today'), today.includes('Later')], [true, true, false], '/today lists what is late and what is today');
   eq(today.indexOf('عقب‌افتاده') < today.indexOf('Late') && today.indexOf('Late') < today.lastIndexOf('📅 امروز'), true, 'in sections of their own, the late first');
-  eq(w.data(w.last()), ['t:1@t0', 't:2@t0', 'ls:a:0', 'ls:t:0', 'ls:o:0', 'home', 'ls:t:0', 'ls:a:0', 'new', 'set'], 'each task opens by a button; the filters show only what has tasks, then the tab bar');
+  eq(w.data(w.last()), ['t:1@t0', 't:2@t0', 'dy:2026-10-03', 'wk:0', 'dy:2026-10-01', 'ls:a:0', 'ls:t:0', 'ls:o:0', 'home', 'ls:t:0', 'ls:a:0', 'new', 'set'], 'each task opens by a button; the days around today and the week (turned round for Persian: tomorrow on the left), the filters that have tasks, then the tab bar');
   eq(w.last().buttons.flat().find((b) => b.data === 'ls:t:0').style, 'primary', 'the filter in use is blue');
   await w.say('/list');
   eq(w.last().text.includes('Later') && w.last().text.includes('🗓 بعداً'), true, '/list lists them all, the far ones under “later”');
@@ -322,7 +322,7 @@ async function paired() {
 
   // Settings, in place.
   await w.say('/settings');
-  eq(w.data(w.last()), ['set:lang', 'set:cal', 'set:lead', 'set:tz', 'set:rich', 'set:pad', 'set:ai', 'home', 'ls:t:0', 'ls:a:0', 'new', 'set'], 'settings, with the tab bar');
+  eq(w.data(w.last()), ['set:lang', 'set:cal', 'set:lead', 'set:tz', 'set:rich', 'set:pad', 'set:ai', 'nf', 'home', 'ls:t:0', 'ls:a:0', 'new', 'set'], 'settings, with the tab bar');
   await w.press('set:cal');
   eq([w.store.owner.calendar, w.lastEdit().text.includes('میلادی')], ['gregorian', true], 'the calendar flips');
   await w.press('set:lead');
@@ -372,7 +372,7 @@ async function paired() {
   await w.say('/start');
   const home = w.last();
   eq([home.text.includes('<b>۱</b> عقب‌افتاده'), home.text.includes('<b>۲</b> تسک باز'), home.text.includes('🟢')], [true, true, true], 'the menu counts what is late, due today and open, and shows the sync');
-  eq(w.data(home), ['ls:t:0', 'ls:a:0', 'new', 'ls:o:0', 'tg:0', 'st', 'set', 'help'], 'with a button for what is overdue when something is');
+  eq(w.data(home), ['ls:t:0', 'ls:a:0', 'new', 'wk:0', 'ls:o:0', 'tg:0', 'st', 'set', 'help'], 'with a button for what is overdue when something is');
   eq(home.buttons.flat().find((b) => b.data === 'ls:o:0').style, 'danger', 'in red');
   await w.press('st');
   eq(w.lastEdit().text.includes('📊'), true, 'the status page opens in place');
@@ -490,7 +490,7 @@ async function paired() {
   const fs = await import('fs');
   const read = (name) => fs.readFileSync(new URL(`../supabase/migrations/${name}`, import.meta.url), 'utf8');
   const code = (text) => text.split('\n').filter((line) => !line.startsWith('--')).join(' ').replace(/\s+/g, ' ').trim();
-  eq(code(mod.TASK_SETTINGS_SQL), code(read('20261003000000_task_settings.sql') + '\n' + read('20261004000000_subtasks.sql') + '\n' + read('20261005000000_rich_messages.sql') + '\n' + read('20261006000000_message_width.sql') + '\n' + read('20261007000000_tags.sql') + '\n' + read('20261008000000_ai_assistant.sql')), 'the update the functions run is the migration files, in order');
+  eq(code(mod.TASK_SETTINGS_SQL), code(read('20261003000000_task_settings.sql') + '\n' + read('20261004000000_subtasks.sql') + '\n' + read('20261005000000_rich_messages.sql') + '\n' + read('20261006000000_message_width.sql') + '\n' + read('20261007000000_tags.sql') + '\n' + read('20261008000000_ai_assistant.sql') + '\n' + read('20261009000000_digests_and_planning.sql')), 'the update the functions run is the migration files, in order');
 }
 
 // ── Every setting of a task ────────────────────────────────────────────────

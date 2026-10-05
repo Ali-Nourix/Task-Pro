@@ -7,18 +7,21 @@
 import { normalize, parseQuickAdd } from './quickadd.ts';
 import { MAX_TAGS, OFF, cleanTitle, parseRepeat, parseTags } from './taskfields.ts';
 import type { Moment, Plan } from './quickadd.ts';
-import { addDays, clockMinutes, isRealDate, isZone, localNow, localToUtc, toClock, utcToLocal } from './time.ts';
+import { addDays, clockMinutes, isRealDate, isZone, localNow, localToUtc, toClock, utcToLocal, weekdayOf } from './time.ts';
+import { bucketOf, byHour, byPlan, isOverdue, isToday, onDay } from './agenda.ts';
+import type { Bucket } from './agenda.ts';
 import { buildMonth, monthKeyOf, monthName, partsOf } from './calendar-picker.ts';
 import { htmlToRich, mdEscape } from './rich.ts';
 import { PADS, padOf, widenHtml, widenMarkdown } from './widen.ts';
-import { clockLabel, dayLabel, digits, esc, priorityMark, priorityName, repeatLabel, taskCard, taskCardRich, taskEntry, taskEntryRich, truncate, words } from './texts.ts';
+import { clockLabel, dateLabel, dayItem, dayLabel, dayNumber, digits, esc, priorityMark, priorityName, repeatLabel, taskCard, taskCardRich, taskEntry, taskEntryRich, truncate, weekdayInitial, words } from './texts.ts';
 import type { Relatives } from './texts.ts';
 import type { Words } from './texts.ts';
-import type { AddPayload, Button, EditPayload, OwnerRow, PlanPayload, Rich, RemindPayload, StatusPayload, Store, TaskRow, Telegram } from './types.ts';
-import { isOpen } from './types.ts';
+import type { AiConfirm, PendingPlan, DeadlineNudge, AddPayload, Button, EditPayload, OwnerRow, PlanPayload, Rich, RemindPayload, StatusPayload, Store, TaskRow, Telegram } from './types.ts';
+import { PROVISIONAL_N, isOpen } from './types.ts';
 import { AiError } from './ai.ts';
 import type { Ai } from './ai.ts';
-import { freshMemory, remember, runAssistant } from './assistant.ts';
+import { MEMORY_MINUTES, freshMemory, remember, replayCalls, runAssistant } from './assistant.ts';
+import { OverlayStore } from './overlay-store.ts';
 import type { AssistantResult, Effects, NewTask } from './assistant.ts';
 
 export { cleanTitle, parseRepeat, parseTags };
@@ -51,6 +54,8 @@ const COMMANDS: Record<string, string> = {
   lead: 'lead',
   tags: 'tags', tag: 'tags', برچسب: 'tags', برچسبها: 'tags',
   ai: 'ai', دستیار: 'ai', هوش: 'ai',
+  week: 'week', هفته: 'week',
+  planday: 'planday', روزم: 'planday',
 };
 
 /** Words said on their own, without a slash, that are commands rather than tasks. */
@@ -210,6 +215,10 @@ async function runCommand(command: string, args: string, ctx: Ctx): Promise<void
       return sendView(ctx, await tagsView(ctx, 0));
     case 'ai':
       return args ? assist(args, ctx) : sendView(ctx, aiView(ctx));
+    case 'week':
+      return sendView(ctx, await weekView(ctx, 0));
+    case 'planday':
+      return planDay(ctx);
     case 'settings':
       return sendView(ctx, settingsView(ctx));
     case 'done': {
@@ -322,7 +331,7 @@ async function homeView(ctx: Ctx): Promise<View> {
       { text: w.buttons.today, data: 'ls:t:0', style: 'primary' },
       { text: w.buttons.all, data: 'ls:a:0' },
     ],
-    [{ text: w.buttons.newTask, data: 'new', style: 'success' }],
+    [{ text: w.buttons.newTask, data: 'new', style: 'success' }, { text: w.digest.buttons.week, data: 'wk:0' }],
   ];
   if (counts.overdue) rows[1].push({ text: `${w.buttons.overdue} ${digits(counts.overdue, owner.language)}`, data: 'ls:o:0', style: 'danger' });
   rows.push([
@@ -383,6 +392,7 @@ function settingsView(ctx: Ctx): View {
       [{ text: w.settingButtons.zone(owner.timezone), data: 'set:tz' }, { text: w.settingButtons.rich(owner.rich !== false), data: 'set:rich' }],
       [{ text: w.settingButtons.pad(w.padNames(padOf(owner.pad))), data: 'set:pad' }],
       [{ text: w.ai.button(aiState(ctx)), data: 'set:ai', ...(aiState(ctx) === 'on' ? { style: 'primary' as const } : {}) }],
+      [{ text: w.notif.open, data: 'nf' }],
       navRow(ctx, 'settings'),
     ],
   };
@@ -443,16 +453,7 @@ async function tagsView(ctx: Ctx, requestedPage: number): Promise<View> {
   return { text, buttons };
 }
 
-type Bucket = 'overdue' | 'today' | 'tomorrow' | 'later' | 'none';
 const BUCKET_ORDER: Bucket[] = ['overdue', 'today', 'tomorrow', 'later', 'none'];
-
-function bucketOf(task: TaskRow, today: string, zone: string): Bucket {
-  if (isOverdue(task, today)) return 'overdue';
-  if (isToday(task, today, zone)) return 'today';
-  const date = task.plan_date ?? task.deadline;
-  if (!date) return 'none';
-  return date === addDays(today, 1) ? 'tomorrow' : 'later';
-}
 
 function matches(filter: Filter, entry: { task: TaskRow; bucket: Bucket }): boolean {
   const { bucket } = entry;
@@ -597,6 +598,10 @@ async function listView(ctx: Ctx, filter: Filter, requestedPage: number, tag?: s
     buttons.push(navRow(ctx));
     return { text, buttons, rich };
   }
+  if (filter === 't') {
+    buttons.push(dayNavRow(ctx, todayOf(ctx)));
+    if (ctx.deps.ai) buttons.push([{ text: w.digest.buttons.planDay, data: 'pd' }]);
+  }
   // Two to a row, so a label is never cut short.
   if (filterRow.length > 1) for (let i = 0; i < filterRow.length; i += 2) buttons.push(filterRow.slice(i, i + 2));
   buttons.push(navRow(ctx, filter === 't' ? 'today' : filter === 'a' ? 'all' : undefined));
@@ -608,10 +613,18 @@ interface ListRef {
   filter: Filter;
   page: number;
   tag?: string;
+  /** Not a list: one day's screen (`y2026-10-05`)… */
+  day?: string;
+  /** …or a week's (`w0`, `w-1`). */
+  week?: number;
 }
 
 /** The list a card came from, as its «back» button names it: `a2` is page 3 of all, `g0~home` the first page of #home. */
 function listOf(back: string): ListRef {
+  const day = /^y(\d{4}-\d{2}-\d{2})$/.exec(back);
+  if (day) return { filter: 'a', page: 0, day: day[1] };
+  const week = /^w(-?\d{1,3})$/.exec(back);
+  if (week) return { filter: 'a', page: 0, week: Number(week[1]) };
   const tagged = /^g(\d+)~(.+)$/u.exec(back);
   if (tagged) return { filter: 'a', page: Number(tagged[1]), tag: tagged[2] };
   const filter = FILTERS.find((f) => f === back[0]) ?? 'a';
@@ -620,9 +633,10 @@ function listOf(back: string): ListRef {
 }
 
 /** The button data that opens a list. */
-const listData = (ref: ListRef): string => (ref.tag ? `lg:${ref.page}:${ref.tag}` : `ls:${ref.filter}:${ref.page}`);
+const listData = (ref: ListRef): string => (ref.day ? `dy:${ref.day}` : ref.week !== undefined ? `wk:${ref.week}` : ref.tag ? `lg:${ref.page}:${ref.tag}` : `ls:${ref.filter}:${ref.page}`);
 
-const showList = (ctx: Ctx, ref: ListRef): Promise<View> => listView(ctx, ref.filter, ref.page, ref.tag);
+const showList = (ctx: Ctx, ref: ListRef): Promise<View> =>
+  ref.day ? dayView(ctx, ref.day) : ref.week !== undefined ? weekView(ctx, ref.week) : listView(ctx, ref.filter, ref.page, ref.tag);
 
 /** A task's parent and its open subtasks, for its card. */
 async function relativesOf(ctx: Ctx, task: TaskRow): Promise<{ parent: TaskRow | null; children: TaskRow[]; relatives: Relatives }> {
@@ -932,6 +946,173 @@ async function addTask(text: string, ctx: Ctx, forcedDay?: string): Promise<void
   await sendView(ctx, view);
 }
 
+// ── The week and the day ───────────────────────────────────────────────────
+
+/** The seven days of a week, from its first day (Saturday with the Jalali calendar, Monday with the Gregorian), `offset` weeks from this one. */
+function weekDays(ctx: Ctx, offset: number): string[] {
+  const first = ctx.owner.calendar === 'jalali' ? 6 : 1;
+  const start = addDays(todayOf(ctx), -((weekdayOf(todayOf(ctx)) - first + 7) % 7) + offset * 7);
+  return Array.from({ length: 7 }, (_, i) => addDays(start, i));
+}
+
+/** In Persian the next is to the left: a row of buttons that goes forward is turned round. */
+const readingOrder = <T,>(ctx: Ctx, items: T[]): T[] => (ctx.owner.language === 'fa' ? [...items].reverse() : items);
+
+/** A button that goes back or forward: with an arrow in English; in Persian the order and the words say it (an arrow would be turned round). */
+const stepLabel = (ctx: Ctx, side: 'back' | 'forward', text: string): string => (ctx.owner.language === 'fa' ? text : side === 'back' ? `‹ ${text}` : `${text} ›`);
+
+/** Yesterday, a way up, tomorrow: under a day's screen and under the list for today. */
+function dayNavRow(ctx: Ctx, day: string): Button[] {
+  const { w, owner } = ctx;
+  const today = todayOf(ctx);
+  const label = (date: string) => truncate(dayLabel(date, owner, today), 14);
+  const middle: Button = day === today ? { text: w.digest.buttons.week, data: 'wk:0' } : { text: w.digest.buttons.today, data: 'ls:t:0' };
+  return readingOrder(ctx, [
+    { text: stepLabel(ctx, 'back', label(addDays(day, -1))), data: `dy:${addDays(day, -1)}` },
+    middle,
+    { text: stepLabel(ctx, 'forward', label(addDays(day, 1))), data: `dy:${addDays(day, 1)}` },
+  ]);
+}
+
+/** A week as seven days with what is on each: a table in the rich message, quotes in the classic one. */
+async function weekView(ctx: Ctx, offset: number): Promise<View> {
+  const { w, owner } = ctx;
+  const today = todayOf(ctx);
+  const days = weekDays(ctx, offset);
+  const open = await ctx.deps.store.openTasks();
+  const rowsOf = days.map((day) => ({ day, tasks: open.filter((task) => onDay(task, day, owner.timezone)).sort(byHour) }));
+  const range = `${dateLabel(days[0], owner)} – ${dateLabel(days[6], owner)}`;
+  const SHOW = 5;
+
+  const html: string[] = [w.week.title(range)];
+  const table: string[] = ['| | |', '|:--|:--|'];
+  for (const { day, tasks } of rowsOf) {
+    const mark = day === today ? ` · <i>${w.week.today}</i>` : '';
+    const head = `<b>${dateLabel(day, owner)}</b>${mark}`;
+    const extra = tasks.length > SHOW ? w.week.more(tasks.length - SHOW) : '';
+    html.push(tasks.length ? `${head}\n<blockquote>${tasks.slice(0, SHOW).map((task) => dayItem(task, day, owner)).join('\n')}${extra ? `\n${extra}` : ''}</blockquote>` : `${head}  <i>${w.week.empty}</i>`);
+    const cell = tasks.length ? [tasks.slice(0, SHOW).map((task) => dayItem(task, day, owner, true)).join(' · '), extra].filter(Boolean).join(' ') : w.week.empty;
+    table.push(`| **${mdEscape(dateLabel(day, owner))}**${day === today ? ` · *${w.week.today}*` : ''} | ${cell} |`);
+  }
+  const overdue = open.filter((task) => isOverdue(task, today)).length;
+
+  const dayButtons: Button[] = days.map((day) => ({
+    text: `${weekdayInitial(day, owner.language)} ${dayNumber(day, owner)}${rowsOf.find((row) => row.day === day)!.tasks.length ? '•' : ''}`,
+    data: `dy:${day}`,
+    ...(day === today ? { style: 'primary' as const } : {}),
+  }));
+  const [before, after] = [{ text: stepLabel(ctx, 'back', w.week.weekBack), data: `wk:${offset - 1}` }, { text: stepLabel(ctx, 'forward', w.week.weekNext), data: `wk:${offset + 1}` }];
+  const middle: Button = offset === 0 ? { text: w.digest.buttons.today, data: 'ls:t:0' } : { text: w.week.thisWeek, data: 'wk:0' };
+  const buttons: Button[][] = [readingOrder(ctx, dayButtons), readingOrder(ctx, [before, middle, after])];
+  if (overdue) buttons.push([{ text: `${w.digest.buttons.overdue} ${digits(overdue, owner.language)}`, data: 'ls:o:0', style: 'danger' }]);
+  buttons.push(navRow(ctx));
+  return { text: html.join('\n'), rich: `# ${withoutTags(w.week.title(range))}\n\n${table.join('\n')}`, buttons };
+}
+
+/** One day: its tasks in the order of the day, a button for each, and the way to the days around it. */
+async function dayView(ctx: Ctx, day: string): Promise<View> {
+  const { w, owner } = ctx;
+  const today = todayOf(ctx);
+  const tasks = (await ctx.deps.store.openTasks()).filter((task) => onDay(task, day, owner.timezone)).sort(byHour);
+  const shown = tasks.slice(0, PAGE * 2);
+  const entries = shown.map((task, i) => taskEntry(task, owner, today, { position: i + 1 }));
+  const text = `${w.week.dayTitle(dateLabel(day, owner), tasks.length)}${day === today ? ` · <i>${w.week.today}</i>` : ''}\n${entries.length ? `<blockquote>${entries.join('\n')}</blockquote>` : `<i>${w.week.dayEmpty}</i>`}`;
+  const buttons: Button[][] = [];
+  for (let i = 0; i < shown.length; i += 2) {
+    buttons.push(shown.slice(i, i + 2).map((task, j) => ({ text: `${digits(i + j + 1, owner.language)} · ${truncate(task.title, 15)}`, data: `t:${task.n}@y${day}` })));
+  }
+  buttons.push(dayNavRow(ctx, day));
+  buttons.push([{ text: w.digest.buttons.week, data: 'wk:0' }, { text: w.week.newOnDay, data: `cd:x:0:${day}`, style: 'success' }]);
+  buttons.push(navRow(ctx));
+  return { text, buttons };
+}
+
+/** What is planned for today and not done goes to tomorrow, at the same hour, with its reminder before it. */
+async function moveToTomorrow(ctx: Ctx): Promise<void> {
+  const { w, owner } = ctx;
+  const today = todayOf(ctx);
+  const tomorrow = addDays(today, 1);
+  const moving = (await ctx.deps.store.openTasks()).filter((task) => task.plan_date === today);
+  if (!moving.length) {
+    ctx.toast = w.digest.review.nothingToMove;
+    return;
+  }
+  const now = ctx.deps.now().getTime();
+  for (const task of moving) {
+    await applyPlan(ctx, task, { date: tomorrow, ...(task.plan_start ? { start: task.plan_start } : {}), ...(task.plan_end ? { end: task.plan_end } : {}) });
+    // A reminder that was before today's plan has gone by: it goes before tomorrow's.
+    if (task.plan_start && task.remind_at && new Date(task.remind_at).getTime() < now) await applyReminder(ctx, (await ctx.deps.store.taskByKey(task.key)) ?? task, 'default');
+  }
+  const done = w.digest.review.moved(moving.length, dayLabel(tomorrow, owner, today));
+  ctx.toast = done;
+  await present(ctx, { text: done, buttons: [[{ text: w.digest.buttons.tomorrow, data: `dy:${tomorrow}` }, { text: w.digest.buttons.week, data: 'wk:0' }], navRow(ctx)] });
+}
+
+// ── Notifications ──────────────────────────────────────────────────────────
+
+const BRIEF_TIMES = [null, '06:00', '07:00', '08:00', '09:00', '10:00'];
+const REVIEW_TIMES = [null, '19:00', '20:00', '21:00', '22:00', '23:00'];
+const NUDGES: DeadlineNudge[] = ['off', 'eve', 'morn', 'both'];
+const CONFIRMS: AiConfirm[] = ['big', 'ask', 'auto'];
+
+/** The next of a list of choices after the current one (the first when the current one is not in it). */
+const cycle = <T,>(choices: T[], current: T): T => choices[(choices.indexOf(current) + 1) % choices.length];
+
+const withoutTags = (html: string): string => html.replace(/<[^>]+>/g, '');
+
+/** What the owner has set for the messages the bot sends by itself, with the defaults a database without the columns yet implies. */
+function notifSettings(owner: OwnerRow) {
+  return {
+    brief: owner.brief_time === undefined ? '08:00' : owner.brief_time,
+    review: owner.review_time === undefined ? '21:00' : owner.review_time,
+    nudge: owner.deadline_nudge ?? 'eve',
+    nag: owner.nag !== false,
+    confirm: owner.ai_confirm ?? 'big',
+  };
+}
+
+function notifView(ctx: Ctx): View {
+  const { w, owner } = ctx;
+  const set = notifSettings(owner);
+  const lines = [w.notif.brief(set.brief), w.notif.review(set.review), w.notif.nudge(set.nudge), w.notif.nag(set.nag), ...(ctx.deps.ai ? [w.notif.confirm(set.confirm)] : [])];
+  const button = (line: string, data: string): Button[] => [{ text: withoutTags(line), data }];
+  return {
+    text: `${w.notif.title}\n<blockquote>${lines.join('\n')}</blockquote>\n${w.notif.hint}`,
+    buttons: [
+      button(lines[0], 'nf:brief'),
+      button(lines[1], 'nf:review'),
+      button(lines[2], 'nf:nudge'),
+      button(lines[3], 'nf:nag'),
+      ...(ctx.deps.ai ? [button(lines[4], 'nf:confirm')] : []),
+      [{ text: w.buttons.back, data: 'set' }],
+      navRow(ctx, 'settings'),
+    ],
+  };
+}
+
+async function notifications(what: string | undefined, ctx: Ctx): Promise<void> {
+  const { owner, w } = ctx;
+  if (!what) return present(ctx, notifView(ctx));
+  const set = notifSettings(owner);
+  let patch: Partial<OwnerRow> | null = null;
+  if (what === 'brief') patch = { brief_time: cycle(BRIEF_TIMES, set.brief) };
+  else if (what === 'review') patch = { review_time: cycle(REVIEW_TIMES, set.review) };
+  else if (what === 'nudge') patch = { deadline_nudge: cycle(NUDGES, set.nudge) };
+  else if (what === 'nag') patch = { nag: !set.nag };
+  else if (what === 'confirm') patch = { ai_confirm: cycle(CONFIRMS, set.confirm) };
+  if (!patch) return;
+  try {
+    await ctx.deps.store.patchOwner(patch);
+  } catch (error) {
+    // The database has not learnt these settings yet (it updates itself on first use).
+    console.error('notification setting not saved', error);
+    ctx.toast = w.notif.unavailable;
+    return;
+  }
+  const fresh = ctxFor(ctx.deps, { ...owner, ...patch }, ctx.chatId, ctx.messageId);
+  await present(fresh, notifView(fresh));
+}
+
 // ── The assistant ──────────────────────────────────────────────────────────
 
 const aiState = (ctx: Ctx): 'on' | 'off' | 'unset' => (!ctx.deps.ai ? 'unset' : ctx.owner.ai === false ? 'off' : 'on');
@@ -967,9 +1148,9 @@ function effectsFor(ctx: Ctx): Effects {
 /** The most tasks listed in full on the assistant's card. */
 const SHOWN = 15;
 
-async function assistantView(ctx: Ctx, result: AssistantResult, heard?: string): Promise<View> {
+async function assistantView(ctx: Ctx, result: AssistantResult, heard?: string, preview?: Store): Promise<View> {
   const { w, owner } = ctx;
-  const { store } = ctx.deps;
+  const store = preview ?? ctx.deps.store;
   const today = todayOf(ctx);
   const load = async (keys: string[]): Promise<TaskRow[]> => (await Promise.all(keys.map((key) => store.taskByKey(key)))).filter((task): task is TaskRow => !!task);
   const keysOf = (kind: 'added' | 'changed' | 'status') => result.changes.filter((change) => change.kind === kind).map((change) => change.key);
@@ -979,7 +1160,7 @@ async function assistantView(ctx: Ctx, result: AssistantResult, heard?: string):
   const removing = await load(result.proposals);
 
   const entries = (tasks: TaskRow[]): string => {
-    const lines = tasks.slice(0, SHOWN).map((task) => taskEntry(task, owner, today, { position: task.n }));
+    const lines = tasks.slice(0, SHOWN).map((task) => taskEntry(task, owner, today, { position: task.n, bullet: task.n >= PROVISIONAL_N }));
     if (tasks.length > SHOWN) lines.push(`<i>+${digits(tasks.length - SHOWN, owner.language)}</i>`);
     return `<blockquote>${lines.join('\n')}</blockquote>`;
   };
@@ -988,7 +1169,7 @@ async function assistantView(ctx: Ctx, result: AssistantResult, heard?: string):
   const sections: string[] = [];
   if (heard) sections.push(w.ai.heard(heard));
   const say = result.say ? esc(result.say) : '';
-  if (acted) sections.push([w.ai.done, say].filter(Boolean).join('\n'));
+  if (acted) sections.push([preview ? w.ai.preview.title : w.ai.done, say].filter(Boolean).join('\n'));
   else if (say) sections.push(`🤖 ${say}`);
   else if (!result.warnings.length) sections.push(w.ai.nothing);
   if (added.length) sections.push(`${w.ai.groups.added}\n${entries(added)}`);
@@ -1002,6 +1183,12 @@ async function assistantView(ctx: Ctx, result: AssistantResult, heard?: string):
     sections.push(result.warnings.map((warning) => (warning.kind === 'noTitle' || warning.kind === 'tooMany' ? w.ai.warn[warning.kind] : w.ai.warn[warning.kind](warning.detail ?? ''))).join('\n'));
   }
 
+  if (preview) {
+    return {
+      text: sections.join('\n\n'),
+      buttons: [[{ text: w.ai.preview.apply, data: 'ap', style: 'success' }, { text: w.ai.preview.cancel, data: 'ac', style: 'danger' }], navRow(ctx)],
+    };
+  }
   const buttons: Button[][] = [];
   const opened = [...added, ...changed].slice(0, 8);
   for (let i = 0; i < opened.length; i += 2) {
@@ -1016,7 +1203,7 @@ async function assistantView(ctx: Ctx, result: AssistantResult, heard?: string):
 }
 
 /** Writes to the assistant, or says what it is. `heard`: the words came from a voice message. */
-async function assist(text: string, ctx: Ctx, options: { heard?: string; fallback?: boolean } = {}): Promise<void> {
+async function assist(text: string, ctx: Ctx, options: { heard?: string; fallback?: boolean; preview?: boolean } = {}): Promise<void> {
   const { w, owner, chatId } = ctx;
   const { ai, store, tg } = ctx.deps;
   if (!ai) return tg.send(chatId, w.ai.errors.notSetUp);
@@ -1029,9 +1216,38 @@ async function assist(text: string, ctx: Ctx, options: { heard?: string; fallbac
   await Promise.all([react('👀'), quietly(tg.thinking ? tg.thinking(chatId, thinking) : tg.typing?.(chatId))]);
   const now = ctx.deps.now();
   const memory = freshMemory(owner.ai_memory, now);
+  const mode: AiConfirm = options.preview ? 'ask' : (owner.ai_confirm ?? 'big');
+  const tags = (await knownTags(ctx)).map((tag) => tag.key);
+  const base = { ai, owner, now, text, memory, tags };
   let result: AssistantResult;
+  let overlay: OverlayStore | null = null;
   try {
-    result = await runAssistant({ ai, store, effects: effectsFor(ctx), owner, now, text, memory, tags: (await knownTags(ctx)).map((tag) => tag.key) });
+    if (mode === 'auto') result = await runAssistant({ ...base, store, effects: effectsFor(ctx) });
+    else {
+      // Tried on a copy first: what it would do is known before anything is kept.
+      overlay = new OverlayStore(store);
+      const tried = await runAssistant({ ...base, store: overlay, effects: effectsFor(withStore(ctx, overlay)) });
+      const size = tried.changes.length + tried.proposals.length;
+      if (!tried.calls.length) {
+        // Nothing to change: an answer, or a question back.
+        result = tried;
+        overlay = null;
+      } else if (mode === 'big' && size <= BIG_JOB) {
+        result = { ...(await replayCalls(tried.calls, { store, effects: effectsFor(ctx), owner, now })), say: tried.say };
+        overlay = null;
+      } else {
+        const pending: PendingPlan = { at: now.toISOString(), text, calls: tried.calls };
+        try {
+          await store.patchOwner({ ai_pending: pending });
+          result = { ...tried, summary: `The user has NOT accepted these yet, nothing is applied: ${tried.summary}` };
+        } catch (error) {
+          // Nowhere to keep it until the owner answers: it is done now, as it would have been.
+          console.error('plan not kept, applying it', error);
+          result = { ...(await replayCalls(tried.calls, { store, effects: effectsFor(ctx), owner, now })), say: tried.say };
+          overlay = null;
+        }
+      }
+    }
   } catch (error) {
     console.error('assistant failed', error);
     await react('🤔');
@@ -1048,8 +1264,59 @@ async function assist(text: string, ctx: Ctx, options: { heard?: string; fallbac
     console.error('assistant memory not kept', error);
   }
   const acted = result.changes.length > 0 || result.proposals.length > 0;
-  await sendView(ctx, await assistantView(ctx, result, options.heard), incoming);
-  await react(acted ? '👌' : '👍');
+  await sendView(ctx, await assistantView(ctx, result, options.heard, overlay ?? undefined), incoming);
+  if (!overlay) await react(acted ? '👌' : '👍');
+}
+
+/** Above this many changes the assistant shows what it would do before doing it (unless told never to). */
+const BIG_JOB = 4;
+
+/** The same request, working on another store: for trying commands without keeping them. */
+const withStore = (ctx: Ctx, store: Store): Ctx => ({ ...ctx, deps: { ...ctx.deps, store } });
+
+/** Plan the day: the assistant is asked to fit what has no hour into the free ones, and shows its plan first. */
+async function planDay(ctx: Ctx): Promise<void> {
+  if (!ctx.deps.ai) {
+    ctx.toast = ctx.w.ai.errors.notSetUp;
+    if (ctx.messageId === undefined) await ctx.deps.tg.send(ctx.chatId, ctx.w.ai.errors.notSetUp);
+    return;
+  }
+  await assist(ctx.w.ai.preview.planDay, ctx, { preview: true });
+}
+
+/** The owner accepts what was shown: the same commands run again, for real. */
+async function applyPending(ctx: Ctx): Promise<void> {
+  const { w, owner } = ctx;
+  const { store } = ctx.deps;
+  const now = ctx.deps.now();
+  const pending = owner.ai_pending;
+  if (!pending || !pending.calls?.length || now.getTime() - new Date(pending.at).getTime() > MEMORY_MINUTES * 60_000) {
+    ctx.toast = w.ai.preview.gone;
+    if (pending) await store.patchOwner({ ai_pending: null }).catch(() => undefined);
+    return;
+  }
+  try {
+    // Forgotten first: a second tap on the same button must not do it twice.
+    await store.patchOwner({ ai_pending: null });
+  } catch (error) {
+    console.error('plan not cleared', error);
+    ctx.toast = w.notif.unavailable;
+    return;
+  }
+  const result = await replayCalls(pending.calls, { store, effects: effectsFor(ctx), owner, now });
+  try {
+    await store.patchOwner({ ai_memory: remember(freshMemory(owner.ai_memory, now), pending.text, result, now) });
+  } catch (error) {
+    console.error('assistant memory not kept', error);
+  }
+  ctx.toast = w.ai.done.replace(/<[^>]+>/g, '');
+  await present(ctx, await assistantView(ctx, result));
+}
+
+async function cancelPending(ctx: Ctx): Promise<void> {
+  const { w } = ctx;
+  await ctx.deps.store.patchOwner({ ai_pending: null }).catch(() => undefined);
+  await present(ctx, { text: w.ai.preview.cancelled, buttons: [navRow(ctx)] });
 }
 
 /** A voice message becomes words, and the words go to the assistant. */
@@ -1465,6 +1732,20 @@ async function route(data: string, ctx: Ctx): Promise<void> {
       return settings(rawN, ctx);
     case 'ai':
       return present(ctx, aiView(ctx));
+    case 'nf':
+      return notifications(rawN, ctx);
+    case 'wk':
+      return present(ctx, await weekView(ctx, Number(rawN) || 0));
+    case 'dy':
+      return present(ctx, await dayView(ctx, rawN && isRealDate(rawN) ? rawN : todayOf(ctx)));
+    case 'mv':
+      return moveToTomorrow(ctx);
+    case 'pd':
+      return planDay(ctx);
+    case 'ap':
+      return applyPending(ctx);
+    case 'ac':
+      return cancelPending(ctx);
     case 'ux':
       return undoAssistant(rawN ?? '', ctx);
     case 'cn':
@@ -1719,21 +2000,6 @@ function planLabel(plan: Plan, owner: OwnerRow, today: string): string {
 /** Numbers in a message, in any digits: «#12», «۱۲», "12 13". */
 export function numbersIn(text: string): number[] {
   return Array.from(normalize(text).matchAll(/\d+/g), (match) => Number(match[0])).filter((n) => Number.isSafeInteger(n));
-}
-
-function isOverdue(task: TaskRow, today: string): boolean {
-  return (!!task.deadline && task.deadline < today) || (!!task.plan_date && task.plan_date < today && !task.deadline);
-}
-
-function isToday(task: TaskRow, today: string, zone: string): boolean {
-  if (task.plan_date === today || task.deadline === today) return true;
-  return !!task.remind_at && utcToLocal(zone, new Date(task.remind_at)).date === today;
-}
-
-function byPlan(a: TaskRow, b: TaskRow): number {
-  const left = `${a.plan_date ?? a.deadline ?? '9999'} ${a.plan_start ?? ''}`;
-  const right = `${b.plan_date ?? b.deadline ?? '9999'} ${b.plan_start ?? ''}`;
-  return left === right ? a.n - b.n : left < right ? -1 : 1;
 }
 
 function constantTimeEquals(a: string, b: string): boolean {

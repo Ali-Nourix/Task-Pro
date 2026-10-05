@@ -14,6 +14,7 @@ Deno.serve(async (request) => {
       store: supabaseStore(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_SECRET_KEY')!),
       tg: telegramApi(Deno.env.get('TELEGRAM_BOT_TOKEN')!),
       now: () => new Date(),
+      ai: !!(Deno.env.get('CF_ACCOUNT_ID') && Deno.env.get('CF_API_TOKEN')),
     });
     return json({ ok: true, sent });
   } catch (error) {

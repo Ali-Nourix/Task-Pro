@@ -4,7 +4,8 @@
 // 20261005000000_rich_messages.sql,
 // 20261006000000_message_width.sql and
 // 20261007000000_tags.sql and
-// 20261008000000_ai_assistant.sql;
+// 20261008000000_ai_assistant.sql and
+// 20261009000000_digests_and_planning.sql;
 // a test keeps them alike.
 
 export const TASK_SETTINGS_SQL = `
@@ -22,6 +23,13 @@ alter table public.bot_owner add column if not exists pad integer not null defau
 alter table public.bot_owner add column if not exists tag_catalog jsonb not null default '[]'::jsonb;
 alter table public.bot_owner add column if not exists ai boolean not null default true;
 alter table public.bot_owner add column if not exists ai_memory jsonb not null default '[]'::jsonb;
+alter table public.bot_owner add column if not exists brief_time text default '08:00' check (brief_time is null or brief_time ~ '^\\d{2}:\\d{2}$');
+alter table public.bot_owner add column if not exists review_time text default '21:00' check (review_time is null or review_time ~ '^\\d{2}:\\d{2}$');
+alter table public.bot_owner add column if not exists deadline_nudge text not null default 'eve' check (deadline_nudge in ('off', 'eve', 'morn', 'both'));
+alter table public.bot_owner add column if not exists nag boolean not null default true;
+alter table public.bot_owner add column if not exists notified jsonb not null default '{}'::jsonb;
+alter table public.bot_owner add column if not exists ai_confirm text not null default 'big' check (ai_confirm in ('ask', 'big', 'auto'));
+alter table public.bot_owner add column if not exists ai_pending jsonb;
 `;
 
 /** Answers 't' when the database already has what the statements above give. */
@@ -30,7 +38,7 @@ select (
   (select count(*) from information_schema.columns where table_schema = 'public' and table_name = 'tasks' and column_name in ('repeat', 'parent_key', 'parent_title', 'subs_done', 'subs_total')) = 5
   and exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'bot_owner' and column_name = 'rich')
   and exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'bot_owner' and column_name = 'pad')
-  and (select count(*) from information_schema.columns where table_schema = 'public' and table_name = 'bot_owner' and column_name in ('tag_catalog', 'ai', 'ai_memory')) = 3
+  and (select count(*) from information_schema.columns where table_schema = 'public' and table_name = 'bot_owner' and column_name in ('tag_catalog', 'ai', 'ai_memory', 'brief_time', 'review_time', 'deadline_nudge', 'nag', 'notified', 'ai_confirm', 'ai_pending')) = 10
   and coalesce((select pg_get_constraintdef(oid) like '%edit%' from pg_constraint where conname = 'commands_kind_check' and conrelid = 'public.commands'::regclass), false)
 ) as present
 `;

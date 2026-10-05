@@ -338,7 +338,7 @@ const plain = (html) => html.replace(/<[^>]+>/g, '');
   const w = await paired(ai);
   await w.say('اول و دوم');
   eq([ai.asked.length, w.store.tasks.map((t) => t.title)], [3, ['اول', 'دوم']], 'a lone command is followed by another question, and that by a last one');
-  eq(ai.asked[1].at(-1).content.includes('[Results]\nadd_task: created #1') && ai.asked[1].at(-1).content.includes('never repeat one that is done'), true, 'which carries what was done and the warning not to do it twice');
+  eq(ai.asked[1].at(-1).content.includes('[Results]\nadd_task: created\n[End of results]') && ai.asked[1].at(-1).content.includes('never repeat one that is done'), true, 'which carries what was done and the warning not to do it twice');
   eq(plain(w.last().text).includes('هر دو را گذاشتم.'), true, 'the model’s last sentence is on the card');
 
   // A model that repeats the first command is not obeyed twice.
@@ -408,6 +408,7 @@ const plain = (html) => html.replace(/<[^>]+>/g, '');
   // The limits.
   const many = Array.from({ length: 30 }, (_, i) => call('add_task', { title: `کار ${i + 1}`, plan_date: '2026-10-04' }));
   const w = await paired(scripted(says('', ...many)));
+  await w.store.patchOwner({ ai_confirm: 'auto' });
   await w.say('همه‌اش');
   eq([w.store.tasks.length, plain(w.last().text).includes('فقط چند کار اول')], [25, true], 'at most twenty-five commands a time, and the rest is said');
   eq(w.data(w.last()).find((d) => d.startsWith('ux:')).split(':')[1].split('.').length, 10, 'the undo button reaches ten, what fits in its data');
@@ -489,6 +490,116 @@ const plain = (html) => html.replace(/<[^>]+>/g, '');
   await w.voice(5);
   eq(plain(w.last().text).includes('ویس را نتوانستم بخوانم'), true, 'and anything else is a plain “could not read it”');
   eq(w.store.tasks.length, 1, 'with no task made from nothing');
+}
+
+// ── Showing first ──────────────────────────────────────────────────────────
+{
+  // A big job is shown before it is done; the owner decides.
+  const many = Array.from({ length: 6 }, (_, i) => call('add_task', { title: `کار ${i + 1}`, plan_date: '2026-10-04', plan_start: `${String(9 + i).padStart(2, '0')}:00` }));
+  const w = await paired(scripted(says('این‌ها را چیدم.', ...many)));
+  await w.say('شش کار برای یکشنبه');
+  eq([w.store.tasks.length, w.store.commands.length], [0, 0], 'nothing is made or queued while the plan is only shown');
+  const preview = w.last();
+  const text = plain(preview.text);
+  eq(text.startsWith('🤖 پیش‌نمایش — هنوز چیزی اعمال نشده\nاین‌ها را چیدم.'), true, 'the card says it is a preview, with the model’s words');
+  eq(text.includes('تسک تازه') && text.includes('• کار 1') && text.includes('• کار 6'), true, 'and lists what would be made, with dots for numbers they do not have yet');
+  eq(w.data(preview), ['ap', 'ac', 'home', 'ls:t:0', 'ls:a:0', 'new', 'set'], 'with Apply and Cancel, and nothing to open yet');
+  eq([w.store.owner.ai_pending.calls.length, w.store.owner.ai_pending.text], [6, 'شش کار برای یکشنبه'], 'the commands wait in the database for an answer');
+  eq(w.reacted.map((r) => r[2]), ['👀'], 'the message keeps its glance until the owner decides');
+  eq(w.store.owner.ai_memory.at(-1).content.includes('NOT accepted'), true, 'the memory says the plan was only proposed, so the next sentence is not read as if it were done');
+
+  await w.press('ap');
+  eq(w.store.tasks.map((t) => [t.n, t.title, t.plan_start]), [[1, 'کار 1', '09:00'], [2, 'کار 2', '10:00'], [3, 'کار 3', '11:00'], [4, 'کار 4', '12:00'], [5, 'کار 5', '13:00'], [6, 'کار 6', '14:00']], 'Apply makes them, numbered, as typed in');
+  eq([w.store.commands.filter((c) => c.kind === 'add').length, w.store.owner.ai_pending], [6, null], 'queued for the notes, and the waiting plan is gone');
+  const applied = w.edits.at(-1);
+  eq([plain(applied.text).startsWith('🤖 انجام شد'), plain(applied.text).includes('۱. کار 1'), w.data(applied).includes('ux:1.2.3.4.5.6')], [true, true, true], 'the same message becomes the card of what was done, with its undo');
+  await w.press('ap');
+  eq([w.store.tasks.length, w.toasts.at(-1)], [6, 'این پیشنهاد دیگر معتبر نیست؛ دوباره بخواه.'], 'a second tap does nothing twice');
+}
+{
+  // Cancel, expiry, and a database that cannot keep the plan.
+  const many = () => says('', ...Array.from({ length: 5 }, (_, i) => call('add_task', { title: `م ${i + 1}` })));
+  const w = await paired(scripted(many()));
+  await w.say('پنج تا');
+  await w.press('ac');
+  eq([w.store.tasks.length, w.store.owner.ai_pending, plain(w.edits.at(-1).text).replace(/[\n\u2800]+$/, '')], [0, null, '✖ لغو شد؛ چیزی تغییر نکرد.'], 'Cancel drops the plan');
+
+  const late = await paired(scripted(many()));
+  await late.say('پنج تا');
+  late.state.now = new Date('2026-10-02T13:00:00Z');
+  await late.press('ap');
+  eq([late.store.tasks.length, late.toasts.at(-1).includes('معتبر نیست')], [0, true], 'a plan nobody answered for half an hour is too old to apply');
+
+  const stuck = await paired(scripted(many()));
+  const patch = stuck.store.patchOwner.bind(stuck.store);
+  stuck.store.patchOwner = async (p) => { if ('ai_pending' in p && p.ai_pending) throw new Error('column "ai_pending" does not exist'); return patch(p); };
+  await stuck.say('پنج تا');
+  eq([stuck.store.tasks.length, plain(stuck.last().text).startsWith('🤖 انجام شد')], [5, true], 'where the plan cannot be kept it is done at once, as before');
+}
+{
+  // The setting: always, only big jobs, never.
+  const few = () => scripted(says('', call('add_task', { title: 'یک' }), call('add_task', { title: 'دو' })));
+  const small = await paired(few());
+  await small.say('دو تا');
+  eq([small.store.tasks.length, small.store.owner.ai_pending ?? null], [2, null], 'a small job is done at once, by default');
+  const ask = await paired(few());
+  await ask.store.patchOwner({ ai_confirm: 'ask' });
+  await ask.say('دو تا');
+  eq([ask.store.tasks.length, ask.store.owner.ai_pending.calls.length], [0, 2], 'with “always show first” even a small job waits');
+  const never = await paired(scripted(says('', ...Array.from({ length: 6 }, (_, i) => call('add_task', { title: `ن ${i}` })))));
+  await never.store.patchOwner({ ai_confirm: 'auto' });
+  await never.say('شش تا');
+  eq(never.store.tasks.length, 6, 'with “never ask” even a big job is done at once');
+  const answer = await paired(scripted(says('فردا کاری نداری.')));
+  await answer.store.patchOwner({ ai_confirm: 'ask' });
+  await answer.say('فردا چه دارم؟');
+  eq([plain(answer.last().text).replace(/[\n\u2800]+$/, ''), answer.data(answer.last()).includes('ap')], ['🤖 فردا کاری نداری.', false], 'an answer in words has nothing to apply, whatever the setting');
+}
+
+// ── Plan my day ────────────────────────────────────────────────────────────
+{
+  // 12:00Z is 15:30 on Friday 2 October.
+  const plan = (messages) => {
+    const system = messages[0].content;
+    return says(
+      'چیدم.',
+      call('update_task', { n: 1, plan_date: '2026-10-02', plan_start: '16:00', plan_end: '16:45' }),
+      call('update_task', { n: 2, plan_date: '2026-10-02', plan_start: '17:00', plan_end: '17:30' }),
+      call('update_task', { n: 3, plan_date: '2026-10-03', plan_start: '09:00' }),
+      call('update_task', { n: 4, plan_date: '2026-10-03', plan_start: '10:00' }),
+      call('update_task', { n: 5, plan_date: '2026-10-03', plan_start: '11:00' })
+    );
+  };
+  const ai = scripted(plan);
+  const w = await paired(ai);
+  await w.sync({ snapshot: [
+    { key: 'A.md|^1|0', title: 'Write report', status: 'open', tags: [] },
+    { key: 'A.md|^2|0', title: 'Call the bank', status: 'open', tags: [], plan_date: '2026-10-01' },
+    { key: 'A.md|^3|0', title: 'Laundry', status: 'open', tags: [] },
+    { key: 'A.md|^4|0', title: 'Read', status: 'open', tags: [] },
+    { key: 'A.md|^5|0', title: 'Email Sara', status: 'open', tags: [] },
+    { key: 'A.md|^6|0', title: 'Meeting', status: 'open', tags: [], plan_date: '2026-10-02', plan_start: '18:00', plan_end: '19:00' },
+  ] });
+  w.sent.length = 0;
+  await w.say('/planday');
+  eq(ai.asked[0].at(-1).content.startsWith('روز من را بچین'), true, '/planday asks the assistant to plan the day');
+  eq(ai.asked[0][0].content.includes('#6 Meeting — plan 2026-10-02 18:00-19:00') && ai.asked[0][0].content.includes('When asked to plan or organise the day'), true, 'which sees the hours already taken, and has been told how to plan');
+  eq(w.store.tasks.filter((t) => t.plan_start === '16:00').length, 0, 'nothing is changed while the plan waits');
+  eq(w.store.owner.ai_pending.calls.length, 5, 'five changes are a big job: the plan waits');
+  const preview = plain(w.last().text);
+  eq(preview.includes('تغییر می‌کند') || preview.includes('تغییر کرد'), true, 'the card lists the changes');
+  eq(['Write report', 'Call the bank', 'Laundry'].every((title) => preview.includes(title)), true, 'with the tasks it would move');
+  await w.press('ap');
+  eq(w.store.tasks.slice(0, 5).map((t) => [t.plan_date, t.plan_start]), [['2026-10-02', '16:00'], ['2026-10-02', '17:00'], ['2026-10-03', '09:00'], ['2026-10-03', '10:00'], ['2026-10-03', '11:00']], 'Apply sets the hours');
+  eq(w.store.tasks[5].plan_start, '18:00', 'and the meeting that had its hour is where it was');
+  eq(w.store.commands.filter((c) => c.kind === 'plan').length, 5, 'by the plan command');
+  const button = await paired(scripted(plan));
+  await button.sync({ snapshot: [{ key: 'A.md|^1|0', title: 'Write report', status: 'open', tags: [] }] });
+  await button.press('pd');
+  eq(button.store.owner.ai_pending !== null, true, 'the “plan my day” button does the same');
+  const without = await paired();
+  await without.press('pd');
+  eq(without.toasts.at(-1).includes('راه‌اندازی نشده'), true, 'and says so when the assistant is not set up');
 }
 
 console.log(`TELEGRAM_ASSISTANT_OK (${checked} checks)`);
