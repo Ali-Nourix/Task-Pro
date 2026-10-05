@@ -80,7 +80,7 @@ const byteLength = (text: string): number => new TextEncoder().encode(text).leng
 const fits = (tag: string, limit: number): boolean => TAG_SAFE.test(tag) && byteLength(tag) <= limit;
 
 /** A message that answers one of the bot's questions starts with the property's emoji and ends its first line with the task's number. */
-const ASKED = /^(🔔|📅|✏|⏳|🏷|🔁|⏰|🕒)[^\n#]*#([\d۰-۹]+)[ \t]*(?:\n|$)/u;
+const ASKED = /^(🔔|📅|✏|⏳|🏷|🔁|⏰|🕒|🧩)[^\n#]*#([\d۰-۹]+)[ \t]*(?:\n|$)/u;
 /** The question "what is the task?" asked for a day chosen on the calendar: the day is on the second line. */
 const ASKED_DAY = /^🗓[^\n]*\n(\d{4}-\d{2}-\d{2})/u;
 /** The question "what is the task?" asked for a new task that starts with a tag: the tag is on the second line. */
@@ -673,6 +673,7 @@ async function taskView(ctx: Ctx, task: TaskRow, back: string, header?: string, 
     );
   }
   if (parent) family.push([{ text: `⬆️ ${truncate(parent.title, 24)}`, data: `t:${parent.n}${at}` }]);
+  else family.push([{ text: w.buttons.addSubtask, data: `sb:${task.n}${at}` }]);
 
   const buttons: Button[][] = [
     [
@@ -895,8 +896,8 @@ async function createTask(ctx: Ctx, spec: NewTask): Promise<{ row: TaskRow; warn
     remind_at: remindAt,
     tags: spec.tags,
     repeat: spec.repeat ?? null,
-    parent_key: null,
-    parent_title: null,
+    parent_key: spec.parent?.key ?? null,
+    parent_title: spec.parent?.title ?? null,
     subs_done: null,
     subs_total: null,
     note_path: null,
@@ -910,7 +911,13 @@ async function createTask(ctx: Ctx, spec: NewTask): Promise<{ row: TaskRow; warn
   if (spec.deadline) payload.deadline = spec.deadline;
   if (spec.plan) payload.plan = spec.plan;
   if (remind) payload.remind = remind;
+  if (spec.parent) payload.parent = spec.parent.key;
   await ctx.deps.store.addCommand('add', payload);
+  if (spec.parent) {
+    // Its task shows one more step at once; the notes' own count replaces it at the next sync.
+    const parent = (await ctx.deps.store.taskByKey(spec.parent.key)) ?? spec.parent;
+    await ctx.deps.store.patchTask(parent.key, { subs_total: (parent.subs_total ?? 0) + 1, subs_done: parent.subs_done ?? 0 });
+  }
   if (spec.repeat) {
     try {
       await ctx.deps.store.addCommand('edit', { key, repeat: spec.repeat });
@@ -922,21 +929,26 @@ async function createTask(ctx: Ctx, spec: NewTask): Promise<{ row: TaskRow; warn
   return { row, warning };
 }
 
-/** `forcedDay`: the day was chosen on the calendar, so the task is for that day. */
-async function addTask(text: string, ctx: Ctx, forcedDay?: string): Promise<void> {
-  const { w, owner, chatId } = ctx;
-  const clock = localNow(owner.timezone, ctx.deps.now());
+/** The task a line of words describes. `forcedDay`: the day was chosen on the calendar, so the task is for that day. */
+function specOf(text: string, ctx: Ctx, forcedDay?: string): NewTask | null {
+  const clock = localNow(ctx.owner.timezone, ctx.deps.now());
   const parsed = parseQuickAdd(text, { today: clock.date, minutes: clock.minutes });
   // A day chosen on the calendar wins over a day in the words; an hour in the words is kept.
   if (forcedDay) parsed.plan = { ...parsed.plan, date: forcedDay };
   const title = cleanTitle(parsed.title);
-  if (!title) return ctx.deps.tg.send(chatId, w.needTitle);
-
+  if (!title) return null;
   const spec: NewTask = { title, tags: parsed.tags };
   if (parsed.priority) spec.priority = parsed.priority;
   if (parsed.deadline) spec.deadline = parsed.deadline;
   if (parsed.plan) spec.plan = parsed.plan;
   if (parsed.remind) spec.remind = parsed.remind;
+  return spec;
+}
+
+async function addTask(text: string, ctx: Ctx, forcedDay?: string): Promise<void> {
+  const { w, chatId } = ctx;
+  const spec = specOf(text, ctx, forcedDay);
+  if (!spec) return ctx.deps.tg.send(chatId, w.needTitle);
   const { row, warning } = await createTask(ctx, spec);
 
   const view = await taskView(ctx, row, '', w.added, [warning, w.waitingForNotes].filter(Boolean).join('\n'));
@@ -1160,7 +1172,7 @@ async function assistantView(ctx: Ctx, result: AssistantResult, heard?: string, 
   const removing = await load(result.proposals);
 
   const entries = (tasks: TaskRow[]): string => {
-    const lines = tasks.slice(0, SHOWN).map((task) => taskEntry(task, owner, today, { position: task.n, bullet: task.n >= PROVISIONAL_N }));
+    const lines = tasks.slice(0, SHOWN).map((task) => taskEntry(task, owner, today, { position: task.n, bullet: task.n >= PROVISIONAL_N, parentHint: !!task.parent_key }));
     if (tasks.length > SHOWN) lines.push(`<i>+${digits(tasks.length - SHOWN, owner.language)}</i>`);
     return `<blockquote>${lines.join('\n')}</blockquote>`;
   };
@@ -1638,6 +1650,15 @@ async function closeTask(task: TaskRow, status: 'done' | 'failed', ctx: Ctx): Pr
 async function answerAsked(kind: string, n: number, text: string, replied: string, ctx: Ctx): Promise<void> {
   const { w, owner } = ctx;
   const { store, tg } = ctx.deps;
+  if (kind === '🧩') {
+    const parent = await store.taskByN(n);
+    if (!parent || !isOpen(parent.status)) return tg.send(ctx.chatId, w.noSuchTask(digits(n, owner.language)));
+    const spec = specOf(text, ctx);
+    if (!spec) return tg.send(ctx.chatId, w.needTitle);
+    const { row, warning } = await createTask(ctx, { ...spec, parent });
+    const view = await taskView(ctx, row, '', w.subtaskAdded(esc(truncate(parent.title, 40))), [warning, w.waitingForNotes].filter(Boolean).join('\n'));
+    return sendView(ctx, view);
+  }
   if (kind === '🔔') return setReminder(`${n} ${text}`, ctx);
   if (kind === '📅') return setPlan(`${n} ${text}`, ctx);
 
@@ -1773,6 +1794,10 @@ async function route(data: string, ctx: Ctx): Promise<void> {
       return present(ctx, remindMenuView(ctx, task, back));
     case 'pl':
       return present(ctx, planMenuView(ctx, task, back));
+    case 'sb': {
+      await tg.send(ctx.chatId, esc(w.askSubtask(digits(task.n, owner.language), task.title)), undefined, { forceReply: w.askHintSubtask });
+      return;
+    }
     case 'rc':
     case 'pc': {
       const remind = action === 'rc';

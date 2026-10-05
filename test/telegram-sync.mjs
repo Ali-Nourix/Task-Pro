@@ -120,6 +120,15 @@ function notes(initial) {
     setRepeat: async (task, repeat) => edit(task, (l) => setRepeat(l, repeat)),
     setText: async (task, text) => edit(task, (l) => replaceTaskText(l, text)),
     deleteTask: async (task) => files.set(task.filePath, files.get(task.filePath).filter((l) => l !== task.line)),
+    insertChild: async (parent, text) => {
+      const lines = files.get(parent.filePath);
+      const at = lines.findIndex((l) => l === parent.line);
+      if (at === -1) return false;
+      let end = at;
+      while (lines[end + 1] !== undefined && /^\s+/.test(lines[end + 1])) end++;
+      lines.splice(end + 1, 0, `\t${text.trimStart()}`);
+      return true;
+    },
     settled: async () => {},
   };
   return { files, host, text: (path) => files.get(path).join('\n') };
@@ -205,6 +214,32 @@ function notes(initial) {
   eq([fresh.key, files.has('Daily/2026-11-01.md')], ['Daily/2026-11-01.md|Next month|0', true], 'a day with no note yet gets one');
   const [broken] = await applyCommands([{ id: 'd5', kind: 'add', payload: { key: 'tg:5', day: '2026-10-12', title: 'Nope', tags: [] } }], { ...host, addTaskOnDay: async () => null });
   eq(broken.error, "the day's note could not be written", 'a day’s note that cannot be written says so rather than falling back silently');
+}
+{
+  // Subtasks go under their task.
+  const n = notes({ 'Inbox.md': '- [ ] Existing', 'Work.md': ['- [ ] Study', '- [ ] Other'].join('\n') });
+  const results = await applyCommands([
+    { id: 's1', kind: 'add', payload: { key: 'tg:1', title: 'Read chapter 1', tags: [], parent: 'Work.md|Study|0', plan: { date: '2026-10-06', start: '09:00' } } },
+    { id: 's2', kind: 'add', payload: { key: 'tg:2', title: 'Read chapter 2', tags: [], parent: 'Work.md|Study|0' } },
+    { id: 's3', kind: 'add', payload: { key: 'tg:3', title: 'Plan the trip', tags: [] } },
+    { id: 's4', kind: 'add', payload: { key: 'tg:4', title: 'Book flights', tags: [], parent: 'tg:3' } },
+    { id: 's5', kind: 'add', payload: { key: 'tg:5', title: 'Parent is gone', tags: [], parent: 'Work.md|Missing|0' } },
+    { id: 's6', kind: 'status', payload: { key: 'tg:2', status: 'done' } },
+  ], n.host);
+  eq(n.text('Work.md'), ['- [ ] Study', '\t- [ ] Read chapter 1 @schedule(2026-10-06 09:00)', '\t- [x] Read chapter 2', '- [ ] Other'].join('\n'), 'a subtask is written indented under its task, after the ones it already has');
+  eq(n.text('Inbox.md'), ['- [ ] Existing', '- [ ] Plan the trip', '\t- [ ] Book flights', '- [ ] Parent is gone'].join('\n'), 'a parent made earlier in the same batch is found by the key Telegram gave it; a parent that is gone leaves the task where a plain one would go');
+  eq(results.map((r) => [r.id, r.key ?? null, r.error ?? null]), [
+    ['s1', 'Work.md|Read chapter 1|0', null],
+    ['s2', 'Work.md|Read chapter 2|0', null],
+    ['s3', 'Inbox.md|Plan the trip|0', null],
+    ['s4', 'Inbox.md|Book flights|0', null],
+    ['s5', 'Inbox.md|Parent is gone|0', null],
+    ['s6', null, null],
+  ], 'each is named by its note, and a later change finds a subtask by its Telegram key');
+  const plain = notes({ 'Inbox.md': '- [ ] Existing' });
+  const { insertChild, ...without } = plain.host;
+  const [old] = await applyCommands([{ id: 'o1', kind: 'add', payload: { key: 'tg:1', title: 'Child', tags: [], parent: 'Inbox.md|Existing|0' } }], without);
+  eq([old.error ?? null, plain.text('Inbox.md')], [null, '- [ ] Existing\n- [ ] Child'], 'an older plugin that cannot nest still writes the task');
 }
 {
   const n = notes({ 'Work.md': '- [ ] Only' });
@@ -293,11 +328,78 @@ eq([syncEndpoint('https://abc.supabase.co'), syncEndpoint('https://abc.supabase.
   eq(n.text('Inbox.md').includes('@remind(2026-10-03 08:00)'), true, 'the reminder was written once');
   eq([settings.unconfirmed.length, (await store.pendingCommands()).length], [0, 0], 'and now everything is confirmed');
 
+  // A subtask made in Telegram is written under its task, in that task's note.
+  await say('Plan the trip');
+  await handleUpdate({ callback_query: { id: 'cb', data: 'sb:5', message: { chat: { id: 7 }, message_id: 9 } } }, { store, tg, pairingCode: 'k', now: () => clock.now });
+  eq(sent.at(-1).text.startsWith('🧩 زیرتسک · شناسه #۵\n«Plan the trip»'), true, 'the card’s button asks for the subtask’s title');
+  await handleUpdate({ message: { chat: { id: 7, type: 'private' }, text: 'Book flights', message_id: 3, reply_to_message: { text: sent.at(-1).text } } }, { store, tg, pairingCode: 'k', now: () => clock.now });
+  const waiting = await store.pendingCommands();
+  eq([waiting.at(-1).payload.parent, store.tasks.find((t) => t.title === 'Book flights').parent_key], [waiting[0].payload.key, waiting[0].payload.key], 'the subtask is queued under its task, and shown under it at once');
+  outcome = await sync.syncNow();
+  eq(n.text('Inbox.md').split('\n').slice(-2), ['- [ ] Plan the trip', '\t- [ ] Book flights'], 'in the note it is indented under its task');
+  const trip = store.tasks.find((t) => t.title === 'Plan the trip');
+  const flights = store.tasks.find((t) => t.title === 'Book flights');
+  eq([flights.key, flights.parent_key, trip.key, [trip.subs_done, trip.subs_total]], ['Inbox.md|Book flights|0', 'Inbox.md|Plan the trip|0', 'Inbox.md|Plan the trip|0', [0, 1]], 'and after the sync the bot has both under their note keys, the count from the notes');
+
   // A wrong token.
   settings.token = 'wrong';
   outcome = await sync.syncNow();
   eq([outcome.ok, outcome.message], [false, 'The sync token is not right.'], 'a wrong token is said so');
   eq(settings.lastError, 'The sync token is not right.', 'and kept for the settings screen');
+}
+
+// ── Edits reach the bot when typing pauses ────────────────────────────────
+{
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const n = notes({ 'Inbox.md': '- [ ] One' });
+  const posts = [];
+  let slow = 0;
+  const settings = { enabled: true, url: 'https://abc.supabase.co', token: 'secret', intervalMinutes: 60, quietSeconds: 0.12 };
+  const sync = new TelegramSync({
+    settings: () => settings,
+    tasks: () => n.host.tasks(),
+    defaults: () => defaults,
+    post: async (url, token, body) => {
+      posts.push(body);
+      if (slow) await sleep(slow);
+      return { status: 200, json: { ok: true, commands: [] } };
+    },
+    apply: n.host,
+    save: async () => {},
+    report: () => {},
+    registerInterval: () => {},
+    now: () => Date.now(),
+  });
+  sync.start();
+  sync.stop();
+  eq(posts.length, 0, 'a stopped sync sends nothing');
+  sync.start();
+  // Typing: a change every 50 ms keeps the sync waiting.
+  for (let i = 0; i < 4; i++) {
+    n.files.get('Inbox.md').push(`- [ ] Typed ${i}`);
+    sync.tasksChanged();
+    await sleep(50);
+  }
+  eq(posts.length, 0, 'while the notes keep changing nothing is sent');
+  await sleep(220);
+  eq([posts.length, posts[0].snapshot.length], [1, 5], 'once they have been quiet for the set time, all of it goes in one sync');
+
+  // An edit while a sync is running is not lost.
+  slow = 150;
+  n.files.get('Inbox.md').push('- [ ] Two');
+  sync.tasksChanged();
+  await sleep(220);
+  n.files.get('Inbox.md').push('- [ ] Three');
+  sync.tasksChanged();
+  await sleep(40);
+  eq(posts.length, 2, 'the second sync is under way');
+  slow = 0;
+  await sleep(500);
+  eq([posts.length, posts.at(-1).snapshot.length], [3, 7], 'and a change made meanwhile is sent right after it, not at the next tick');
+  sync.stop();
+  sync.tasksChanged();
+  await sleep(200);
+  eq(posts.length, 3, 'and once stopped, a change sends nothing');
 }
 
 console.log(`TELEGRAM_SYNC_OK (${checked} checks)`);

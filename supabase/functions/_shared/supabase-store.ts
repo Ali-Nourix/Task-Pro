@@ -103,6 +103,13 @@ export function supabaseStore(url: string, serviceKey: string): Store {
       for (const command of waiting ?? []) {
         await one(db.from('commands').update({ payload: { ...command.payload, key: to } }).eq('id', command.id), 'rekey command');
       }
+      // A subtask waiting to be written under this task, and the subtasks already shown under it.
+      const nested = (await one(db.from('commands').select('id,payload').is('applied_at', null).eq('payload->>parent', from), 'commands under key')) as Array<{ id: string; payload: Record<string, unknown> }> | null;
+      for (const command of nested ?? []) {
+        await one(db.from('commands').update({ payload: { ...command.payload, parent: to } }).eq('id', command.id), 'rekey subtask command');
+      }
+      const children = await db.from('tasks').update({ parent_key: to }).eq('parent_key', from);
+      if (children.error && !noNewerColumn(children.error)) fail('rekey subtasks', children.error);
     },
 
     async addCommand(kind: CommandKind, payload: object) {

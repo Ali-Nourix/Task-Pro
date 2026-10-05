@@ -240,12 +240,24 @@ export class TaskProSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName('Ask for changes every')
-      .setDesc('While Obsidian is open. Changes made here reach the bot within half a minute whatever this is.')
+      .setDesc('While Obsidian is open: how soon what you ask for in Telegram reaches your notes.')
       .addDropdown((dropdown) => {
+        dropdown.addOption('0.5', '30 seconds');
         for (const minutes of [1, 2, 5, 10, 30]) dropdown.addOption(String(minutes), minutes === 1 ? '1 minute' : `${minutes} minutes`);
         dropdown.setValue(String(settings.intervalMinutes)).onChange(async (value) => {
           settings.intervalMinutes = Number(value);
           await apply();
+        });
+      });
+
+    new Setting(containerEl)
+      .setName('Send my edits after I pause for')
+      .setDesc('Changes you make in your notes reach the bot this long after you stop typing (and at least once a minute while you keep going).')
+      .addDropdown((dropdown) => {
+        for (const seconds of [2, 4, 8, 15, 30]) dropdown.addOption(String(seconds), `${seconds} seconds`);
+        dropdown.setValue(String(settings.quietSeconds ?? 4)).onChange(async (value) => {
+          settings.quietSeconds = Number(value);
+          await this.plugin.saveSettings();
         });
       });
 

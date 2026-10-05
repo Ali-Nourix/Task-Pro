@@ -1016,12 +1016,21 @@ only a snapshot of your open tasks and a queue of what you asked for in Telegram
   with what came before (“no, Friday”). Voice goes through Whisper on the same account.
   Needs two secrets (`CF_ACCOUNT_ID`, `CF_API_TOKEN`); see the setup guide. **Settings →
   Assistant** turns it off, and `/ai your words` calls it by name.
+- **The bot speaks first.** A morning summary, an evening review (with a button that moves what
+  is left to tomorrow), a message the evening before a deadline, and a reminder that comes
+  again until the task is ticked, each set in **Settings → Notifications**. `/week` draws the week
+  (a table in the rich message, a block for each day in the classic one) and a day's screen has
+  yesterday and tomorrow beside it.
+- **Plan my day, shown first.** `/planday` has the assistant fit what has no hour into the free
+  hours and show the plan; nothing is changed until you tap Apply (always, only for big jobs, or
+  never: your choice). It can also break a task into steps, which the plugin writes as
+  subtasks under it.
 - **Dates that adapt.** A task card's plan and reminder are Telegram date entities: your
   words stay, a tap shows the exact time on your own clock, and a live countdown sits
   beside them. Page numbers and the blanks of a calendar are disabled buttons, and the
   assistant answers with a 👀 on your message, a «Thinking…» placeholder and a reply
   that hangs from what you wrote.
-- **In Obsidian:** a background sync (every 2 minutes by default, and on **Sync
+- **In Obsidian:** a background sync (every 2 minutes by default; your edits are sent a few seconds after you stop typing, and on **Sync
   Telegram now**) uploads the snapshot, then applies what you asked for in
   Telegram to your notes: new tasks go to the board's inbox note, the rest edit
   the task's own line (a rename keeps the task's number in the bot). Each command

@@ -116,6 +116,8 @@ export interface AddPayload {
   deadline?: string;
   plan?: Plan;
   remind?: Moment;
+  /** The key of the task it is a subtask of: it is written under that task. */
+  parent?: string;
 }
 
 export interface StatusPayload {

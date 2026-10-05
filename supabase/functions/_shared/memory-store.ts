@@ -74,7 +74,9 @@ export class MemoryStore implements Store {
     }
     for (const command of this.commands) {
       if (command.applied_at === null && command.payload.key === from) command.payload = { ...command.payload, key: to };
+      if (command.applied_at === null && command.payload.parent === from) command.payload = { ...command.payload, parent: to };
     }
+    for (const child of this.tasks) if (child.parent_key === from) child.parent_key = to;
   }
 
   async addCommand(kind: CommandKind, payload: object) {

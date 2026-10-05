@@ -38,6 +38,7 @@ export const AI_TOOLS: AiTool[] = [
         priority: PRIORITY,
         tags: { type: 'array', items: { type: 'string' }, description: 'Tags without the #. Prefer the existing ones.' },
         repeat: { type: 'string', description: 'How often it repeats: 1d, 3d, 1w, 2w, 1m.' },
+        parent_n: { type: 'integer', description: 'Make it a subtask of this existing task (its number). This is how a task is broken into steps.' },
       },
       required: ['title'],
     },
@@ -143,6 +144,7 @@ export function taskLine(task: TaskRow, timezone: string): string {
   }
   if (task.priority) parts.push(`priority ${task.priority}`);
   if (task.repeat) parts.push(`repeats ${task.repeat}`);
+  if (task.parent_key) parts.push(`subtask of «${(task.parent_title ?? '').slice(0, 40)}»`);
   if (task.tags.length) parts.push(`tags ${task.tags.join(',')}`);
   const title = task.title.replace(/\s+/g, ' ').slice(0, 80);
   return `${task.n >= PROVISIONAL_N ? 'new' : `#${task.n}`} ${title}${parts.length ? ` — ${parts.join('; ')}` : ''}`;
@@ -170,6 +172,7 @@ export function systemPrompt(input: PromptInput): string {
     '- In Iran the week starts on Saturday and Friday is the weekend. "Next Saturday" is the first Saturday after today.',
     '- For a goal or a project ("study for the exam in 5 days", "plan my week"), break it into concrete tasks on different days at sensible times, and keep clear of the times already taken in the list below.',
     '- When asked to plan or organise the day: only touch tasks that have no plan or are overdue, with update_task (plan_date, plan_start, plan_end); never move a task that already has an hour; begin no earlier than the next quarter hour from now; work until 21:00; give a task 30 to 60 minutes by its kind (a call 15 to 30, deep work 60 to 90); leave 10 minutes between; never overlap the hours already taken in the list; put the most urgent first (overdue, due soon, high priority); what does not fit goes to tomorrow from 09:00.',
+    '- To break a task into steps, call add_task once for each step with parent_n set to that task\'s number (never to a task that is itself a subtask). Steps are short and in order; give them a plan only if the user asked for one.',
     '- To change or finish a task use its number (#n) from the list below; never guess a number. If two tasks fit, ask which.',
     '- delete_task only proposes: the user confirms with a button, so say so in one short sentence.',
     '- If something essential is missing or unclear, call nothing and ask one short question.',

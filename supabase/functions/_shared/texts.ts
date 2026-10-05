@@ -316,6 +316,7 @@ export interface Words {
     plan: string;
     remove: string;
     undo: string;
+    addSubtask: string;
     yes: string;
     no: string;
     custom: string;
@@ -374,6 +375,9 @@ export interface Words {
   askRemind: (n: string, title: string) => string;
   askPlan: (n: string, title: string) => string;
   askHintRemind: string;
+  askSubtask: (n: string, title: string) => string;
+  askHintSubtask: string;
+  subtaskAdded: (parent: string) => string;
   askHintPlan: string;
   presets: { m10: string; h1: string; h3: string; evening: string; tomorrow: string };
   planPresets: { today: string; tomorrow: string; after: string; week: string };
@@ -537,7 +541,6 @@ export interface Words {
     weekNext: string;
     newOnDay: string;
     more: (n: number) => string;
-    column: { day: string; tasks: string };
   };
   zoneHint: string;
   languageNames: { fa: string; en: string };
@@ -609,6 +612,7 @@ const fa: Words = {
     plan: '📅 برنامه',
     remove: '🗑 حذف',
     undo: '↩️ لغو',
+    addSubtask: '🧩 افزودن زیرتسک',
     yes: '🗑 بله، حذف شود',
     no: 'نه',
     custom: '✏️ زمان دلخواه',
@@ -675,6 +679,9 @@ const fa: Words = {
   askRemind: (n, title) => `🔔 یادآوری · شناسه #${n}\n«${title}»\n\nزمان را بنویس، مثلاً: فردا ساعت ۸`,
   askPlan: (n, title) => `📅 برنامه · شناسه #${n}\n«${title}»\n\nزمان را بنویس، مثلاً: شنبه ۹ تا ۱۰`,
   askHintRemind: 'فردا ساعت ۸ …',
+  askSubtask: (n, title) => `🧩 زیرتسک · شناسه #${n}\n«${title}»\n\nعنوان زیرتسک را بنویس (مثل تسک عادی؛ ساعت و برچسب هم می‌شود)`,
+  askHintSubtask: 'عنوان زیرتسک …',
+  subtaskAdded: (parent) => `🧩 زیرتسک «${parent}» ثبت شد`,
   askHintPlan: 'شنبه ۹ تا ۱۰ …',
   presets: { m10: '۱۰ دقیقه بعد', h1: '۱ ساعت بعد', h3: '۳ ساعت بعد', evening: 'امشب ۲۰:۰۰', tomorrow: 'فردا ۹ صبح' },
   planPresets: { today: 'امروز', tomorrow: 'فردا', after: 'پس‌فردا', week: 'هفتهٔ بعد' },
@@ -906,7 +913,6 @@ const fa: Words = {
     weekNext: 'هفتهٔ بعد',
     newOnDay: '➕ تسک برای این روز',
     more: (n) => `+${digits(n, 'fa')}`,
-    column: { day: 'روز', tasks: 'تسک‌ها' },
   },
   zoneHint: 'برای تغییر بنویس: /tz Asia/Tehran',
   languageNames: { fa: 'فارسی', en: 'English' },
@@ -999,6 +1005,7 @@ const en: Words = {
     plan: '📅 Plan',
     remove: '🗑 Delete',
     undo: '↩️ Undo',
+    addSubtask: '🧩 Add a subtask',
     yes: '🗑 Yes, delete',
     no: 'No',
     custom: '✏️ Pick a time',
@@ -1065,6 +1072,9 @@ const en: Words = {
   askRemind: (n, title) => `🔔 Reminder · ID #${n}\n“${title}”\n\nType the time, like: tomorrow at 8`,
   askPlan: (n, title) => `📅 Plan · ID #${n}\n“${title}”\n\nType the time, like: sat 9-10`,
   askHintRemind: 'tomorrow at 8 …',
+  askSubtask: (n, title) => `🧩 Subtask · ID #${n}\n“${title}”\n\nType the subtask’s title (like any task; an hour or a tag works too)`,
+  askHintSubtask: 'Subtask title …',
+  subtaskAdded: (parent) => `🧩 Subtask of “${parent}” added`,
   askHintPlan: 'sat 9-10 …',
   presets: { m10: 'In 10 min', h1: 'In 1 hour', h3: 'In 3 hours', evening: 'Tonight 20:00', tomorrow: 'Tomorrow 9 am' },
   planPresets: { today: 'Today', tomorrow: 'Tomorrow', after: 'In 2 days', week: 'Next week' },
@@ -1296,7 +1306,6 @@ const en: Words = {
     weekNext: 'Next week',
     newOnDay: '➕ Task for this day',
     more: (n) => `+${n}`,
-    column: { day: 'Day', tasks: 'Tasks' },
   },
   zoneHint: 'To change it, send: /tz Asia/Tehran',
   languageNames: { fa: 'فارسی', en: 'English' },

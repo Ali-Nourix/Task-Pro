@@ -556,6 +556,29 @@ const plain = (html) => html.replace(/<[^>]+>/g, '');
   eq([plain(answer.last().text).replace(/[\n\u2800]+$/, ''), answer.data(answer.last()).includes('ap')], ['🤖 فردا کاری نداری.', false], 'an answer in words has nothing to apply, whatever the setting');
 }
 
+// ── Breaking a task into steps ─────────────────────────────────────────────
+{
+  const ai = scripted(
+    says('', call('add_task', { title: 'Read chapters 1–3', parent_n: 1 }), call('add_task', { title: 'Solve past papers', parent_n: '۱', plan_date: '2026-10-04' }), call('add_task', { title: 'Sleep early', parent_n: 2 }), call('add_task', { title: 'Orphan', parent_n: 99 }))
+  );
+  const w = await paired(ai);
+  await w.sync({ snapshot: [
+    { key: 'A.md|^1|0', title: 'Prepare for the exam', status: 'open', tags: [] },
+    { key: 'A.md|^2|0', title: 'Already a step', status: 'open', tags: [], parent_key: 'A.md|^1|0', parent_title: 'Prepare for the exam' },
+  ] });
+  w.sent.length = 0;
+  await w.say('درس را به مرحله بشکن');
+  eq(ai.asked[0][0].content.includes('#2 Already a step — subtask of «Prepare for the exam»') && ai.asked[0][0].content.includes('To break a task into steps'), true, 'the model is shown which tasks are subtasks, and how to break one into steps');
+  const steps = w.store.tasks.filter((t) => t.origin === 'telegram');
+  eq(steps.map((t) => [t.title, t.parent_key, t.parent_title, t.plan_date]), [['Read chapters 1–3', 'A.md|^1|0', 'Prepare for the exam', null], ['Solve past papers', 'A.md|^1|0', 'Prepare for the exam', '2026-10-04']], 'each step is a subtask of the task, Persian digits in its number understood');
+  eq(w.store.commands.map((c) => [c.kind, c.payload.parent ?? null]), [['add', 'A.md|^1|0'], ['add', 'A.md|^1|0']], 'queued to be written under it');
+  eq([w.store.tasks[0].subs_total, w.store.tasks[0].subs_done], [2, 0], 'and its count shows them at once');
+  const text = plain(w.last().text);
+  eq(['↳', 'Read chapters 1–3', 'Solve past papers'].every((part) => text.includes(part)), true, 'the card lists the steps, each saying whose it is');
+  eq(['Sleep early', 'Orphan'].some((title) => w.store.tasks.some((t) => t.title === title)), false, 'a step under a subtask, or under a task that does not exist, is not made');
+  eq(text.includes('99'), true, 'and the number that is no task is named');
+}
+
 // ── Plan my day ────────────────────────────────────────────────────────────
 {
   // 12:00Z is 15:30 on Friday 2 October.

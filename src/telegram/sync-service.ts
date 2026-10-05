@@ -50,13 +50,20 @@ export function syncEndpoint(url: string): string | null {
   return /\/functions\/v1$/.test(trimmed) ? `${trimmed}/sync` : `${trimmed}/functions/v1/sync`;
 }
 
-const DEBOUNCE_MS = 20_000;
+/** How long the notes must be quiet before an edit is sent (the setting's default), in seconds. */
+export const DEFAULT_QUIET_SECONDS = 4;
+/** Edits that never pause are still sent this often. */
+const MAX_WAIT_MS = 60_000;
 const STARTUP_MS = 4_000;
 const KEEP_UNCONFIRMED = 100;
 
 export class TelegramSync {
   private timer: number | null = null;
   private debounce: number | null = null;
+  /** When the notes first changed after the last sync: a long spell of typing is cut into minutes. */
+  private pendingSince = 0;
+  /** The notes changed while a sync was running: another follows. */
+  private dirty = false;
   private running = false;
   private lastUploaded = '';
   private lastTags = '';
@@ -68,10 +75,13 @@ export class TelegramSync {
     this.stop();
     const settings = this.host.settings();
     if (!settings.enabled || !syncEndpoint(settings.url) || !settings.token) return;
-    const every = Math.max(1, Math.min(60, settings.intervalMinutes || 2)) * 60_000;
+    const every = Math.max(0.5, Math.min(60, settings.intervalMinutes || 2)) * 60_000;
     this.timer = window.setInterval(() => void this.syncNow(), every);
     this.host.registerInterval(this.timer);
-    this.debounce = window.setTimeout(() => void this.syncNow(), STARTUP_MS);
+    this.debounce = window.setTimeout(() => {
+      this.debounce = null;
+      void this.syncNow();
+    }, STARTUP_MS);
   }
 
   stop(): void {
@@ -79,13 +89,29 @@ export class TelegramSync {
     if (this.debounce !== null) window.clearTimeout(this.debounce);
     this.timer = null;
     this.debounce = null;
+    this.pendingSince = 0;
   }
 
-  /** The notes changed: tell the bot soon, once the edits have settled. */
+  /**
+   * The notes changed: the bot is told once the edits have paused (not while typing goes on,
+   * but at the latest a minute after the first of them).
+   */
   tasksChanged(): void {
     if (this.timer === null) return;
+    if (this.running) {
+      this.dirty = true;
+      return;
+    }
+    const now = this.host.now();
     if (this.debounce !== null) window.clearTimeout(this.debounce);
-    this.debounce = window.setTimeout(() => void this.syncNow(), DEBOUNCE_MS);
+    if (this.pendingSince === 0) this.pendingSince = now;
+    const quiet = Math.min(120, Math.max(0.02, this.host.settings().quietSeconds ?? DEFAULT_QUIET_SECONDS)) * 1000;
+    const wait = Math.min(quiet, Math.max(0, this.pendingSince + MAX_WAIT_MS - now));
+    this.debounce = window.setTimeout(() => {
+      this.debounce = null;
+      this.pendingSince = 0;
+      void this.syncNow();
+    }, wait);
   }
 
   async syncNow(): Promise<Outcome> {
@@ -132,6 +158,10 @@ export class TelegramSync {
       return this.finish({ ok: false, applied: 0, errors: 0, message: String((error as Error)?.message ?? error) });
     } finally {
       this.running = false;
+      if (this.dirty) {
+        this.dirty = false;
+        this.tasksChanged();
+      }
     }
   }
 
