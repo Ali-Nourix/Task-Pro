@@ -24,6 +24,12 @@ function allowedUser(): number | undefined {
   return raw ? (/^\d{1,15}$/.test(raw) ? Number(raw) : Number.NaN) : undefined;
 }
 
+/** How «Thinking…» is shown (THINKING_DRAFT): Telegram's own placeholder, a rich draft, or only «typing…». */
+function thinkingStyle(): 'text' | 'rich' | 'off' {
+  const raw = Deno.env.get('THINKING_DRAFT')?.trim().toLowerCase();
+  return raw === 'rich' || raw === 'off' ? raw : 'text';
+}
+
 Deno.serve(async (request) => {
   const secret = Deno.env.get('TELEGRAM_WEBHOOK_SECRET') ?? '';
   // Telegram sends the secret it was given when the webhook was set.
@@ -35,7 +41,7 @@ Deno.serve(async (request) => {
     const update = await request.json();
     await handleUpdate(update, {
       store: supabaseStore(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_SECRET_KEY')!),
-      tg: telegramApi(Deno.env.get('TELEGRAM_BOT_TOKEN')!),
+      tg: telegramApi(Deno.env.get('TELEGRAM_BOT_TOKEN')!, { thinking: thinkingStyle() }),
       pairingCode: Deno.env.get('PAIRING_CODE') ?? '',
       allowedUserId: allowedUser(),
       now: () => new Date(),

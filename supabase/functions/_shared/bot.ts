@@ -1233,13 +1233,13 @@ async function assist(text: string, ctx: Ctx, options: { heard?: string; fallbac
   const { w, owner, chatId } = ctx;
   const { ai, store, tg } = ctx.deps;
   if (!ai) return tg.send(chatId, w.ai.errors.notSetUp);
-  // At once: a glance on the message and «typing…» in the chat. No placeholder message: a draft left
-  // an empty gap under the answer on some clients.
+  // At once: a glance on the message, and a «Thinking…» that Telegram takes away when the answer arrives.
   const incoming = ctx.incoming;
   /** Cosmetic: a failure here must never stop the work. */
   const quietly = (step: Promise<void> | undefined): Promise<void> => Promise.resolve(step).catch(() => undefined);
   const react = (emoji: string | null) => quietly(incoming === undefined ? undefined : tg.react?.(chatId, incoming, emoji));
-  await Promise.all([react('👀'), quietly(tg.typing?.(chatId))]);
+  const thinking = `${options.heard ? `<p>${w.ai.heard(options.heard)}</p>` : ''}<tg-thinking>${w.ai.thinking}</tg-thinking>`;
+  await Promise.all([react('👀'), quietly(tg.thinking ? tg.thinking(chatId, thinking) : tg.typing?.(chatId))]);
   const now = ctx.deps.now();
   const memory = freshMemory(owner.ai_memory, now);
   const mode: AiConfirm = options.preview ? 'ask' : (owner.ai_confirm ?? 'big');
@@ -1247,7 +1247,7 @@ async function assist(text: string, ctx: Ctx, options: { heard?: string; fallbac
   const base = { ai, owner, now, text, memory, tags };
   let result: AssistantResult;
   let overlay: OverlayStore | null = null;
-  // «typing…» lasts five seconds and the model can take longer: it is renewed until the answer is ready.
+  // A draft lasts thirty seconds and «typing…» five, and the model can take longer: «typing…» is renewed until the answer is ready.
   const keepTyping = setInterval(() => void quietly(tg.typing?.(chatId)), 4_000);
   try {
     if (mode === 'auto') result = await runAssistant({ ...base, store, effects: effectsFor(ctx) });

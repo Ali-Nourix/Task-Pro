@@ -473,6 +473,7 @@ export interface Words {
     button: (state: 'on' | 'off' | 'unset') => string;
     intro: (state: 'on' | 'off' | 'unset') => string;
     heard: (text: string) => string;
+    thinking: string;
     done: string;
     nothing: string;
     groups: { added: string; changed: string; status: string; remove: string };
@@ -818,6 +819,7 @@ const fa: Words = {
           ? 'الان خاموش است و نوشته‌هایت مثل قبل تسک ساده می‌شوند. با <code>/ai متن</code> هر وقت خواستی صدایش کن، یا در ⚙️ تنظیمات روشنش کن.'
           : 'روشن است: هر چه بنویسی یا ویس بدهی، اول به دستیار می‌رسد.'),
     heard: (text) => `🎙 <i>«${esc(text)}»</i>`,
+    thinking: 'دارم فکر می‌کنم …',
     done: '🤖 <b>انجام شد</b>',
     nothing: '🤖 کاری انجام ندادم.',
     groups: { added: '➕ <b>تسک تازه</b>', changed: '✏️ <b>تغییر کرد</b>', status: '☑️ <b>وضعیت</b>', remove: '🗑 <b>حذف را تأیید کن</b>' },
@@ -1209,6 +1211,7 @@ const en: Words = {
           ? 'It is off, so what you type becomes a plain task as before. Call it any time with <code>/ai your words</code>, or turn it on in ⚙️ Settings.'
           : 'It is on: whatever you write or say goes to the assistant first.'),
     heard: (text) => `🎙 <i>“${esc(text)}”</i>`,
+    thinking: 'Thinking …',
     done: '🤖 <b>Done</b>',
     nothing: '🤖 I did nothing.',
     groups: { added: '➕ <b>New tasks</b>', changed: '✏️ <b>Changed</b>', status: '☑️ <b>Status</b>', remove: '🗑 <b>Confirm to delete</b>' },
