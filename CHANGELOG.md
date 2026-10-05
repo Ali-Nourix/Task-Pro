@@ -121,6 +121,19 @@
   Assistant**, the bot reads words the plain way as before, and does so too when
   Cloudflare cannot be reached. `/ai your words` calls it by name. Needs the secrets
   `CF_ACCOUNT_ID` and `CF_API_TOKEN` (see the setup guide).
+- **A design pass from Telegram's own documentation** (Bot API 10.3): the plan and the
+  reminder on a task's card are Telegram's **date entities** — our words stay (Jalali,
+  «فردا ۰۹:۰۰»), a tap shows the exact moment on the reader's own clock, and beside
+  them a **countdown** («in 20 minutes») that keeps counting, in the classic message,
+  the rich message and the HTML fallback (a finished task keeps its date, loses the
+  countdown). Italic next to underline is now kept apart the way the formatting notes
+  say (an empty bold entity), not with a stray control character. Buttons that only
+  hold a place (the page number, the blanks of a month) are **disabled buttons**.
+  When the assistant gets a message, the message receives a 👀 at once, a **«Thinking…»
+  placeholder** shows (with what a voice message said), the answer hangs from the
+  message it answers, and the message ends with 👌 (or 👍 for an answer in words, 🤔
+  when something failed). Each of these falls back by itself on a Telegram that does
+  not know it.
 - Notes remain the source of truth; the tables are locked to the service role and
   the bot answers only the chat it was paired with.
 

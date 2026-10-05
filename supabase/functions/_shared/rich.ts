@@ -10,14 +10,34 @@ export const mdEscape = (text: string): string => text.replace(SPECIAL, '\\$&');
 
 const ENTITIES: Record<string, string> = { '&lt;': '<', '&gt;': '>', '&amp;': '&' };
 
-/** Inline HTML (b, i, s, code and entities) as Markdown. */
+/** The address of a date entity (`tg://time?unix=…&format=…`) from a tag's attributes, or null. */
+function timeUrl(attributes: string): string | null {
+  const unix = /unix=["'](\d{1,12})["']/.exec(attributes)?.[1];
+  const format = /format=["']([^"']*)["']/.exec(attributes)?.[1] ?? '';
+  if (!unix || !/^(r|w?[dD]?[tT]?)$/.test(format)) return null;
+  return `tg://time?unix=${unix}${format ? `&format=${format}` : ''}`;
+}
+
+/** Inline HTML (b, i, s, code, dates and entities) as Markdown. */
 function inline(html: string): string {
   let out = '';
   let code = false;
-  const token = /<(\/?)(b|strong|i|em|s|del|code|u|pre|tg-spoiler)>|&(?:lt|gt|amp);|[^<&]+|[<&]/g;
+  const dates: Array<string | null> = [];
+  const token = /<(\/?)(b|strong|i|em|s|del|code|u|pre|tg-spoiler|tg-time)((?:\s+[a-z-]+=(?:"[^"]*"|'[^']*'))*)>|&(?:lt|gt|amp);|[^<&]+|[<&]/g;
   for (const match of html.matchAll(token)) {
-    const [text, closing, tag] = match;
+    const [text, closing, tag, attributes] = match;
     if (tag) {
+      if (tag === 'tg-time') {
+        if (closing) {
+          const url = dates.pop();
+          if (url) out += `](${url})`;
+        } else {
+          const url = timeUrl(attributes ?? '');
+          dates.push(url);
+          if (url) out += '![';
+        }
+        continue;
+      }
       if (tag === 'b' || tag === 'strong') out += '**';
       else if (tag === 'i' || tag === 'em') out += '*';
       else if (tag === 's' || tag === 'del') out += '~~';

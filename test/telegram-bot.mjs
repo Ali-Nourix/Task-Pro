@@ -192,6 +192,15 @@ async function paired() {
   eq(w.store.commands.map((c) => [c.kind, c.payload.title, c.payload.plan]), [['add', 'Buy bread', { date: '2026-10-03', start: '09:00' }]], 'and an add waits for the plugin');
   const card = w.last().text;
   eq([card.includes('#۱'), card.includes('<blockquote>'), card.includes('فردا ۰۹:۰۰'.replace('۰۹', '۰۹')), card.includes('ثبت شد')], [true, true, true, true], 'the reply is a card: numbered in Persian digits, the plan in a quote');
+  const planUnix = Math.floor(Date.parse('2026-10-03T05:30:00Z') / 1000);
+  eq([card.includes(`<tg-time unix="${planUnix}">فردا ۰۹:۰۰</tg-time>`), card.includes(`<tg-time unix="${planUnix}" format="r">⏱</tg-time>`)], [true, true], 'the card’s plan is a date Telegram understands, with a countdown beside it');
+  eq(card.includes(`<tg-time unix="${Math.floor(Date.parse('2026-10-03T05:20:00Z') / 1000)}">`), true, 'and so is its reminder');
+  eq(mod.htmlToRich(card).includes(`![⏱](tg://time?unix=${planUnix}&format=r)`), true, 'in the rich message too');
+  eq(w.last().options?.rich?.markdown.includes(`![⏱](tg://time?unix=${planUnix}&format=r)`), true, 'where the card writes its own table');
+  w.store.tasks[0].status = 'done';
+  await w.press('t:1');
+  eq([w.lastEdit().text.includes('<tg-time unix="' + planUnix + '">'), w.lastEdit().text.includes('format="r"')], [true, false], 'a finished task keeps its date but has no countdown');
+  w.store.tasks[0].status = 'open';
   eq(w.data(w.last()), ['done:1', 'undo:1', 'ed:1', 'sm:1', 'pm:1', 'dm:1', 'pl:1', 'rm:1', 'tm:1', 'qm:1', 'home'], 'with done, undo, a button for every setting and the menu');
   eq(w.last().buttons.flat().filter((b) => b.style).map((b) => [b.data, b.style]), [['done:1', 'success'], ['undo:1', 'danger']], 'done is green and undo red');
 
@@ -591,6 +600,22 @@ async function paired() {
 }
 
 
+// ── Buttons that only hold a place ─────────────────────────────────────────
+{
+  const w = await paired();
+  await w.sync({ snapshot: Array.from({ length: 12 }, (_, i) => ({ key: `A.md|${i}|0`, title: `Task ${i + 1}`, status: 'open', tags: [] })) });
+  await w.say('/list');
+  const pagerOf = (view) => view.buttons.find((row) => row.some((b) => b.data === 'noop' && b.text !== '·') && row.length === 3);
+  const pager = pagerOf(w.last());
+  eq([pager.map((b) => b.data), pager.map((b) => !!b.disabled)], [['noop', 'noop', 'ls:a:1'], [true, true, false]], 'on the first page the missing “back” and the page number are disabled, the way on is not');
+  await w.press('ls:a:1');
+  eq(pagerOf(w.lastEdit()).map((b) => !!b.disabled), [false, true, true], 'and on the last it is the other way round');
+  await w.press('rm:1@a0');
+  await w.press('cn:r:1:1405-7@a0');
+  const fillers = w.lastEdit().buttons.flat().filter((b) => b.text === '·');
+  eq([fillers.length > 0, fillers.every((b) => b.disabled === true), w.lastEdit().buttons[1].some((b) => b.disabled)], [true, true, false], 'the calendar’s blanks are disabled, its weekday initials stay legible');
+}
+
 // ── The calendar the bot draws ─────────────────────────────────────────────
 {
   const month = mod.buildMonth('1405-7', 'jalali', 'fa', '1405-7');
@@ -794,6 +819,29 @@ async function paired() {
   replies.push({ ok: false, status: 400, text: 'Bad Request: wrong style' });
   await tg.send(7, '<b>Hi</b>', buttons);
   eq([calls.length, calls[0].body.reply_markup.inline_keyboard[0][0].style, calls[1].body.reply_markup.inline_keyboard[0][0].style, calls[1].body.parse_mode], [2, 'success', undefined, 'MarkdownV2'], 'a refused colour is dropped before the markup is');
+  calls.length = 0;
+  // A button that only holds a place is drawn disabled; an older Telegram that will not take that gets an ordinary one.
+  const holders = [[{ text: '·', data: 'noop', disabled: true }, { text: 'Next', data: 'n' }]];
+  replies.push({ ok: false, status: 400, text: 'Bad Request: unknown field disabled' });
+  await tg.send(7, 'Page', holders);
+  eq([calls.length, calls[0].body.reply_markup.inline_keyboard[0][0], calls[1].body.reply_markup.inline_keyboard[0][0]], [2, { text: '·', disabled: {} }, { text: '·', callback_data: 'noop' }], 'a place-holding button is disabled, and a plain tap on a client that refuses that');
+  calls.length = 0;
+  await tg.send(7, 'Answer', undefined, { replyTo: 41 });
+  eq(calls[0].body.reply_parameters, { message_id: 41, allow_sending_without_reply: true }, 'an answer hangs from the message it answers');
+  calls.length = 0;
+  await tg.react(7, 41, '👀');
+  await tg.react(7, 41, null);
+  eq(calls.map((c) => [c.method, c.body.reaction]), [['setMessageReaction', [{ type: 'emoji', emoji: '👀' }]], ['setMessageReaction', []]], 'a reaction is put on a message, and taken off');
+  calls.length = 0;
+  await tg.thinking(7, '<tg-thinking>Thinking</tg-thinking>');
+  eq([calls[0].method, calls[0].body.rich_message, calls[0].body.draft_id > 0], ['sendRichMessageDraft', { html: '<tg-thinking>Thinking</tg-thinking>' }, true], '«Thinking…» is a rich draft');
+  calls.length = 0;
+  replies.push({ ok: false, status: 400, text: 'Bad Request: method not found' });
+  await tg.thinking(7, '<tg-thinking>Thinking</tg-thinking>');
+  eq(calls.map((c) => [c.method, c.body.action]), [['sendRichMessageDraft', undefined], ['sendChatAction', 'typing']], 'and “typing…” where drafts are not known');
+  calls.length = 0;
+  replies.push({ ok: false, status: 400, text: 'Bad Request: REACTION_INVALID' });
+  eq(await tg.react(7, 41, '👀'), undefined, 'a reaction that cannot be set is not an error: it is only decoration');
   calls.length = 0;
   await tg.send(7, 'Reply please.', undefined, { forceReply: 'title…' });
   eq([calls[0].body.parse_mode, calls[0].body.text, calls[0].body.reply_markup], ['MarkdownV2', 'Reply please\\.', { force_reply: true, input_field_placeholder: 'title…' }], 'a question that asks for a reply is MarkdownV2 as well');

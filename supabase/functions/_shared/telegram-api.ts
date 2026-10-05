@@ -19,13 +19,20 @@ function plain(html: string): string {
     .replace(/&amp;/g, '&');
 }
 
+/** `styled`: with the colours and disabled buttons the newest Bot API has; without, plain buttons every client knows. */
 function keyboard(buttons: Button[][], styled: boolean) {
   return {
     inline_keyboard: buttons.map((row) =>
-      row.map((b) => ({ text: b.text, callback_data: b.data, ...(styled && b.style ? { style: b.style } : {}) }))
+      row.map((b) =>
+        styled && b.disabled
+          ? { text: b.text, disabled: {} }
+          : { text: b.text, callback_data: b.data, ...(styled && b.style ? { style: b.style } : {}) }
+      )
     ),
   };
 }
+
+const needsNewest = (buttons?: Button[][]): boolean => !!buttons?.some((row) => row.some((b) => b.style || b.disabled));
 
 const richBody = (rich: Rich) => ({ markdown: rich.markdown, is_rtl: rich.rtl, skip_entity_detection: true });
 
@@ -41,7 +48,7 @@ export function telegramApi(token: string): Telegram {
 
   /** One try as a rich message, with the coloured buttons and without them. */
   const rich = async (method: string, body: Record<string, unknown>, content: Rich, buttons?: Button[][]) => {
-    const hasStyle = !!buttons?.some((row) => row.some((b) => b.style));
+    const hasStyle = needsNewest(buttons);
     const attempt = (styled: boolean) =>
       call(method, { ...body, rich_message: richBody(content), ...(buttons?.length ? { reply_markup: keyboard(buttons, styled) } : {}) });
     try {
@@ -59,7 +66,7 @@ export function telegramApi(token: string): Telegram {
    * coloured buttons before the buttons themselves.
    */
   const deliver = async (method: string, body: Record<string, unknown>, text: string, buttons?: Button[][], markup?: Record<string, unknown>) => {
-    const hasStyle = !!buttons?.some((row) => row.some((b) => b.style));
+    const hasStyle = needsNewest(buttons);
     const attempt = (mode: 'MarkdownV2' | 'HTML' | 'plain', styled: boolean) =>
       call(method, {
         ...body,
@@ -100,12 +107,14 @@ export function telegramApi(token: string): Telegram {
   };
 
   return {
-    async send(chatId: number, text: string, buttons?: Button[][], options?: { forceReply?: string; rich?: Rich }) {
+    async send(chatId: number, text: string, buttons?: Button[][], options?: { forceReply?: string; rich?: Rich; replyTo?: number }) {
       if (options?.forceReply !== undefined) {
         await deliver('sendMessage', { chat_id: chatId }, text, undefined, { force_reply: true, input_field_placeholder: options.forceReply.slice(0, 64) });
         return;
       }
-      await show('sendRichMessage', 'sendMessage', { chat_id: chatId }, text, buttons, options?.rich);
+      // An answer to a message hangs from it, so with several in a row each finds its own.
+      const reply = options?.replyTo ? { reply_parameters: { message_id: options.replyTo, allow_sending_without_reply: true } } : {};
+      await show('sendRichMessage', 'sendMessage', { chat_id: chatId, ...reply }, text, buttons, options?.rich);
     },
     async edit(chatId: number, messageId: number, text: string, buttons?: Button[][], content?: Rich) {
       await show('editMessageText', 'editMessageText', { chat_id: chatId, message_id: messageId }, text, buttons ?? [], content);
@@ -118,6 +127,17 @@ export function telegramApi(token: string): Telegram {
     },
     async typing(chatId: number) {
       await call('sendChatAction', { chat_id: chatId, action: 'typing' }).catch(() => undefined);
+    },
+    async thinking(chatId: number, html: string) {
+      try {
+        // A draft lives for thirty seconds or until the real message is sent, whichever is first.
+        await call('sendRichMessageDraft', { chat_id: chatId, draft_id: 1 + Math.floor(Math.random() * 2_000_000_000), rich_message: { html } });
+      } catch {
+        await call('sendChatAction', { chat_id: chatId, action: 'typing' }).catch(() => undefined);
+      }
+    },
+    async react(chatId: number, messageId: number, emoji: string | null) {
+      await call('setMessageReaction', { chat_id: chatId, message_id: messageId, reaction: emoji ? [{ type: 'emoji', emoji }] : [] }).catch(() => undefined);
     },
     async download(fileId: string) {
       const info = await fetch(`https://api.telegram.org/bot${token}/getFile`, {

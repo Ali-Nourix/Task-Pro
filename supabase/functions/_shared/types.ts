@@ -162,6 +162,8 @@ export interface Button {
   data: string;
   /** The button's colour: blue, green or red. Older clients show it plain. */
   style?: 'primary' | 'success' | 'danger';
+  /** A button that only fills a place (a page number, a gap): drawn disabled, and still a harmless tap on older clients. */
+  disabled?: boolean;
 }
 
 export interface BotCommand {
@@ -180,7 +182,7 @@ export interface Telegram {
    * `text` is HTML. With `rich` the message is sent as a rich message, falling back to the HTML
    * when Telegram will not take it. With `forceReply` it asks for an answer, with that hint in the field.
    */
-  send(chatId: number, text: string, buttons?: Button[][], options?: { forceReply?: string; rich?: Rich }): Promise<void>;
+  send(chatId: number, text: string, buttons?: Button[][], options?: { forceReply?: string; rich?: Rich; replyTo?: number }): Promise<void>;
   /** Replaces a message in place, text and buttons together. Throws when it cannot (the caller then sends instead). */
   edit(chatId: number, messageId: number, text: string, buttons?: Button[][], rich?: Rich): Promise<void>;
   /** Stops the button's spinner, with a short note over the chat when `text` is given. */
@@ -189,6 +191,10 @@ export interface Telegram {
   setCommands(chatId: number, commands: BotCommand[]): Promise<void>;
   /** Shows «typing…» in the chat while the assistant thinks. */
   typing?(chatId: number): Promise<void>;
+  /** A «Thinking…» placeholder that is gone when the real message arrives; `html` is rich HTML. Falls back to «typing…». */
+  thinking?(chatId: number, html: string): Promise<void>;
+  /** Puts one reaction on a message (null takes it off). */
+  react?(chatId: number, messageId: number, emoji: string | null): Promise<void>;
   /** The bytes of a file Telegram holds (a voice message). */
   download?(fileId: string): Promise<Uint8Array>;
 }

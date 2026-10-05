@@ -1016,6 +1016,11 @@ only a snapshot of your open tasks and a queue of what you asked for in Telegram
   with what came before (“no, Friday”). Voice goes through Whisper on the same account.
   Needs two secrets (`CF_ACCOUNT_ID`, `CF_API_TOKEN`); see the setup guide. **Settings →
   Assistant** turns it off, and `/ai your words` calls it by name.
+- **Dates that adapt.** A task card's plan and reminder are Telegram date entities: your
+  words stay, a tap shows the exact time on your own clock, and a live countdown sits
+  beside them. Page numbers and the blanks of a calendar are disabled buttons, and the
+  assistant answers with a 👀 on your message, a «Thinking…» placeholder and a reply
+  that hangs from what you wrote.
 - **In Obsidian:** a background sync (every 2 minutes by default, and on **Sync
   Telegram now**) uploads the snapshot, then applies what you asked for in
   Telegram to your notes: new tasks go to the board's inbox note, the rest edit
