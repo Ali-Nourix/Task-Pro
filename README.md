@@ -1018,9 +1018,10 @@ only a snapshot of your open tasks and a queue of what you asked for in Telegram
   Assistant** turns it off, and `/ai your words` calls it by name.
 - **The bot speaks first.** A morning summary, an evening review (with a button that moves what
   is left to tomorrow), a message the evening before a deadline, and a reminder that comes
-  again until the task is ticked, each set in **Settings → Notifications**. `/overview` lists
-  every open task at a glance (the late, today, tomorrow, later, and what has no plan at all, with
-  the counts in brackets) and a day's screen has yesterday and tomorrow beside it.
+  again until the task is ticked, each set in **Settings → Notifications**. `/overview` shows the
+  **week day by day** (every task of each day, the ones with no hour too, a heading with how many in
+  brackets; no table) and `/day` one day; the two are a switch on the same screen. The days and weeks
+  beside the one shown are named by their dates, never «tomorrow» or «last week».
 - **Plan my day, shown first.** `/planday` has the assistant fit what has no hour into the free
   hours and show the plan; nothing is changed until you tap Apply (always, only for big jobs, or
   never: your choice). It can also break a task into steps, which the plugin writes as

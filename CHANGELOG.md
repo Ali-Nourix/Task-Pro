@@ -144,12 +144,15 @@
   comes again** every ten minutes up to three times until the task is ticked or snoozed.
   Everything is written down before it is sent, so nothing goes out twice, and without a
   place to write it down nothing goes out at all.
-- **The overview and the day**: `/overview` (and a button on the menu; `/week` still opens it)
-  lists **every open task** in clean Markdown, by when: the late, today (tasks with an hour in
-  order, then those with none, a deadline marked ⏳ and a reminder-only task 🔔), tomorrow,
-  later and **what has no plan at all**. No table and no week to page through. Forty are listed
-  and the rest counted. A day's screen lists its tasks with the days around it, and the Today list
-  has yesterday / overview / tomorrow under it.
+- **The overview, as a week or a day** (one screen with a **Day | Week** switch): `/overview`
+  (and the menu's button; `/week` still opens it) shows the **week day by day** in clean Markdown:
+  each day has a heading with how many tasks it holds in brackets and lists them in the order of
+  the day, tasks with no hour included (a deadline marked ⏳, a reminder-only task 🔔); no table.
+  A crowded day shows six and points to its own screen. `/day` shows one day with a button for
+  each task. Under both, the late ones and those with no plan are a tap away, counted in brackets.
+  **The days and weeks around the one shown are named by their dates** («چهارشنبه ۱۵»,
+  «۲۵ مهر – ۱ آبان»), never «tomorrow» or «yesterday», which stop making sense a few steps from
+  today; a button goes back to today / this week.
 - **Counts in brackets** on the filters and the menu: «امروز (۳)», «بدون برنامه (۵)», «عقب‌افتاده (۱)».
 - **Only for one user**: set the `ALLOWED_USER_ID` secret to a Telegram id (`/id` shows yours) and
   everyone else is ignored completely, including at pairing; a value that is not a number answers
