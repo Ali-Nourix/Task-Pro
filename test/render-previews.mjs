@@ -25,7 +25,26 @@ import { buildHarness } from './harness/build.mjs';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const outDir = path.resolve(here, '..', 'docs', 'images');
 
-/** Each shot: the harness page, the element to capture, and the output name. */
+/** Puts three rows of the table in a selection: a click on a square, a Ctrl click and another square. */
+const pickRows = async (page) => {
+  const rows = page.locator('.taskpro-table__row');
+  await rows.nth(1).locator('.taskpro-board__select').click({ force: true });
+  await rows.nth(3).locator('td.taskpro-table__task').click({ position: { x: 190, y: 8 }, modifiers: ['Control'] });
+  await rows.nth(4).locator('.taskpro-board__select').click({ force: true });
+  await page.mouse.move(640, 6);
+};
+
+/** A row of the phone's list held up as picked: its sheet, then Select. */
+const pickOnPhone = async (page) => {
+  await page.tap('.taskpro-list__row:has-text("Dentist appointment") .taskpro-list__title');
+  await page.tap('.taskpro-menu__item:has-text("Select")');
+};
+
+/**
+ * Each shot: the harness page, the element to capture, and the output name.
+ * Optionally `setup(page)` does something on the page first, `viewport` gives
+ * it another size, and `touch` gives it a finger instead of a pointer.
+ */
 const SHOTS = [
   { file: 'chips-preview.html', query: '', selector: '.note', out: 'task-chips-dark.png' },
   { file: 'chips-preview.html', query: '?light', selector: '.note', out: 'task-chips-light.png' },
@@ -48,10 +67,68 @@ const SHOTS = [
   { file: 'board-preview.html', query: '?view=picker', selector: '.taskpro-panel', out: 'tag-picker.png', board: true },
   { file: 'board-preview.html', query: '?view=picker&query=Planning', selector: '.taskpro-panel', out: 'tag-picker-create.png', board: true },
   { file: 'board-preview.html', query: '?view=manager', selector: '#root', out: 'tag-manager.png', board: true },
+  // Working with the table and the board.
+  { file: 'board-preview.html', query: '?theme=bookcloth&light&scope=vault&group=none', selector: 'body', out: 'task-board-selection-light.png', board: true, setup: pickRows },
+  {
+    file: 'board-preview.html',
+    query: '?theme=bookcloth&scope=vault&group=none',
+    selector: '.taskpro-shortcuts',
+    out: 'task-board-shortcuts-dark.png',
+    board: true,
+    setup: async (page) => {
+      await page.locator('.taskpro-board__body').focus();
+      await page.keyboard.press('Shift+Slash');
+    },
+  },
+  {
+    file: 'board-preview.html',
+    query: '?theme=bookcloth&light&scope=vault&group=none&views=demo',
+    selector: 'body',
+    out: 'task-board-views-light.png',
+    board: true,
+    setup: async (page) => {
+      await page.locator('.taskpro-board__views').click();
+    },
+  },
+  { file: 'board-preview.html', query: '?theme=bookcloth&light&mobile=1&scope=vault', selector: 'body', out: 'task-board-phone-light.png', board: true, phone: true },
+  {
+    file: 'board-preview.html',
+    query: '?theme=bookcloth&light&mobile=1&scope=vault',
+    selector: 'body',
+    out: 'task-board-phone-add-light.png',
+    board: true,
+    phone: true,
+    setup: async (page) => {
+      await page.tap('.taskpro-board__fab');
+      await page.waitForTimeout(200);
+      await page.locator('.taskpro-qa__input').fill('Call Sara tomorrow 9 #work !high');
+    },
+  },
+  {
+    file: 'board-preview.html',
+    query: '?theme=bookcloth&light&mobile=1&scope=vault',
+    selector: 'body',
+    out: 'task-board-phone-sheet-light.png',
+    board: true,
+    phone: true,
+    setup: async (page) => {
+      await page.tap('.taskpro-list__row:has-text("Send the quote") .taskpro-list__title');
+    },
+  },
+  { file: 'board-preview.html', query: '?theme=bookcloth&light&mobile=1&scope=vault&layout=calendar&cal=month', selector: 'body', out: 'task-board-phone-calendar-light.png', board: true, phone: true },
+  {
+    file: 'board-preview.html',
+    query: '?theme=bookcloth&light&mobile=1&scope=vault',
+    selector: 'body',
+    out: 'task-board-phone-selection-light.png',
+    board: true,
+    phone: true,
+    setup: pickOnPhone,
+  },
 ];
 
-/** The board needs a desktop-sized pane; the chip strips do not. */
-const VIEWPORTS = { board: { width: 1280, height: 760 }, default: { width: 900, height: 820 } };
+/** The board needs a desktop-sized pane; the chip strips do not; a phone is a phone. */
+const VIEWPORTS = { board: { width: 1280, height: 760 }, default: { width: 900, height: 820 }, phone: { width: 390, height: 844 } };
 
 let boardReady = false;
 try {
@@ -82,21 +159,30 @@ const browser = await chromium.launch({
 });
 
 try {
+  // ONLY=name.png,other.png renders just those, so a change to one screen does not rewrite every image.
+  const only = process.env.ONLY?.split(',');
   for (const shot of SHOTS) {
+    if (only && !only.includes(shot.out)) continue;
     if (!(await available(shot.query))) {
       console.log(`skipped ${shot.out} — test/themes/${themeOf(shot.query)}.css is not present`);
       continue;
     }
     if (shot.board && !boardReady) continue;
-    const viewport = shot.board ? VIEWPORTS.board : VIEWPORTS.default;
-    const page = await browser.newPage({ deviceScaleFactor: 2, viewport });
+    const viewport = shot.viewport ?? (shot.phone ? VIEWPORTS.phone : shot.board ? VIEWPORTS.board : VIEWPORTS.default);
+    // Reduced motion, so a shot is never taken with something half way in.
+    const context = await browser.newContext({ deviceScaleFactor: 2, viewport, hasTouch: !!shot.phone, reducedMotion: 'reduce' });
+    const page = await context.newPage();
     await page.goto(`file://${path.join(here, shot.file)}${shot.query}`);
     if (shot.board) await page.waitForSelector('body[data-ready="true"]');
     await page.waitForTimeout(250);
+    if (shot.setup) {
+      await shot.setup(page);
+      await page.waitForTimeout(300);
+    }
     const target = await page.locator(shot.selector).first();
     await target.screenshot({ path: path.join(outDir, shot.out), scale: 'css' });
     console.log(`rendered ${shot.out}`);
-    await page.close();
+    await context.close();
   }
 } finally {
   await browser.close();

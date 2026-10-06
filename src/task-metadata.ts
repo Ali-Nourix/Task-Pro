@@ -1,7 +1,7 @@
 // ── task-metadata.ts ─────────────────────────────────────────────────────
 // Shared helpers for parsing and updating task metadata markers.
 
-import { RepeatUnit, TaskPriority, TaskProgress, TaskRepeat, PRIORITY_ICONS, TASK_PRIORITIES } from './types';
+import { RepeatUnit, TaskPriority, TaskProgress, TaskRepeat, TaskSchedule, PRIORITY_ICONS, TASK_PRIORITIES } from './types';
 
 // Canonical inline form is `@due(2026-08-10)`, matching `@priority(...)`.
 //
@@ -67,6 +67,31 @@ const PRIORITY_BY_EMOJI: Record<string, TaskPriority> = TASK_PRIORITIES.reduce(
 const TAG_PATTERN_SOURCE = String.raw`@tag\(\s*([^()\n]*?)\s*\)`;
 const TAG_PATTERN_GLOBAL = new RegExp(TAG_PATTERN_SOURCE, 'gu');
 const TAG_KEY_DISALLOWED = new RegExp(String.raw`[^\p{L}\p{N}\p{M}_\-/\u200c]`, 'gu');
+
+// Canonical inline form is `@schedule(2026-09-28 09:00-10:30)`, or
+// `@schedule(2026-09-28)` for a day with no set time. A start with no end
+// (`@schedule(2026-09-28 09:00)`) is read too; the calendar gives it the
+// default block length. Times are 24-hour and local.
+const SCHEDULE_PATTERN =
+  /@schedule\(\s*(\d{4}-\d{2}-\d{2})(?:[ T]+(\d{1,2}:\d{2})(?:\s*[-\u2013]\s*(\d{1,2}:\d{2}))?)?\s*\)/;
+const SCHEDULE_PATTERN_GLOBAL = new RegExp(SCHEDULE_PATTERN.source, 'g');
+
+// Canonical inline form is `@waiting([[Planner/Launch#^tp-4k2a]])`: the tasks
+// this one waits on, as Obsidian block links, comma separated. Links rather
+// than bare IDs, so Obsidian keeps them pointing at the right note when a
+// note is renamed or moved, and a dependency shows up among a note's links.
+// A link to the same note may leave the path out: `[[#^tp-4k2a]]`.
+const WAITING_PATTERN = /@waiting\(((?:\s*\[\[[^\]\n]+\]\]\s*,?)+)\s*\)/;
+const WAITING_PATTERN_GLOBAL = new RegExp(WAITING_PATTERN.source, 'g');
+const WAITING_LINK_PATTERN = /\[\[([^\]#|\n]*)#\^([a-zA-Z0-9-]+)(?:\|[^\]\n]*)?\]\]/g;
+
+// Canonical inline form is `@remind(10m)`: how long before its planned start a
+// task asks for attention, in minutes (`m`) or hours (`h`); `@remind(0m)` is
+// at the start, and `@remind(off)` turns the reminder off for this task. A
+// task without one uses the reminder setting. `@remind(2026-10-05 09:30)` is a
+// reminder at one moment of its own, planned or not.
+const REMIND_PATTERN = /@remind\(\s*(?:(off|\d{1,4}\s*[mh]?)|(\d{4}-\d{2}-\d{2})[ T]+(\d{1,2}:\d{2}))\s*\)/i;
+const REMIND_PATTERN_GLOBAL = new RegExp(REMIND_PATTERN.source, 'gi');
 
 function normalizeAfterMarkerRemovalPreserveIndent(line: string): string {
   const indent = line.match(LEADING_WHITESPACE_PATTERN)?.[0] ?? '';
@@ -337,6 +362,180 @@ export function setTags(line: string, keys: readonly string[] | null): string {
   return `${withoutTags} ${marker}`;
 }
 
+/** `9:05` → `09:05`; null for anything that is not a time of day. `24:00` only as an end. */
+function normalizeClock(value: string | undefined, isEnd: boolean): string | null {
+  const match = /^(\d{1,2}):(\d{2})$/.exec(value ?? '');
+  if (!match) return null;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (minutes > 59) return null;
+  if (hours > 23 && !(isEnd && hours === 24 && minutes === 0)) return null;
+  return `${String(hours).padStart(2, '0')}:${match[2]}`;
+}
+
+function clockToMinutes(clock: string): number {
+  const [hours, minutes] = clock.split(':').map(Number);
+  return hours * 60 + minutes;
+}
+
+function isRealIsoDate(value: string): boolean {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return false;
+  const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])];
+  const date = new Date(year, month - 1, day);
+  return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day;
+}
+
+/**
+ * The schedule on a task line, if any. A time that is not a time, or an end
+ * that is not after the start, is dropped rather than guessed at: a task with
+ * `@schedule(2026-09-28 10:00-09:00)` is planned for 10:00 with no end.
+ */
+export function extractSchedule(line: string): TaskSchedule | undefined {
+  const match = SCHEDULE_PATTERN.exec(line);
+  if (!match || !isRealIsoDate(match[1])) return undefined;
+  const date = match[1];
+  const start = normalizeClock(match[2], false);
+  if (!start) return { date };
+  const end = normalizeClock(match[3], true);
+  if (end && clockToMinutes(end) > clockToMinutes(start)) return { date, start, end };
+  return { date, start };
+}
+
+/** The marker text for a schedule: `@schedule(2026-09-28 09:00-10:30)`. */
+export function formatScheduleMarker(schedule: TaskSchedule): string {
+  const time = schedule.start ? ` ${schedule.start}${schedule.end ? `-${schedule.end}` : ''}` : '';
+  return `@schedule(${schedule.date}${time})`;
+}
+
+/** Removes every schedule marker from a task line. */
+export function stripSchedule(line: string): string {
+  return line.replace(SCHEDULE_PATTERN_GLOBAL, '').replace(/\s{2,}/g, ' ').trim();
+}
+
+/** Removes every schedule marker while preserving leading indentation. */
+export function stripSchedulePreserveIndent(line: string): string {
+  return normalizeAfterMarkerRemovalPreserveIndent(line.replace(SCHEDULE_PATTERN_GLOBAL, ''));
+}
+
+/**
+ * Replaces the line's schedule, or removes it. The marker is inserted before a
+ * trailing block ID so the ID stays last.
+ */
+export function setSchedule(line: string, schedule: TaskSchedule | null): string {
+  const without = stripSchedulePreserveIndent(line);
+  if (!schedule || !isRealIsoDate(schedule.date)) return without;
+
+  const marker = formatScheduleMarker(schedule);
+  const blockIdMatch = without.match(/\s*\^([a-zA-Z0-9-]+)\s*$/);
+  if (blockIdMatch) {
+    return without.replace(/\s*\^([a-zA-Z0-9-]+)\s*$/, ` ${marker} ^${blockIdMatch[1]}`);
+  }
+
+  return `${without} ${marker}`;
+}
+
+/** A task this one waits on: the note it is in (empty for the same note), and its block ID. */
+export interface TaskLink {
+  path: string;
+  blockId: string;
+}
+
+/** The tasks a line waits on, in the order they were written, each once. */
+export function extractWaiting(line: string): TaskLink[] {
+  const links: TaskLink[] = [];
+  WAITING_PATTERN_GLOBAL.lastIndex = 0;
+  let marker: RegExpExecArray | null;
+  while ((marker = WAITING_PATTERN_GLOBAL.exec(line)) !== null) {
+    WAITING_LINK_PATTERN.lastIndex = 0;
+    let link: RegExpExecArray | null;
+    while ((link = WAITING_LINK_PATTERN.exec(marker[1])) !== null) {
+      const path = link[1].trim().replace(/\.md$/i, '');
+      const blockId = link[2];
+      if (!links.some((l) => l.path === path && l.blockId === blockId)) links.push({ path, blockId });
+    }
+  }
+  return links;
+}
+
+/** The link a dependency is written as: `[[Planner/Launch#^tp-4k2a]]`. */
+export function formatTaskLink(link: TaskLink): string {
+  return `[[${link.path}#^${link.blockId}]]`;
+}
+
+export function stripWaiting(line: string): string {
+  return line.replace(WAITING_PATTERN_GLOBAL, '').replace(/\s{2,}/g, ' ').trim();
+}
+
+export function stripWaitingPreserveIndent(line: string): string {
+  return normalizeAfterMarkerRemovalPreserveIndent(line.replace(WAITING_PATTERN_GLOBAL, ''));
+}
+
+/** Replaces what the line waits on, as one marker before a trailing block ID. An empty list removes it. */
+export function setWaiting(line: string, links: readonly TaskLink[] | null): string {
+  const without = stripWaitingPreserveIndent(line);
+  if (!links?.length) return without;
+  return insertBeforeBlockId(without, `@waiting(${links.map(formatTaskLink).join(', ')})`);
+}
+
+/**
+ * A task's own reminder: minutes before its planned start, or null when it is
+ * turned off. Undefined when the task has none and the setting decides.
+ */
+export function extractRemind(line: string): number | null | undefined {
+  const match = REMIND_PATTERN.exec(line);
+  if (!match || match[1] === undefined) return undefined;
+  const value = match[1].toLowerCase().replace(/\s+/g, '');
+  if (value === 'off') return null;
+  const amount = parseInt(value, 10);
+  return value.endsWith('h') ? amount * 60 : amount;
+}
+
+/** A reminder at one moment: a day and a time on it. */
+export interface RemindAt {
+  date: string;
+  time: string;
+}
+
+/** A task's reminder at a moment of its own, when it has one. */
+export function extractRemindAt(line: string): RemindAt | undefined {
+  const match = REMIND_PATTERN.exec(line);
+  if (!match || match[2] === undefined || !isRealIsoDate(match[2])) return undefined;
+  const time = normalizeClock(match[3], false);
+  return time ? { date: match[2], time } : undefined;
+}
+
+export function formatRemindMarker(minutes: number | null | RemindAt): string {
+  if (minutes !== null && typeof minutes === 'object') return `@remind(${minutes.date} ${minutes.time})`;
+  if (minutes === null) return '@remind(off)';
+  return minutes >= 60 && minutes % 60 === 0 ? `@remind(${minutes / 60}h)` : `@remind(${minutes}m)`;
+}
+
+export function stripRemind(line: string): string {
+  return line.replace(REMIND_PATTERN_GLOBAL, '').replace(/\s{2,}/g, ' ').trim();
+}
+
+export function stripRemindPreserveIndent(line: string): string {
+  return normalizeAfterMarkerRemovalPreserveIndent(line.replace(REMIND_PATTERN_GLOBAL, ''));
+}
+
+/**
+ * Sets the task's own reminder: minutes before its plan, a moment of its own,
+ * `null` for none, or with `undefined` back to the setting.
+ */
+export function setRemind(line: string, minutes: number | null | RemindAt | undefined): string {
+  const without = stripRemindPreserveIndent(line);
+  if (minutes === undefined) return without;
+  return insertBeforeBlockId(without, formatRemindMarker(minutes));
+}
+
+/** Adds a marker at the end of a line, before its block ID so the ID stays last. */
+function insertBeforeBlockId(line: string, marker: string): string {
+  const blockIdMatch = line.match(/\s*\^([a-zA-Z0-9-]+)\s*$/);
+  if (blockIdMatch) return line.replace(/\s*\^([a-zA-Z0-9-]+)\s*$/, ` ${marker} ^${blockIdMatch[1]}`);
+  return `${line} ${marker}`;
+}
+
 /**
  * Replaces the readable part of a task line and keeps everything TaskPro put
  * there: the checkbox, the indentation, every marker and the block ID. The
@@ -358,6 +557,9 @@ export function replaceTaskText(line: string, text: string): string {
     PRIORITY_PATTERN_GLOBAL,
     REPEAT_PATTERN_GLOBAL,
     TAG_PATTERN_GLOBAL,
+    SCHEDULE_PATTERN_GLOBAL,
+    WAITING_PATTERN_GLOBAL,
+    REMIND_PATTERN_GLOBAL,
   ]) {
     pattern.lastIndex = 0;
     let found: RegExpExecArray | null;
@@ -374,13 +576,13 @@ export function replaceTaskText(line: string, text: string): string {
 }
 
 /**
- * Every TaskPro marker removed: deadline, progress, priority, repeat and tags.
- * The block ID and the checkbox are left alone; callers that build identity
- * keys or titles strip those themselves. One helper, so a new marker is added
- * in exactly one place instead of in every copy of the strip chain.
+ * Every TaskPro marker removed: deadline, progress, priority, repeat, tags and
+ * schedule. The block ID and the checkbox are left alone; callers that build
+ * identity keys or titles strip those themselves. One helper, so a new marker
+ * is added in exactly one place instead of in every copy of the strip chain.
  */
 export function stripTaskMetadata(line: string): string {
-  return stripTags(stripRepeat(stripPriority(stripProgress(stripDeadline(line)))));
+  return stripRemind(stripWaiting(stripSchedule(stripTags(stripRepeat(stripPriority(stripProgress(stripDeadline(line))))))));
 }
 
 /**
@@ -453,6 +655,18 @@ export const DEADLINE_MARKER_PATTERN = new RegExp(DEADLINE_PATTERN.source, '');
 
 /** Single-match recurrence pattern for decoration ranges. */
 export const REPEAT_MARKER_PATTERN = new RegExp(REPEAT_PATTERN.source, 'i');
+
+/** Single-match schedule pattern for decoration ranges. */
+export const SCHEDULE_MARKER_PATTERN = new RegExp(SCHEDULE_PATTERN.source, '');
+
+/** Single-match patterns for the dependency and reminder markers, for decoration ranges. */
+export const WAITING_MARKER_PATTERN = new RegExp(WAITING_PATTERN.source, '');
+export const REMIND_MARKER_PATTERN = new RegExp(REMIND_PATTERN.source, 'i');
+export const WAITING_MARKER_PATTERN_GLOBAL = new RegExp(WAITING_PATTERN.source, 'g');
+export const REMIND_MARKER_PATTERN_GLOBAL = new RegExp(REMIND_PATTERN.source, 'gi');
+
+/** Global schedule pattern, for reading-mode stripping. */
+export const SCHEDULE_MARKER_PATTERN_GLOBAL = new RegExp(SCHEDULE_PATTERN.source, 'g');
 
 /**
  * Global tag-marker pattern for decoration ranges and reading-mode stripping.

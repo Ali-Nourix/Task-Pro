@@ -1,0 +1,13 @@
+# Supabase CLI project settings for the TaskPro bot.
+project_id = "taskpro-bot"
+
+# The three functions do their own checking (a secret in a header), because
+# Telegram, the plugin and the scheduler do not carry a Supabase user token.
+[functions.telegram]
+verify_jwt = false
+
+[functions.sync]
+verify_jwt = false
+
+[functions.tick]
+verify_jwt = false

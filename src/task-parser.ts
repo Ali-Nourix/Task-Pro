@@ -14,6 +14,7 @@ import {
   stripRepeat,
   extractTags,
   setTags,
+  stripSchedule,
   stripTags,
 } from './task-metadata';
 
@@ -62,6 +63,9 @@ export function parseTasksFromContent(content: string): ParsedTask[] {
 
    const customTags = extractTags(taskContent);
     taskContent = stripTags(taskContent);
+
+    // A schedule is a plan for one copy of a task, so it stays with the source.
+    taskContent = stripSchedule(taskContent);
 
    // Extract block ID
     const blockIdMatch = taskContent.match(BLOCK_ID_REGEX);
@@ -129,6 +133,9 @@ export function parseTasksWithHierarchy(content: string): ParsedTask[] {
 
    const customTags = extractTags(taskContent);
     taskContent = stripTags(taskContent);
+
+    // A schedule is a plan for one copy of a task, so it stays with the source.
+    taskContent = stripSchedule(taskContent);
 
    const blockIdMatch = taskContent.match(BLOCK_ID_REGEX);
     const blockId = blockIdMatch ? blockIdMatch[1] : undefined;

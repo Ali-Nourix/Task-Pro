@@ -4,6 +4,7 @@
 
 import { setIcon } from 'obsidian';
 import {
+  CalendarSystem,
   Language,
   TaskStatus,
   STATUS_LABELS,
@@ -13,7 +14,9 @@ import {
   STATUS_ICON_NAMES,
   CHIP_ICON_NAMES,
   TaskRepeat,
+  TaskSchedule,
   TaskTimer,
+  TimeFormat,
   formatTimerClock,
   timerRemainingSeconds,
   timerState,
@@ -21,6 +24,7 @@ import {
 import { ResolvedTag, applyTagColor } from '../tags';
 import { getDeadlineInfo } from '../widget-localization';
 import { getRepeatLabels, getTimerLabels } from '../timer-localization';
+import { isSchedulePast, scheduleText } from '../calendar/schedule-text';
 
 export function applyChipScale(container: HTMLElement, badgeSize: number): void {
   container.style.setProperty('--taskpro-badge-font-size', `${badgeSize}px`);
@@ -300,6 +304,60 @@ export function appendTagChips(
 }
 
 /**
+ * When the task is planned: "Today, 09:00 – 10:30". Clicking it opens the task
+ * menu, where the plan is changed or removed beside every other edit.
+ */
+export function createScheduleChip(options: {
+  schedule: TaskSchedule;
+  language: Language;
+  calendarSystem: CalendarSystem;
+  timeFormat: TimeFormat;
+  filePath: string;
+  lineContent: string;
+  blockId?: string;
+  status: TaskStatus;
+  deadline?: string;
+  priority?: TaskPriority;
+  tags?: string[];
+}): HTMLElement {
+  const label = scheduleText(options.schedule, options);
+  const badge = buildChip(
+    'taskpro-schedule-badge',
+    options.schedule.start ? CHIP_ICON_NAMES.schedule : CHIP_ICON_NAMES.scheduleDay,
+    label
+  );
+  badge.dataset.schedule = options.schedule.date;
+  // A plan whose day went by with the task still open.
+  if (options.status !== '[x]' && isSchedulePast(options.schedule)) badge.dataset.state = 'past';
+  badge.setAttribute('aria-label', label);
+  badge.setAttribute('role', 'button');
+  badge.tabIndex = 0;
+
+  badge.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    badge.dispatchEvent(
+      new CustomEvent('taskpro-badge-click', {
+        bubbles: true,
+        detail: {
+          status: options.status,
+          deadline: options.deadline,
+          language: options.language,
+          lineContent: options.lineContent,
+          filePath: options.filePath,
+          targetElement: badge,
+          blockId: options.blockId,
+          tags: options.tags,
+          priority: options.priority,
+        },
+      })
+    );
+  });
+
+  return badge;
+}
+
+/**
  * Recurrence chip. Clicking it reuses the task popover, so changing the
  * interval lives beside every other task edit.
  */
@@ -344,4 +402,111 @@ export function createRepeatChip(options: {
   });
 
   return badge;
+}
+
+const RELATION_LABELS: Record<Language, {
+  subtasks: (done: number, total: number) => string;
+  waitingOn: string;
+  waitedOn: string;
+  gone: string;
+  tasks: (count: number) => string;
+  remindAt: (minutes: number) => string;
+  remindOff: string;
+  remindMoment: string;
+}> = {
+  en: {
+    subtasks: (done, total) => `${done} of ${total} subtasks done`,
+    waitingOn: 'Waiting on',
+    waitedOn: 'Was waiting on (done)',
+    gone: 'a task that is gone',
+    tasks: (count) => `${count} tasks`,
+    remindAt: (minutes) => (minutes === 0 ? 'Reminder at the start' : `Reminder ${minutes} min before`),
+    remindOff: 'No reminder',
+    remindMoment: 'Reminder',
+  },
+  fa: {
+    subtasks: (done, total) => `${done} از ${total} زیرتسک انجام شده`,
+    waitingOn: 'منتظرِ',
+    waitedOn: 'منتظرِ این‌ها بود (انجام شد)',
+    gone: 'تسکی که دیگر نیست',
+    tasks: (count) => `${count} تسک`,
+    remindAt: (minutes) => (minutes === 0 ? 'یادآوری سر شروع' : `یادآوری ${minutes} دقیقه قبل`),
+    remindOff: 'بدون یادآوری',
+    remindMoment: 'یادآوری',
+  },
+};
+
+/** A parent's subtasks as a count, "2/4", where it has no progress bar of its own. */
+export function createSubtaskChip(done: number, total: number, language: Language): HTMLElement {
+  const badge = buildChip('taskpro-subtask-badge', 'list-checks', `${done}/${total}`);
+  badge.dataset.state = done === total ? 'done' : 'open';
+  badge.style.setProperty('--taskpro-subtask-done', String(total ? done / total : 0));
+  const text = RELATION_LABELS[language].subtasks(done, total);
+  badge.setAttribute('aria-label', text);
+  badge.title = text;
+  return badge;
+}
+
+/** One task a line waits on, as its chip reads it. */
+export interface WaitingChipItem {
+  title: string;
+  done: boolean;
+  missing: boolean;
+}
+
+/**
+ * What a task waits on: the task's name when it is one, a count when there
+ * are more. Amber while any of them is open; quiet once they are all done.
+ * A click opens the first one still open. `onOpen` gets its index.
+ */
+export function createWaitingChip(items: readonly WaitingChipItem[], language: Language, onOpen: (index: number) => void): HTMLElement {
+  const labels = RELATION_LABELS[language];
+  const open = items.findIndex((item) => !item.done && !item.missing);
+  const settled = open === -1;
+  const name = (item: WaitingChipItem) => (item.missing ? labels.gone : item.title);
+  const text = items.length === 1 ? name(items[0]) : labels.tasks(items.length);
+  const badge = buildChip('taskpro-waiting-badge', settled ? 'check-check' : 'hourglass', text);
+  badge.dataset.state = settled ? 'done' : 'waiting';
+  const tip = `${settled ? labels.waitedOn : labels.waitingOn}: ${items.map(name).join(language === 'fa' ? '، ' : ', ')}`;
+  badge.setAttribute('aria-label', tip);
+  badge.title = tip;
+  badge.setAttribute('role', 'button');
+  badge.tabIndex = 0;
+  const label = badge.querySelector('.taskpro-chip__label');
+  label?.setAttribute('dir', 'auto');
+  badge.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    onOpen(settled ? 0 : open);
+  });
+  return badge;
+}
+
+/** A reminder at a moment of its own: a bell and when, "Tomorrow, 09:30". It turns quiet once the moment has gone. */
+export function createRemindChip(
+  at: { date: string; time: string },
+  options: { language: Language; calendarSystem: CalendarSystem; timeFormat: TimeFormat; status: TaskStatus }
+): HTMLElement {
+  const label = scheduleText({ date: at.date, start: at.time }, options);
+  const badge = buildChip('taskpro-remind-badge', 'bell', label);
+  badge.dataset.remind = `${at.date} ${at.time}`;
+  const [hours, minutes] = at.time.split(':').map(Number);
+  const [year, month, day] = at.date.split('-').map(Number);
+  const gone = options.status === '[x]' || new Date(year, month - 1, day, hours, minutes).getTime() < Date.now();
+  if (gone) badge.dataset.state = 'past';
+  const text = `${RELATION_LABELS[options.language].remindMoment}: ${label}`;
+  badge.setAttribute('aria-label', text);
+  badge.title = text;
+  return badge;
+}
+
+/** A small bell on a plan chip, for a task with a reminder time of its own. */
+export function addRemindMark(badge: HTMLElement, minutes: number | null, language: Language): void {
+  const mark = document.createElement('span');
+  mark.className = 'taskpro-chip__remind';
+  setIcon(mark, minutes === null ? 'bell-off' : 'bell');
+  const text = minutes === null ? RELATION_LABELS[language].remindOff : RELATION_LABELS[language].remindAt(minutes);
+  mark.setAttribute('aria-label', text);
+  mark.title = text;
+  badge.appendChild(mark);
 }

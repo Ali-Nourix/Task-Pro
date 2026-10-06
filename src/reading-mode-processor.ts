@@ -3,25 +3,55 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { App, MarkdownPostProcessorContext } from 'obsidian';
-import { TaskStatus, Language, CalendarSystem, TaskProgress, TaskPriority, TaskRepeat, TaskTimer } from './types';
+import {
+  TaskStatus,
+  Language,
+  CalendarSystem,
+  TaskProgress,
+  TaskPriority,
+  TaskRepeat,
+  TaskSchedule,
+  TaskTimer,
+  TimeFormat,
+} from './types';
 import { isWithinTargetFolder } from './path-utils';
-import { extractDeadline, extractProgress, extractPriority, extractRepeat, extractTags } from './task-metadata';
+import {
+  extractDeadline,
+  extractProgress,
+  extractPriority,
+  extractRepeat,
+  extractRemind,
+  extractRemindAt,
+  RemindAt,
+  extractSchedule,
+  extractTags,
+  extractWaiting,
+  REMIND_MARKER_PATTERN_GLOBAL,
+  SCHEDULE_MARKER_PATTERN_GLOBAL,
+} from './task-metadata';
+import type { WaitingResolver } from './decorations';
 import { ResolvedTag, TaskTag, resolveTag } from './tags';
 import {
+  addRemindMark,
+  createRemindChip,
   appendTagChips,
   applyChipScale,
   createDeadlineChip,
   createPriorityChip,
   createProgressChip,
   createRepeatChip,
+  createScheduleChip,
   createStatusChip,
+  createSubtaskChip,
   createTimerChip,
+  createWaitingChip,
 } from './ui/chips';
 
 /** A pattern that matches nothing, used to switch off an optional strip. */
 const NEVER_MATCHES = /(?!)/g;
 /** Same shape the parser accepts; see TAG_PATTERN_SOURCE in task-metadata. */
 const TAG_MARKER_TEXT = /@tag\(\s*[^()\n]*?\s*\)/g;
+const SCHEDULE_MARKER_TEXT = SCHEDULE_MARKER_PATTERN_GLOBAL;
 
 /** Settings slice the reading-mode renderer depends on. */
 export interface ReadingModeSettings {
@@ -35,7 +65,96 @@ export interface ReadingModeSettings {
   showTimerBadges: boolean;
   showRepeatBadges: boolean;
   showTagBadges: boolean;
+  showScheduleBadges: boolean;
+  showSubtaskProgress: boolean;
+  showWaitingBadges: boolean;
+  timeFormat: TimeFormat;
   tags: TaskTag[];
+}
+
+/**
+ * Whether a rendered text node is on the item's own line: not in a list
+ * nested under it (its subtasks, rendered inside it) and not in its chips.
+ */
+function inOwnLine(node: Node, item: Element): boolean {
+  for (let el = node.parentElement; el && el !== item; el = el.parentElement) {
+    if (el.tagName === 'UL' || el.tagName === 'OL' || el.classList.contains('taskpro-badge-container')) return false;
+  }
+  return true;
+}
+
+/** The text nodes of the item's own line. */
+function ownTextWalker(item: Element): TreeWalker {
+  return document.createTreeWalker(item, NodeFilter.SHOW_TEXT, {
+    acceptNode: (node) => (inOwnLine(node, item) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT),
+  });
+}
+
+/**
+ * The item's own text. A parent's `textContent` holds its subtasks' lines
+ * as well, whose markers are theirs, not the parent's.
+ */
+function ownText(item: Element): string {
+  let text = '';
+  const walker = ownTextWalker(item);
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) text += node.textContent ?? '';
+  return text;
+}
+
+/**
+ * The line a rendered task item came from. Its text is not enough for a
+ * dependency, since Obsidian has already turned the link into an anchor.
+ */
+function sourceLine(item: Element, root: HTMLElement, ctx: MarkdownPostProcessorContext): string | null {
+  const offset = Number((item as HTMLElement).dataset.line);
+  const info = ctx.getSectionInfo(root);
+  if (!info || !Number.isFinite(offset)) return null;
+  return info.text.split('\n')[info.lineStart + offset] ?? null;
+}
+
+/** Direct subtasks of a rendered item: task items nested under it with no other task in between. */
+function renderedSubtasks(item: Element): { done: number; total: number } | null {
+  let done = 0;
+  let total = 0;
+  item.querySelectorAll('li.task-list-item').forEach((child) => {
+    if (child.parentElement?.closest('li.task-list-item') !== item) return;
+    total++;
+    const box = child.querySelector('input[type="checkbox"]');
+    const marker = box?.getAttribute('data-task') ?? child.getAttribute('data-task');
+    if (marker ? marker.toLowerCase() === 'x' : (box as HTMLInputElement | null)?.checked) done++;
+  });
+  return total ? { done, total } : null;
+}
+
+/** Removes `@waiting(…)` from a rendered line: the text around it and the links Obsidian made inside. */
+function hideWaitingMarker(root: Element): void {
+  const walker = ownTextWalker(root);
+  let node = walker.nextNode() as Text | null;
+  while (node) {
+    const at = node.textContent?.indexOf('@waiting(') ?? -1;
+    if (at === -1) {
+      node = walker.nextNode() as Text | null;
+      continue;
+    }
+    const text = node.textContent!;
+    const close = text.indexOf(')', at);
+    if (close !== -1) {
+      node.textContent = text.slice(0, at) + text.slice(close + 1);
+      continue;
+    }
+    node.textContent = text.slice(0, at);
+    let next = node.nextSibling;
+    while (next) {
+      const after = next.nextSibling;
+      if (next.nodeType === Node.TEXT_NODE && next.textContent?.includes(')')) {
+        next.textContent = next.textContent.slice(next.textContent.indexOf(')') + 1);
+        break;
+      }
+      next.parentNode?.removeChild(next);
+      next = after;
+    }
+    return;
+  }
 }
 
 /**
@@ -46,7 +165,8 @@ export function createReadingModeProcessor(
   getSettings: () => ReadingModeSettings,
   getProgress: (filePath: string, blockId?: string) => TaskProgress | undefined,
   getTimer: (filePath: string, blockId?: string) => TaskTimer | undefined,
-  getBlockId?: (filePath: string, lineContent: string) => string | undefined
+  getBlockId?: (filePath: string, lineContent: string) => string | undefined,
+  getWaiting?: WaitingResolver
 ) {
   return (el: HTMLElement, ctx: MarkdownPostProcessorContext) => {
     const settings = getSettings();
@@ -80,30 +200,28 @@ export function createReadingModeProcessor(
         existingBadge.remove();
       });
 
-      // Determine status
+      // Determine status. The marker comes first: Obsidian ticks the checkbox
+      // for every marker that is not a space, so `[/]` and `[!]` arrive checked
+      // and used to read as done.
       let status: TaskStatus;
-      if (checkbox.checked) {
+      const itemText = ownText(item);
+      const taskMarker = checkbox.getAttribute('data-task') ?? item.getAttribute('data-task');
+      if (taskMarker === '!' || (!taskMarker && itemText.includes('[!]'))) {
+        status = '[!]';
+        checkbox.classList.add('is-not-done');
+      } else if (taskMarker === '/' || (!taskMarker && itemText.includes('[/]'))) {
+        status = '[/]';
+        // Mark checkbox as in-progress for CSS styling
+        checkbox.classList.add('is-in-progress');
+        checkbox.indeterminate = true;
+      } else if (checkbox.checked) {
         status = '[x]';
       } else {
-        const text = item.textContent || '';
-        const taskMarker = checkbox.getAttribute('data-task') || item.getAttribute('data-task');
-        if (taskMarker === '!' || text.includes('[!]')) {
-          status = '[!]';
-          checkbox.classList.add('is-not-done');
-        } else if (taskMarker === '/' || text.includes('[/]')) {
-          status = '[/]';
-          // Mark checkbox as in-progress for CSS styling
-          if (checkbox) {
-            checkbox.classList.add('is-in-progress');
-            checkbox.indeterminate = true;
-          }
-        } else {
-          status = '[ ]';
-        }
+        status = '[ ]';
       }
 
      // Extract deadline
-     const text = item.textContent || '';
+     const text = itemText;
      const deadline = extractDeadline(text) || null;
 
       // Extract block ID - check inline first, then fall back to cache
@@ -121,6 +239,16 @@ export function createReadingModeProcessor(
       const tagChips = settings.showTagBadges
         ? extractTags(text).map((key) => resolveTag(key, settings.tags))
         : [];
+      const schedule = settings.showScheduleBadges ? extractSchedule(text) : undefined;
+      const remind = schedule?.start && text.includes('@remind(') ? extractRemind(text) : undefined;
+      const remindAt = settings.showScheduleBadges && text.includes('@remind(') ? extractRemindAt(text) : undefined;
+      const subtasks = settings.showSubtaskProgress ? renderedSubtasks(item) : null;
+      let waiting: ReturnType<WaitingResolver> | undefined;
+      if (settings.showWaitingBadges && getWaiting && text.includes('@waiting(')) {
+        const line = sourceLine(item, el, ctx);
+        const links = line ? extractWaiting(line) : [];
+        if (links.length) waiting = getWaiting(ctx.sourcePath, links);
+      }
 
       // Extract tags
       const tagMatches = text.matchAll(/#([a-zA-Z0-9_-]+)/g);
@@ -139,13 +267,17 @@ export function createReadingModeProcessor(
         ctx.sourcePath,
         blockId,
         tags,
-        tagChips
+        tagChips,
+        schedule,
+        { subtasks, waiting, remind, remindAt }
       );
+
+      hideInlineTaskMetadata(item, settings.showRepeatBadges, settings.showTagBadges, settings.showScheduleBadges);
+      if (waiting) hideWaitingMarker(item);
       
-      hideInlineTaskMetadata(item, settings.showRepeatBadges, settings.showTagBadges);
-      
-      // Append to the list item
-      item.appendChild(badgeContainer);
+      // At the end of the item's own line: before its subtasks, when it has any.
+      const nested = Array.from(item.children).find((child) => child.tagName === 'UL' || child.tagName === 'OL');
+      item.insertBefore(badgeContainer, nested ?? null);
     });
   };
 }
@@ -155,8 +287,9 @@ export function createReadingModeProcessor(
  * carry the same information. The recurrence marker is only stripped while its
  * chip is on — otherwise turning the chip off would hide the rule entirely.
  */
-function hideInlineTaskMetadata(root: Element, hideRepeat: boolean, hideTags: boolean): void {
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+function hideInlineTaskMetadata(root: Element, hideRepeat: boolean, hideTags: boolean, hideSchedule: boolean): void {
+  // Only the item's own line: its subtasks are items of their own, read after it.
+  const walker = ownTextWalker(root);
   const emptyTextNodes: Text[] = [];
 
   let currentNode = walker.nextNode();
@@ -181,6 +314,8 @@ function hideInlineTaskMetadata(root: Element, hideRepeat: boolean, hideTags: bo
         ''
       )
       .replace(hideTags ? TAG_MARKER_TEXT : NEVER_MATCHES, '')
+      .replace(hideSchedule ? SCHEDULE_MARKER_TEXT : NEVER_MATCHES, '')
+      .replace(hideSchedule ? REMIND_MARKER_PATTERN_GLOBAL : NEVER_MATCHES, '')
       .replace(/\uD83D\uDD3A|\u23EB|\uD83D\uDD3C|\uD83D\uDD3D|\u23EC/g, '')
       .replace(/\s*\^[a-zA-Z0-9-]+\s*$/g, '')
       .replace(/\s{2,}/g, ' ');
@@ -195,6 +330,8 @@ function hideInlineTaskMetadata(root: Element, hideRepeat: boolean, hideTags: bo
         || /\[priority::/i.test(textNode.textContent)
         || (hideRepeat && /@repeat\(/i.test(textNode.textContent))
         || (hideTags && textNode.textContent.includes('@tag('))
+        || (hideSchedule && textNode.textContent.includes('@schedule('))
+        || (hideSchedule && textNode.textContent.includes('@remind('))
         || /\uD83D\uDD3A|\u23EB|\uD83D\uDD3C|\uD83D\uDD3D|\u23EC/.test(textNode.textContent)
         || /\^[a-zA-Z0-9-]+/.test(textNode.textContent);
       if (!cleanedText.trim() && hadMetadata) {
@@ -221,12 +358,19 @@ function createInteractiveBadgeContainer(
   priority: TaskPriority | undefined,
   timer: TaskTimer | undefined,
   repeat: TaskRepeat | undefined,
-  settings: { badgeLanguage: Language; badgeSize: number },
+  settings: { badgeLanguage: Language; badgeSize: number; calendarSystem: CalendarSystem; timeFormat: TimeFormat },
   lineContent: string,
   filePath: string,
   blockId?: string,
   tags?: string[],
-  tagChips: ResolvedTag[] = []
+  tagChips: ResolvedTag[] = [],
+  schedule?: TaskSchedule,
+  relations: {
+    subtasks?: { done: number; total: number } | null;
+    waiting?: ReturnType<WaitingResolver>;
+    remind?: number | null;
+    remindAt?: RemindAt;
+  } = {}
 ): HTMLElement {
   const container = document.createElement('span');
   container.className = 'taskpro-badge-container';
@@ -288,6 +432,47 @@ function createInteractiveBadgeContainer(
     container.appendChild(createDeadlineChip(deadline, settings.badgeLanguage, status));
   }
 
+  if (schedule) {
+    const plan = container.appendChild(
+      createScheduleChip({
+        schedule,
+        language: settings.badgeLanguage,
+        calendarSystem: settings.calendarSystem,
+        timeFormat: settings.timeFormat,
+        filePath,
+        lineContent,
+        blockId,
+        status,
+        deadline: deadline ?? undefined,
+        priority,
+        tags,
+      })
+    );
+    if (relations.remind !== undefined && schedule.start) addRemindMark(plan, relations.remind, settings.badgeLanguage);
+  }
+
+  if (relations.remindAt) {
+    container.appendChild(
+      createRemindChip(relations.remindAt, {
+        language: settings.badgeLanguage,
+        calendarSystem: settings.calendarSystem,
+        timeFormat: settings.timeFormat,
+        status,
+      })
+    );
+  }
+
+  const waiting = relations.waiting;
+  if (waiting?.length) {
+    container.appendChild(
+      createWaitingChip(waiting, settings.badgeLanguage, (index) => {
+        container.dispatchEvent(
+          new CustomEvent('taskpro-waiting-click', { bubbles: true, detail: { filePath, link: waiting[index].link } })
+        );
+      })
+    );
+  }
+
   if (timer?.enabled) {
     container.appendChild(
       createTimerChip({
@@ -311,6 +496,8 @@ function createInteractiveBadgeContainer(
         language: settings.badgeLanguage,
       })
     );
+  } else if (relations.subtasks) {
+    container.appendChild(createSubtaskChip(relations.subtasks.done, relations.subtasks.total, settings.badgeLanguage));
   }
 
   if (tagChips.length) {

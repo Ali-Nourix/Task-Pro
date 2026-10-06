@@ -42,6 +42,11 @@ try {
     { page: 'board-preview.html', name: 'board table', extra: '' },
     { page: 'board-preview.html', name: 'board kanban', extra: 'layout=board' },
     { page: 'board-preview.html', name: 'tag palette', extra: 'view=palette' },
+    { page: 'board-preview.html', name: 'plan chips', extra: 'view=note&layout=calendar&note=Planner/Focus.md' },
+    { page: 'board-preview.html', name: 'subtask chips', extra: 'view=note&layout=calendar&note=Projects/Figma.md' },
+    { page: 'board-preview.html', name: 'waiting chips', extra: 'view=note&note=Planner/2026-W39.md' },
+    { page: 'board-preview.html', name: 'calendar month', extra: 'layout=calendar&cal=month' },
+    { page: 'board-preview.html', name: 'calendar week', extra: 'layout=calendar&cal=week' },
   ];
 } catch (error) {
   console.log(`board surfaces skipped — ${error.message}`);
@@ -114,20 +119,25 @@ try {
       };
 
       const out = [];
-      for (const chip of document.querySelectorAll('.taskpro-chip, .taskpro-reminder-priority')) {
-        const label = chip.querySelector('.taskpro-chip__label');
+      // Calendar items are measured too; a done item is faded on purpose, as
+      // Obsidian fades a ticked task, and is left out.
+      const items = '.taskpro-chip, .taskpro-reminder-priority, .taskpro-cal__chip:not(.is-done), .taskpro-cal__block:not(.is-done)';
+      for (const chip of document.querySelectorAll(items)) {
+        const label = chip.querySelector('.taskpro-chip__label, .taskpro-cal__chip-title, .taskpro-cal__block-title');
         if (!label) continue;
         const chipStyle = getComputedStyle(chip);
         const effectiveBg = over(parse(chipStyle.backgroundColor), backdropOf(chip));
         const ink = over(parse(getComputedStyle(label).color), effectiveBg);
+        const calendar = chip.dataset.kind ? `${chip.classList.contains('taskpro-cal__block') ? 'block' : 'item'}-${chip.dataset.kind}` : null;
         const name =
+          (calendar && label.textContent.trim().slice(0, 18)) ??
           chip.dataset.status ?? chip.dataset.priority ?? chip.dataset.state ??
           chip.dataset.repeat ?? chip.dataset.progress ?? chip.dataset.tag ?? label.textContent.trim();
         const kind = [...chip.classList].find(
           (c) => c.startsWith('taskpro-') && (c.endsWith('-badge') || c.endsWith('-priority') || c === 'taskpro-tag-chip')
         );
         out.push({
-          what: `${(kind ?? 'chip').replace('taskpro-', '').replace('-badge', '').replace('-chip', '')}:${name}`,
+          what: calendar ? `cal-${calendar}:${name}` : `${(kind ?? 'chip').replace('taskpro-', '').replace('-badge', '').replace('-chip', '')}:${name}`,
           text: label.textContent.trim().slice(0, 18),
           ratio: Math.round(ratio(ink, effectiveBg) * 100) / 100,
         });

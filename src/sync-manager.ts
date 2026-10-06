@@ -122,6 +122,41 @@ export class SyncManager {
   }
 
   /**
+   * Points the mappings of tasks that moved from one note to another at their
+   * new home: the copies that were imported into the note, and the sources
+   * that other copies sync back to. Without this the link between a copy and
+   * its source would be lost by moving either. Resolves whether any changed.
+   */
+  async relocate(
+    from: string,
+    to: string,
+    moved: ReadonlyArray<{ line: string; blockId?: string; nextBlockId?: string }>
+  ): Promise<boolean> {
+    const mappings = this.getMappings();
+    let changed = false;
+    for (const task of moved) {
+      const key = this.normalizeTaskContent(task.line);
+      // Two block IDs must agree; without both, the words of the task decide.
+      const same = (id: string | undefined, line: string) =>
+        task.blockId && id ? id === task.blockId : this.normalizeTaskContent(line) === key;
+      for (const m of mappings) {
+        if (m.importedFilePath === from && same(m.importedBlockId, m.importedLineContent)) {
+          m.importedFilePath = to;
+          if (task.nextBlockId && m.importedBlockId === task.blockId) m.importedBlockId = task.nextBlockId;
+          changed = true;
+        }
+        if (m.sourceFilePath === from && same(m.sourceBlockId, m.sourceLineContent)) {
+          m.sourceFilePath = to;
+          if (task.nextBlockId && m.sourceBlockId === task.blockId) m.sourceBlockId = task.nextBlockId;
+          changed = true;
+        }
+      }
+    }
+    if (changed) await this.saveMappings(mappings);
+    return changed;
+  }
+
+  /**
    * Find mapping for a given file and line content
    */
   findMapping(filePath: string, lineContent: string, options: FindMappingOptions = {}): TaskMapping | undefined {
