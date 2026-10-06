@@ -10,8 +10,19 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { App, CachedMetadata, TFile } from 'obsidian';
-import { TaskPriority, TaskRepeat, TaskStatus } from '../types';
-import { extractDeadline, extractPriority, extractRepeat, extractTags } from '../task-metadata';
+import { TaskPriority, TaskRepeat, TaskSchedule, TaskStatus } from '../types';
+import {
+  TaskLink,
+  extractDeadline,
+  extractPriority,
+  extractRemind,
+  extractRemindAt,
+  RemindAt,
+  extractRepeat,
+  extractSchedule,
+  extractTags,
+  extractWaiting,
+} from '../task-metadata';
 import { parseTaskLine } from '../task-identity';
 
 export interface BoardTask {
@@ -34,9 +45,32 @@ export interface BoardTask {
   repeat?: TaskRepeat;
   /** TaskPro tag keys, in note order. */
   tags: string[];
+  /** When the task is planned to be done, from `@schedule(...)`. */
+  schedule?: TaskSchedule;
+  /** The tasks this one waits on, from `@waiting(...)`, as written. */
+  waiting?: TaskLink[];
+  /**
+   * Its own reminder before the plan starts, in minutes, from `@remind(...)`:
+   * null when turned off, undefined when the setting decides.
+   */
+  remind?: number | null;
+  /** Its reminder at a moment of its own, from `@remind(2026-10-05 09:30)`; it replaces the one before the plan. */
+  remindAt?: RemindAt;
+  /**
+   * The task this one is nested under, as an `id` in the same note: the
+   * nearest task among its list ancestors. A plain bullet in between (a note
+   * under a task) does not break the link.
+   */
+  parentId?: string;
 }
 
 const EMBED_PATTERN = /!\[\[[^\]]+\]\]/;
+const LIST_ITEM_PATTERN = /^(\s*)(?:[-*+]|\d+[.)])(?:\s|$)/;
+const FENCE_PATTERN = /^\s*(```|~~~)/;
+
+function indentWidth(indent: string): number {
+  return indent.replace(/\t/g, '    ').length;
+}
 
 /** Lines the metadata cache says are task list items, or null when it does not know. */
 function taskLinesFromCache(cache: CachedMetadata | null | undefined): Set<number> | null {
@@ -57,23 +91,54 @@ export function parseBoardTasks(
   const fileName = filePath.split('/').pop()?.replace(/\.md$/i, '') ?? filePath;
   const tasks: BoardTask[] = [];
   const lines = content.split('\n');
+  // Open list items above the current line, outermost first, with the task
+  // each one is (null for a plain bullet), for linking subtasks to parents.
+  const stack: Array<{ depth: number; taskId: string | null }> = [];
+  let fence: string | null = null;
 
   for (let i = 0; i < lines.length; i++) {
-    if (onlyLines && !onlyLines.has(i)) continue;
     const line = lines[i];
-    const parsed = parseTaskLine(line);
-    if (!parsed) continue;
-    // An embedded task is a reference to a task owned by another note.
-    if (EMBED_PATTERN.test(parsed.rawContent)) continue;
+    const fenceMatch = FENCE_PATTERN.exec(line);
+    if (fence) {
+      if (fenceMatch && fenceMatch[1] === fence) fence = null;
+      continue;
+    }
+    if (fenceMatch) {
+      fence = fenceMatch[1];
+      continue;
+    }
 
-    const indent = /^\s*/.exec(line)?.[0] ?? '';
+    const listMatch = LIST_ITEM_PATTERN.exec(line);
+    if (!listMatch) {
+      // A paragraph at the margin ends every list above it; an indented line
+      // or a blank one belongs to the item it follows.
+      if (line.trim() && !/^\s/.test(line)) stack.length = 0;
+      continue;
+    }
+    const depth = indentWidth(listMatch[1]);
+    while (stack.length && stack[stack.length - 1].depth >= depth) stack.pop();
+    let parentId: string | undefined;
+    for (let s = stack.length - 1; s >= 0; s--) {
+      if (stack[s].taskId) {
+        parentId = stack[s].taskId!;
+        break;
+      }
+    }
+
+    const parsed = onlyLines && !onlyLines.has(i) ? null : parseTaskLine(line);
+    // An embedded task is a reference to a task owned by another note.
+    const isTask = !!parsed && !EMBED_PATTERN.test(parsed.rawContent);
+    const id = `${filePath}:${i}`;
+    stack.push({ depth, taskId: isTask ? id : null });
+    if (!parsed || !isTask) continue;
+
     tasks.push({
-      id: `${filePath}:${i}`,
+      id,
       filePath,
       fileName,
       lineNumber: i,
       line,
-      depth: indent.replace(/\t/g, '    ').length,
+      depth,
       status: parsed.status,
       text: parsed.text,
       blockId: parsed.blockId,
@@ -81,10 +146,29 @@ export function parseBoardTasks(
       priority: extractPriority(parsed.rawContent),
       repeat: extractRepeat(parsed.rawContent),
       tags: extractTags(parsed.rawContent),
+      schedule: extractSchedule(parsed.rawContent),
+      ...waitingAndRemind(parsed.rawContent),
+      parentId,
     });
   }
 
   return tasks;
+}
+
+/** The two markers most tasks do not have, left off the task when absent. */
+function waitingAndRemind(content: string): Pick<BoardTask, 'waiting' | 'remind' | 'remindAt'> {
+  const out: Pick<BoardTask, 'waiting' | 'remind' | 'remindAt'> = {};
+  if (content.includes('@waiting(')) {
+    const waiting = extractWaiting(content);
+    if (waiting.length) out.waiting = waiting;
+  }
+  if (content.includes('@remind(')) {
+    const remind = extractRemind(content);
+    if (remind !== undefined) out.remind = remind;
+    const remindAt = extractRemindAt(content);
+    if (remindAt) out.remindAt = remindAt;
+  }
+  return out;
 }
 
 export class TaskStore {
@@ -206,7 +290,13 @@ export class TaskStore {
       const fileName = file.basename;
       this.setFile(
         file.path,
-        tasks.map((task) => ({ ...task, id: `${file.path}:${task.lineNumber}`, filePath: file.path, fileName }))
+        tasks.map((task) => ({
+          ...task,
+          id: `${file.path}:${task.lineNumber}`,
+          parentId: task.parentId && `${file.path}:${task.parentId.slice(oldPath.length + 1)}`,
+          filePath: file.path,
+          fileName,
+        }))
       );
     }
     if (tasks) this.emit();

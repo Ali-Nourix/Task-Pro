@@ -1,8 +1,8 @@
 // ── board/board-localization.ts ───────────────────────────────────────────
 // Text for the task board.
 
-import { BoardGroupBy, BoardSortKey, Language } from '../types';
-import { DeadlineBucket } from './board-query';
+import { BoardDensity, BoardGroupBy, BoardSortKey, DeadlineBucket, Language } from '../types';
+import { isolate } from '../bidi';
 
 export interface BoardLabels {
   title: string;
@@ -11,6 +11,7 @@ export interface BoardLabels {
   loading: string;
   empty: string;
   emptyFiltered: string;
+  emptyClear: string;
   scopeTarget: (folder: string) => string;
   scopeVault: string;
   scopeTargetUnset: string;
@@ -27,6 +28,11 @@ export interface BoardLabels {
   filterStatus: string;
   filterPriority: string;
   filterTags: string;
+  filterDeadline: string;
+  filterPlan: string;
+  filterNote: string;
+  /** The search field over the filter menu. */
+  filterSearch: string;
   clearFilters: string;
   columns: {
     task: string;
@@ -34,13 +40,96 @@ export interface BoardLabels {
     tags: string;
     priority: string;
     deadline: string;
+    plan: string;
+    waiting: string;
+    repeat: string;
     progress: string;
     note: string;
   };
+  /** The properties menu: which properties the table or the cards show. */
+  properties: string;
+  /** The heading over the list of properties in the properties menu. */
+  propertiesIn: { tableColumns: string; cardProperties: string };
+  resetColumns: string;
+  /** The view options at the foot of the properties menu. */
+  viewSection: string;
+  density: string;
+  densities: Record<BoardDensity, string>;
+  wrapTitles: string;
+  hideEmptyColumns: string;
+  /** The board's columns: move one, hide one, show the hidden ones again. */
+  columnMenu: string;
+  resetColumnWidth: string;
+  newTagColumn: string;
+  /** The phone layout's bar and sheets. */
+  /** What the board shows, as a phone's bottom tabs are called, and the table as it is there. */
+  layoutTabs: string;
+  layoutList: string;
+  viewOptions: string;
+  layoutLabel: string;
+  scopeLabel: string;
+  tableStyle: string;
+  tableStyleList: string;
+  rowStyle: string;
+  rowStyleLight: string;
+  rowStyleChips: string;
+  // Quick add: one line of words becomes a task with a day, a time, a priority and tags.
+  qaTitle: string;
+  qaHint: string;
+  qaToday: string;
+  qaTomorrow: string;
+  qaNextWeek: string;
+  qaPickDate: string;
+  qaPriority: string;
+  qaTags: string;
+  qaRemind: string;
+  qaRemindHour: string;
+  qaRemindEvening: string;
+  qaRemindTomorrow: string;
+  qaNoTags: string;
+  qaBack: string;
+  qaClose: string;
+  qaUnderstood: string;
+  qaKeepAsWords: string;
+  qaRemoveFromTask: string;
+  qaDue: (day: string) => string;
+  qaReminder: (moment: string) => string;
+  qaGoesTo: (note: string) => string;
+  qaAddedLine: (title: string, note: string) => string;
+  qaNeedsTitle: string;
+  qaPrevMonth: string;
+  qaNextMonth: string;
+  qaPickedDay: (day: string) => string;
+  qaEdited: string;
+  undo: string;
+  doneToast: (title: string) => string;
+  reopenedToast: (title: string) => string;
+  undoneToast: string;
+  tableStyleFull: string;
+  openSearch: string;
+  closeSearch: string;
+  addTaskButton: string;
+  columnsLabel: string;
+  markDoneSwipe: string;
+  moreSwipe: string;
+  hideProperty: string;
+  moveBefore: string;
+  moveAfter: string;
+  resetWidth: string;
+  sortAscending: string;
+  sortDescending: string;
+  hideColumn: string;
+  hiddenColumns: (count: number) => string;
+  showColumn: string;
+  showAllColumns: string;
+  resetOrder: string;
+  noPlan: string;
   noTag: string;
   noPriority: string;
   noDeadline: string;
   buckets: Record<DeadlineBucket, string>;
+  /** The same buckets for the day a task is planned for. */
+  planBuckets: Record<DeadlineBucket, string>;
   addPlaceholder: string;
   addInto: string;
   chooseInbox: string;
@@ -48,6 +137,28 @@ export interface BoardLabels {
   added: (note: string) => string;
   addFailed: string;
   openNote: string;
+  openCard: string;
+  shortcuts: string;
+  selectedCount: (count: number) => string;
+  clearSelection: string;
+  selectTask: string;
+  views: string;
+  viewSave: string;
+  viewSaveTitle: string;
+  viewRenameTitle: string;
+  viewUpdate: (name: string) => string;
+  viewsManage: string;
+  viewRename: string;
+  viewDuplicate: string;
+  viewDelete: string;
+  viewReset: string;
+  viewNamePlaceholder: string;
+  viewNewName: string;
+  viewModified: string;
+  viewCopy: (name: string) => string;
+  save: string;
+  showSubtasks: (count: number) => string;
+  hideSubtasks: (count: number) => string;
   more: string;
   refresh: string;
   manageTags: string;
@@ -77,6 +188,7 @@ const EN: BoardLabels = {
   loading: 'Reading your notes…',
   empty: 'No tasks here yet. Add one above, or write “- [ ] ” in any note.',
   emptyFiltered: 'No task matches the current search and filters.',
+  emptyClear: 'Clear search and filters',
   scopeTarget: (folder) => folder,
   scopeVault: 'Whole vault',
   scopeTargetUnset: 'Set a target folder under TaskPro → General to show only that folder.',
@@ -90,6 +202,7 @@ const EN: BoardLabels = {
     tag: 'Tag',
     priority: 'Priority',
     deadline: 'Deadline',
+    plan: 'Plan',
     note: 'Note',
   },
   sort: 'Sort',
@@ -99,6 +212,7 @@ const EN: BoardLabels = {
     status: 'Status',
     priority: 'Priority',
     deadline: 'Deadline',
+    plan: 'Plan',
     progress: 'Progress',
     note: 'Note',
   },
@@ -108,6 +222,10 @@ const EN: BoardLabels = {
   filterStatus: 'Status',
   filterPriority: 'Priority',
   filterTags: 'Tags',
+  filterDeadline: 'Deadline',
+  filterPlan: 'Plan',
+  filterNote: 'Note',
+  filterSearch: 'Search filters…',
   clearFilters: 'Clear filters',
   columns: {
     task: 'Task',
@@ -115,9 +233,83 @@ const EN: BoardLabels = {
     tags: 'Tags',
     priority: 'Priority',
     deadline: 'Deadline',
+    plan: 'Plan',
+    waiting: 'Waiting on',
+    repeat: 'Repeat',
     progress: 'Progress',
     note: 'Note',
   },
+  properties: 'Properties',
+  propertiesIn: { tableColumns: 'Shown in the table', cardProperties: 'Shown on cards' },
+  resetColumns: 'Reset to default',
+  viewSection: 'View',
+  density: 'Density',
+  densities: { compact: 'Compact', comfortable: 'Comfortable', spacious: 'Spacious' },
+  wrapTitles: 'Wrap titles',
+  hideEmptyColumns: 'Hide empty columns',
+  columnMenu: 'Column options',
+  resetColumnWidth: 'Reset column width',
+  newTagColumn: 'New tag',
+  layoutTabs: 'Views',
+  layoutList: 'List',
+  viewOptions: 'View options',
+  layoutLabel: 'Layout',
+  scopeLabel: 'Show tasks from',
+  tableStyle: 'Table style',
+  tableStyleList: 'List',
+  rowStyle: 'Row style',
+  rowStyleLight: 'Light',
+  rowStyleChips: 'Chips',
+  qaTitle: 'New task',
+  qaHint: 'Try: call Sara tomorrow 9 #work !high',
+  qaToday: 'Today',
+  qaTomorrow: 'Tomorrow',
+  qaNextWeek: 'Next week',
+  qaPickDate: 'Date…',
+  qaPriority: 'Priority',
+  qaTags: 'Tags',
+  qaRemind: 'Remind',
+  qaRemindHour: 'In 1 hour',
+  qaRemindEvening: 'This evening',
+  qaRemindTomorrow: 'Tomorrow morning',
+  qaNoTags: 'No tags yet',
+  qaBack: 'Back',
+  qaClose: 'Close',
+  qaUnderstood: 'Understood',
+  qaKeepAsWords: 'Keep as words in the title',
+  qaRemoveFromTask: 'Remove',
+  qaDue: (day) => `Due ${isolate(day)}`,
+  qaReminder: (moment) => `Remind ${isolate(moment)}`,
+  qaGoesTo: (note) => `Goes to ${isolate(note)}`,
+  qaAddedLine: (title, note) => `Added “${isolate(title)}” to ${isolate(note)}`,
+  qaNeedsTitle: 'Write what the task is first',
+  qaPrevMonth: 'Previous month',
+  qaNextMonth: 'Next month',
+  qaPickedDay: (day) => `Picked ${isolate(day)}`,
+  qaEdited: 'Updated',
+  undo: 'Undo',
+  doneToast: (title) => `Done: ${isolate(title)}`,
+  reopenedToast: (title) => `Reopened: ${isolate(title)}`,
+  undoneToast: 'Undone',
+  tableStyleFull: 'Full table',
+  openSearch: 'Search',
+  closeSearch: 'Close search',
+  addTaskButton: 'New task',
+  columnsLabel: 'Columns',
+  markDoneSwipe: 'Done',
+  moreSwipe: 'More',
+  hideProperty: 'Hide property',
+  moveBefore: 'Move left',
+  moveAfter: 'Move right',
+  resetWidth: 'Reset width',
+  sortAscending: 'Sort ascending',
+  sortDescending: 'Sort descending',
+  hideColumn: 'Hide column',
+  hiddenColumns: (count) => (count === 1 ? '1 hidden column' : `${count} hidden columns`),
+  showColumn: 'Show column',
+  showAllColumns: 'Show all columns',
+  resetOrder: 'Reset column order',
+  noPlan: 'Not planned',
   noTag: 'No tag',
   noPriority: 'No priority',
   noDeadline: 'No deadline',
@@ -129,13 +321,43 @@ const EN: BoardLabels = {
     past: 'Past',
     none: 'No deadline',
   },
+  planBuckets: {
+    overdue: 'Missed',
+    today: 'Today',
+    week: 'Next 7 days',
+    later: 'Later',
+    past: 'Past',
+    none: 'Not planned',
+  },
   addPlaceholder: 'Add a task…',
   addInto: 'Adds to',
   chooseInbox: 'Choose the note new tasks go into',
   chooseInboxShort: 'Choose note',
-  added: (note) => `Task added to ${note}`,
+  added: (note) => `Task added to ${isolate(note)}`,
   addFailed: 'Choose a note for new tasks first',
   openNote: 'Open in note',
+  openCard: 'Open card',
+  shortcuts: 'Keyboard shortcuts',
+  selectedCount: (count) => `${count} selected`,
+  clearSelection: 'Clear the selection',
+  selectTask: 'Select',
+  views: 'Views',
+  viewSave: 'Save this view…',
+  viewSaveTitle: 'Save this view',
+  viewRenameTitle: 'Rename the view',
+  viewUpdate: (name) => `Update “${name}”`,
+  viewsManage: 'Manage views',
+  viewRename: 'Rename…',
+  viewDuplicate: 'Duplicate',
+  viewDelete: 'Delete',
+  viewReset: 'Default view',
+  viewNamePlaceholder: 'For example, This week',
+  viewNewName: 'New view',
+  viewModified: 'Changed',
+  viewCopy: (name) => `${name} copy`,
+  save: 'Save',
+  showSubtasks: (count) => (count === 1 ? 'Show the subtask' : `Show ${count} subtasks`),
+  hideSubtasks: (count) => (count === 1 ? 'Hide the subtask' : `Hide ${count} subtasks`),
   more: 'More options',
   refresh: 'Rescan notes',
   manageTags: 'Manage tags',
@@ -163,6 +385,7 @@ const FA: BoardLabels = {
   loading: 'در حال خواندن یادداشت‌ها…',
   empty: 'هنوز تسکی اینجا نیست. از بالا یکی اضافه کنید یا در هر یادداشتی «- [ ] » بنویسید.',
   emptyFiltered: 'هیچ تسکی با جستجو و فیلترهای فعلی جور نیست.',
+  emptyClear: 'پاک کردن جستجو و فیلترها',
   scopeTarget: (folder) => folder,
   scopeVault: 'کل والت',
   scopeTargetUnset: 'برای نمایش فقط یک پوشه، در تنظیمات TaskPro بخش General پوشه هدف را تعیین کنید.',
@@ -176,6 +399,7 @@ const FA: BoardLabels = {
     tag: 'برچسب',
     priority: 'اولویت',
     deadline: 'سررسید',
+    plan: 'برنامه',
     note: 'یادداشت',
   },
   sort: 'مرتب‌سازی',
@@ -185,6 +409,7 @@ const FA: BoardLabels = {
     status: 'وضعیت',
     priority: 'اولویت',
     deadline: 'سررسید',
+    plan: 'برنامه',
     progress: 'پیشرفت',
     note: 'یادداشت',
   },
@@ -194,6 +419,10 @@ const FA: BoardLabels = {
   filterStatus: 'وضعیت',
   filterPriority: 'اولویت',
   filterTags: 'برچسب‌ها',
+  filterDeadline: 'سررسید',
+  filterPlan: 'برنامه',
+  filterNote: 'یادداشت',
+  filterSearch: 'جستجوی فیلترها…',
   clearFilters: 'پاک کردن فیلترها',
   columns: {
     task: 'تسک',
@@ -201,9 +430,83 @@ const FA: BoardLabels = {
     tags: 'برچسب‌ها',
     priority: 'اولویت',
     deadline: 'سررسید',
+    plan: 'برنامه',
+    waiting: 'منتظرِ',
+    repeat: 'تکرار',
     progress: 'پیشرفت',
     note: 'یادداشت',
   },
+  properties: 'ویژگی‌ها',
+  propertiesIn: { tableColumns: 'نمایش در جدول', cardProperties: 'نمایش روی کارت‌ها' },
+  resetColumns: 'بازگشت به پیش‌فرض',
+  viewSection: 'نما',
+  density: 'تراکم',
+  densities: { compact: 'فشرده', comfortable: 'معمولی', spacious: 'راحت' },
+  wrapTitles: 'شکستن عنوان‌ها',
+  hideEmptyColumns: 'پنهان کردن ستون‌های خالی',
+  columnMenu: 'گزینه‌های ستون',
+  resetColumnWidth: 'بازگشت به عرض پیش‌فرض ستون‌ها',
+  newTagColumn: 'برچسب تازه',
+  layoutTabs: 'نماها',
+  layoutList: 'فهرست',
+  viewOptions: 'گزینه‌های نما',
+  layoutLabel: 'چیدمان',
+  scopeLabel: 'تسک‌ها از',
+  tableStyle: 'شکل جدول',
+  tableStyleList: 'فهرست',
+  rowStyle: 'شکل ردیف',
+  rowStyleLight: 'سبک',
+  rowStyleChips: 'چیپ',
+  qaTitle: 'تسک تازه',
+  qaHint: 'مثلاً: زنگ به سارا فردا ساعت ۹ #کار !بالا',
+  qaToday: 'امروز',
+  qaTomorrow: 'فردا',
+  qaNextWeek: 'هفته بعد',
+  qaPickDate: 'تاریخ…',
+  qaPriority: 'اولویت',
+  qaTags: 'برچسب‌ها',
+  qaRemind: 'یادآوری',
+  qaRemindHour: 'یک ساعت دیگر',
+  qaRemindEvening: 'امشب',
+  qaRemindTomorrow: 'فردا صبح',
+  qaNoTags: 'هنوز برچسبی نیست',
+  qaBack: 'بازگشت',
+  qaClose: 'بستن',
+  qaUnderstood: 'برداشت من',
+  qaKeepAsWords: 'فقط به‌صورت متن در عنوان بماند',
+  qaRemoveFromTask: 'حذف',
+  qaDue: (day) => `مهلت ${isolate(day)}`,
+  qaReminder: (moment) => `یادآوری ${isolate(moment)}`,
+  qaGoesTo: (note) => `می‌رود به ${isolate(note)}`,
+  qaAddedLine: (title, note) => `«${isolate(title)}» به ${isolate(note)} اضافه شد`,
+  qaNeedsTitle: 'اول بنویس تسک چیست',
+  qaPrevMonth: 'ماه قبل',
+  qaNextMonth: 'ماه بعد',
+  qaPickedDay: (day) => `${isolate(day)} انتخاب شد`,
+  qaEdited: 'به‌روز شد',
+  undo: 'بازگردانی',
+  doneToast: (title) => `انجام شد: ${isolate(title)}`,
+  reopenedToast: (title) => `دوباره باز شد: ${isolate(title)}`,
+  undoneToast: 'بازگردانی شد',
+  tableStyleFull: 'جدول کامل',
+  openSearch: 'جستجو',
+  closeSearch: 'بستن جستجو',
+  addTaskButton: 'تسک تازه',
+  columnsLabel: 'ستون‌ها',
+  markDoneSwipe: 'انجام شد',
+  moreSwipe: 'بیشتر',
+  hideProperty: 'پنهان کردن ویژگی',
+  moveBefore: 'جابه‌جایی به راست',
+  moveAfter: 'جابه‌جایی به چپ',
+  resetWidth: 'بازگشت به عرض پیش‌فرض',
+  sortAscending: 'مرتب‌سازی صعودی',
+  sortDescending: 'مرتب‌سازی نزولی',
+  hideColumn: 'پنهان کردن ستون',
+  hiddenColumns: (count) => `${count} ستون پنهان`,
+  showColumn: 'نمایش ستون',
+  showAllColumns: 'نمایش همه ستون‌ها',
+  resetOrder: 'بازگشت به ترتیب پیش‌فرض',
+  noPlan: 'برنامه‌ریزی نشده',
   noTag: 'بدون برچسب',
   noPriority: 'بدون اولویت',
   noDeadline: 'بدون سررسید',
@@ -215,13 +518,43 @@ const FA: BoardLabels = {
     past: 'گذشته',
     none: 'بدون سررسید',
   },
+  planBuckets: {
+    overdue: 'از دست رفته',
+    today: 'امروز',
+    week: '۷ روز آینده',
+    later: 'بعدتر',
+    past: 'گذشته',
+    none: 'برنامه‌ریزی‌نشده',
+  },
   addPlaceholder: 'افزودن تسک…',
   addInto: 'افزودن به',
   chooseInbox: 'یادداشتی که تسک‌های جدید در آن نوشته می‌شوند',
   chooseInboxShort: 'انتخاب یادداشت',
-  added: (note) => `تسک به ${note} اضافه شد`,
+  added: (note) => `تسک به ${isolate(note)} اضافه شد`,
   addFailed: 'اول یادداشت مقصد تسک‌های جدید را انتخاب کنید',
   openNote: 'باز کردن در یادداشت',
+  openCard: 'باز کردن کارت',
+  shortcuts: 'میانبرهای صفحه‌کلید',
+  selectedCount: (count) => `${count} انتخاب شده`,
+  clearSelection: 'لغو انتخاب',
+  selectTask: 'انتخاب',
+  views: 'نماها',
+  viewSave: 'ذخیرهٔ این نما…',
+  viewSaveTitle: 'ذخیرهٔ این نما',
+  viewRenameTitle: 'تغییر نام نما',
+  viewUpdate: (name) => `به‌روزرسانی «${name}»`,
+  viewsManage: 'مدیریت نماها',
+  viewRename: 'تغییر نام…',
+  viewDuplicate: 'تکثیر',
+  viewDelete: 'حذف',
+  viewReset: 'نمای پیش‌فرض',
+  viewNamePlaceholder: 'مثلاً این هفته',
+  viewNewName: 'نمای جدید',
+  viewModified: 'تغییر کرده',
+  viewCopy: (name) => `کپی ${name}`,
+  save: 'ذخیره',
+  showSubtasks: (count) => `نمایش ${count} زیرتسک`,
+  hideSubtasks: (count) => `پنهان کردن ${count} زیرتسک`,
   more: 'گزینه‌های بیشتر',
   refresh: 'خواندن دوباره یادداشت‌ها',
   manageTags: 'مدیریت برچسب‌ها',

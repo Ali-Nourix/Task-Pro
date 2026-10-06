@@ -15,29 +15,55 @@ import { RangeSetBuilder, StateEffect } from '@codemirror/state';
 /** Dispatch this effect on any editor to force the decoration plugin to rebuild. */
 export const forceDecorationsRefresh = StateEffect.define<null>();
 import { App } from 'obsidian';
-import { TaskStatus, Language, BlockId, TaskProgress, TaskPriority, TaskRepeat, TaskTimer } from './types';
+import {
+  TaskStatus,
+  Language,
+  BlockId,
+  CalendarSystem,
+  TaskProgress,
+  TaskPriority,
+  TaskRepeat,
+  TaskSchedule,
+  TaskTimer,
+  TimeFormat,
+} from './types';
 import { isWithinTargetFolder } from './path-utils';
 import {
   extractDeadline,
   extractProgress,
   extractPriority,
   extractRepeat,
+  extractRemind,
+  extractRemindAt,
+  RemindAt,
+  extractSchedule,
   extractTags,
+  extractWaiting,
   DEADLINE_MARKER_PATTERN,
   PRIORITY_MARKER_PATTERN,
+  REMIND_MARKER_PATTERN,
   REPEAT_MARKER_PATTERN,
+  SCHEDULE_MARKER_PATTERN,
   TAG_MARKER_PATTERN_GLOBAL,
+  TaskLink,
+  WAITING_MARKER_PATTERN,
 } from './task-metadata';
+import { SubtaskCount, subtaskCountAt } from './board/task-relations';
 import { ResolvedTag, TaskTag, resolveTag } from './tags';
 import {
+  addRemindMark,
+  createRemindChip,
   appendTagChips,
   applyChipScale,
   createDeadlineChip,
   createPriorityChip,
   createProgressChip,
   createRepeatChip,
+  createScheduleChip,
   createStatusChip,
+  createSubtaskChip,
   createTimerChip,
+  createWaitingChip,
 } from './ui/chips';
 
 /** Settings slice the decoration layer depends on. */
@@ -46,14 +72,29 @@ export interface DecorationSettings {
   badgeLanguage: Language;
   badgeSize: number;
   targetFolder: string;
-  calendarSystem: 'gregorian' | 'jalali';
+  calendarSystem: CalendarSystem;
   showPriorityBadges: boolean;
   showTimerBadges: boolean;
   showRepeatBadges: boolean;
   showTagBadges: boolean;
+  showScheduleBadges: boolean;
+  showSubtaskProgress: boolean;
+  showWaitingBadges: boolean;
+  timeFormat: TimeFormat;
   /** The user's tag list, read live so a rename or recolour shows at once. */
   tags: TaskTag[];
 }
+
+/** One task a line waits on, resolved against every task there is. */
+export interface WaitingInfo {
+  link: TaskLink;
+  title: string;
+  done: boolean;
+  /** The link points at a task that no longer exists. */
+  missing: boolean;
+}
+
+export type WaitingResolver = (filePath: string, links: TaskLink[]) => WaitingInfo[];
 
 // ── Module-level constants (compiled once, reused on every line) ──────────
 const TASK_REGEX = /^(\s*)- \[([ \/xX!])\] (.+)$/;
@@ -66,6 +107,7 @@ const PROGRESS_MATCH_REGEX = /\[progress::\s*\d+\/\d+\]/;
 const PRIORITY_MATCH_REGEX = PRIORITY_MARKER_PATTERN;
 const REPEAT_MATCH_REGEX = REPEAT_MARKER_PATTERN;
 const TAG_MATCH_REGEX = TAG_MARKER_PATTERN_GLOBAL;
+const SCHEDULE_MATCH_REGEX = SCHEDULE_MARKER_PATTERN;
 
 // Pre-created stateless decorations — reused instead of allocated per line
 const HIDE_DECO = Decoration.replace({});
@@ -114,6 +156,13 @@ class TaskBadgeWidget extends WidgetType {
     blockId?: BlockId;
     tags?: string[];
     tagChips?: ResolvedTag[];
+    schedule?: TaskSchedule;
+    calendarSystem: CalendarSystem;
+    timeFormat: TimeFormat;
+    subtasks?: SubtaskCount;
+    waiting?: WaitingInfo[];
+    remind?: number | null;
+    remindAt?: RemindAt;
   };
 
   constructor(
@@ -129,7 +178,11 @@ class TaskBadgeWidget extends WidgetType {
     filePath: string,
     blockId?: BlockId,
     tags?: string[],
-    tagChips?: ResolvedTag[]
+    tagChips?: ResolvedTag[],
+    schedule?: TaskSchedule,
+    calendarSystem: CalendarSystem = 'gregorian',
+    timeFormat: TimeFormat = '24h',
+    relations: { subtasks?: SubtaskCount; waiting?: WaitingInfo[]; remind?: number | null; remindAt?: RemindAt } = {}
   ) {
     super();
     this.widgetState = Object.freeze({
@@ -146,6 +199,13 @@ class TaskBadgeWidget extends WidgetType {
       blockId,
       tags,
       tagChips,
+      schedule,
+      calendarSystem,
+      timeFormat,
+      subtasks: relations.subtasks,
+      waiting: relations.waiting,
+      remind: relations.remind,
+      remindAt: relations.remindAt,
     });
   }
 
@@ -186,7 +246,30 @@ class TaskBadgeWidget extends WidgetType {
       tc.length === otc.length &&
       tc.every((tag, i) => tag.key === otc[i].key && tag.name === otc[i].name && tag.color === otc[i].color);
 
+    // The chip reads "Today" or "Tomorrow", so a calendar or clock setting
+    // changes it as much as the marker does.
+    const s = this.widgetState.schedule;
+    const os = other.widgetState.schedule;
+    const scheduleEq =
+      ((!s && !os) || (!!s && !!os && s.date === os.date && s.start === os.start && s.end === os.end)) &&
+      this.widgetState.calendarSystem === other.widgetState.calendarSystem &&
+      this.widgetState.timeFormat === other.widgetState.timeFormat;
+
+    const sc = this.widgetState.subtasks;
+    const osc = other.widgetState.subtasks;
+    const subtasksEq = (!sc && !osc) || (!!sc && !!osc && sc.done === osc.done && sc.total === osc.total);
+    const w = this.widgetState.waiting ?? [];
+    const ow = other.widgetState.waiting ?? [];
+    const waitingEq =
+      w.length === ow.length &&
+      w.every((item, i) => item.title === ow[i].title && item.done === ow[i].done && item.missing === ow[i].missing);
+
     return (
+      subtasksEq &&
+      waitingEq &&
+      this.widgetState.remind === other.widgetState.remind &&
+      this.widgetState.remindAt?.date === other.widgetState.remindAt?.date &&
+      this.widgetState.remindAt?.time === other.widgetState.remindAt?.time &&
       this.widgetState.status === other.widgetState.status &&
       this.widgetState.deadline === other.widgetState.deadline &&
       this.widgetState.priority === other.widgetState.priority &&
@@ -194,6 +277,7 @@ class TaskBadgeWidget extends WidgetType {
       timerEq &&
       repeatEq &&
       tagsEq &&
+      scheduleEq &&
       this.widgetState.language === other.widgetState.language &&
       this.widgetState.badgeSize === other.widgetState.badgeSize &&
       this.widgetState.lineContent === other.widgetState.lineContent &&
@@ -266,6 +350,42 @@ class TaskBadgeWidget extends WidgetType {
       container.appendChild(createDeadlineChip(s.deadline, s.language, s.status));
     }
 
+    if (s.schedule) {
+      const plan = container.appendChild(
+        createScheduleChip({
+          schedule: s.schedule,
+          language: s.language,
+          calendarSystem: s.calendarSystem,
+          timeFormat: s.timeFormat,
+          filePath: s.filePath,
+          lineContent: s.lineContent,
+          blockId: s.blockId,
+          status: s.status,
+          deadline: s.deadline,
+          priority: s.priority,
+          tags: s.tags,
+        })
+      );
+      if (s.remind !== undefined && s.schedule.start) addRemindMark(plan, s.remind, s.language);
+    }
+
+    if (s.remindAt) {
+      container.appendChild(
+        createRemindChip(s.remindAt, { language: s.language, calendarSystem: s.calendarSystem, timeFormat: s.timeFormat, status: s.status })
+      );
+    }
+
+    if (s.waiting?.length) {
+      const waiting = s.waiting;
+      container.appendChild(
+        createWaitingChip(waiting, s.language, (index) => {
+          container.dispatchEvent(
+            new CustomEvent('taskpro-waiting-click', { bubbles: true, detail: { filePath: s.filePath, link: waiting[index].link } })
+          );
+        })
+      );
+    }
+
     if (s.timer?.enabled) {
       container.appendChild(
         createTimerChip({
@@ -289,6 +409,8 @@ class TaskBadgeWidget extends WidgetType {
           language: s.language,
         })
       );
+    } else if (s.subtasks) {
+      container.appendChild(createSubtaskChip(s.subtasks.done, s.subtasks.total, s.language));
     }
 
     // Last in the DOM, so with the row reversed the tags sit nearest the text.
@@ -310,7 +432,8 @@ function buildDecorations(
   settings: DecorationSettings,
   getProgress: (filePath: string, blockId?: string) => TaskProgress | undefined,
   getTimer: (filePath: string, blockId?: string) => TaskTimer | undefined,
-  getBlockId?: (filePath: string, lineContent: string) => string | undefined
+  getBlockId?: (filePath: string, lineContent: string) => string | undefined,
+  getWaiting?: WaitingResolver
 ): DecorationSet {
   const builder = new RangeSetBuilder<Decoration>();
 
@@ -379,6 +502,17 @@ function buildDecorations(
         const tagChips = settings.showTagBadges && content.includes('@tag(')
           ? extractTags(content).map((key) => resolveTag(key, settings.tags))
           : undefined;
+        const schedule = settings.showScheduleBadges && content.includes('@schedule(')
+          ? extractSchedule(content)
+          : undefined;
+        const doc = view.state.doc;
+        const subtasks = settings.showSubtaskProgress
+          ? subtaskCountAt((n) => doc.line(n + 1).text, doc.lines, line.number - 1) ?? undefined
+          : undefined;
+        const waitingLinks = settings.showWaitingBadges && content.includes('@waiting(') ? extractWaiting(content) : [];
+        const waiting = waitingLinks.length && getWaiting ? getWaiting(filePath, waitingLinks) : undefined;
+        const remind = schedule && content.includes('@remind(') ? extractRemind(content) : undefined;
+        const remindAt = settings.showScheduleBadges && content.includes('@remind(') ? extractRemindAt(content) : undefined;
 
         if (deadline) {
           const deadlineMatch = DEADLINE_MATCH_REGEX.exec(content);
@@ -424,6 +558,25 @@ function buildDecorations(
           }
         }
 
+        // Same rule again: hidden only while the chip shows the plan.
+        const scheduleMatch = schedule ? SCHEDULE_MATCH_REGEX.exec(content) : null;
+        if (scheduleMatch) {
+          const contentStart = line.from + (lineText.length - taskMatch[3].length);
+          const scheduleStart = contentStart + scheduleMatch.index;
+          addRange(scheduleStart, scheduleStart + scheduleMatch[0].length, HIDE_DECO_NONINCLUSIVE);
+        }
+
+        // A dependency and a reminder are hidden while their chip says them.
+        for (const [shown, pattern] of [
+          [!!waiting, WAITING_MARKER_PATTERN],
+          [remind !== undefined || !!remindAt, REMIND_MARKER_PATTERN],
+        ] as const) {
+          const match = shown ? pattern.exec(content) : null;
+          if (!match) continue;
+          const contentStart = line.from + (lineText.length - taskMatch[3].length);
+          addRange(contentStart + match.index, contentStart + match.index + match[0].length, HIDE_DECO_NONINCLUSIVE);
+        }
+
         const progressMatch = PROGRESS_MATCH_REGEX.exec(content);
         if (progressMatch) {
           const contentStart = line.from + (lineText.length - taskMatch[3].length);
@@ -456,7 +609,11 @@ function buildDecorations(
               filePath,
               blockId,
               tags,
-              tagChips
+              tagChips,
+              schedule,
+              settings.calendarSystem,
+              settings.timeFormat,
+              { subtasks, waiting, remind, remindAt }
             ),
             side: 1,
           }),
@@ -484,7 +641,8 @@ export function createTaskBadgePlugin(
   getSettings: () => DecorationSettings,
   getProgress: (filePath: string, blockId?: string) => TaskProgress | undefined,
   getTimer: (filePath: string, blockId?: string) => TaskTimer | undefined,
-  getBlockId?: (filePath: string, lineContent: string) => string | undefined
+  getBlockId?: (filePath: string, lineContent: string) => string | undefined,
+  getWaiting?: WaitingResolver
 ) {
   return ViewPlugin.fromClass(
     class {
@@ -513,7 +671,8 @@ export function createTaskBadgePlugin(
             getSettings(),
             getProgress,
             getTimer,
-            getBlockId
+            getBlockId,
+            getWaiting
           );
         } catch (error) {
           console.error('TaskPro: failed to build task badges for this view', error);

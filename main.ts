@@ -2,13 +2,16 @@
 // TaskPro - Main plugin entry point
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { Plugin, Editor, Hotkey, MarkdownFileInfo, MarkdownView, Notice, TFile, setIcon } from 'obsidian';
+import { Platform, Plugin, Editor, Hotkey, MarkdownFileInfo, MarkdownView, Notice, TFile, WorkspaceLeaf, requestUrl, setIcon } from 'obsidian';
 import { EditorView } from '@codemirror/view';
 import {
   TaskProSettings,
   DEFAULT_SETTINGS,
   DEFAULT_REMINDER_SETTINGS,
+  DEFAULT_TELEGRAM_SETTINGS,
   DEFAULT_BOARD_PREFERENCES,
+  DEFAULT_CALENDAR_SETTINGS,
+  CalendarSystem,
   TaskStatus,
   TaskMapping,
   TaskProgress,
@@ -17,6 +20,7 @@ import {
   PRIORITY_ICON_NAMES,
   PRIORITY_LABELS,
   TaskRepeat,
+  TaskSchedule,
   TaskTimer,
   TaskTimerEntry,
 } from './src/types';
@@ -24,25 +28,33 @@ import { jalaliToGregorian, gregorianToJalali } from './src/date-utils';
 import { TaskProSettingTab } from './src/settings';
 import { TaskImportModal } from './src/import-modal';
 import { SyncManager } from './src/sync-manager';
-import { createTaskBadgePlugin, forceDecorationsRefresh } from './src/decorations';
+import { DecorationSettings, WaitingInfo, createTaskBadgePlugin, forceDecorationsRefresh } from './src/decorations';
 import { createReadingModeProcessor } from './src/reading-mode-processor';
 import {
   extractDeadline,
   extractProgress,
   extractPriority,
   extractRepeat,
+  extractSchedule,
   extractTags,
   nextRepeatDate,
   replaceTaskText,
   setDeadline,
   setPriority,
   setRepeat,
+  setSchedule,
+  setRemind,
+  RemindAt,
   setTags,
+  setWaiting,
   stripTaskMetadata,
+  TaskLink,
 } from './src/task-metadata';
-import { TaskTimerService } from './src/timer-service';
+import { TaskTimerService, showSystemNotification } from './src/timer-service';
 import { getRepeatLabels, getTimerLabels } from './src/timer-localization';
 import { ReminderService } from './src/reminders/reminder-service';
+import { PlanReminderService } from './src/reminders/plan-reminders';
+import { TelegramSync } from './src/telegram/sync-service';
 import { TaskCreationRegistry } from './src/task-registry';
 import { TaskIndexService } from './src/task-index-service';
 import { getReminderLabels } from './src/reminders/reminder-localization';
@@ -59,6 +71,24 @@ import { TaskBoardHost } from './src/board/task-board';
 import { TaskBoardView, VIEW_TYPE_TASK_BOARD } from './src/board/task-board-view';
 import { TaskBoardModal } from './src/board/task-board-modal';
 import { getBoardLabels } from './src/board/board-localization';
+import { sanitizeViews } from './src/board/board-views';
+import { watchTwoFingerSwipe } from './src/ui/gestures';
+import { haptic } from './src/ui/haptics';
+import { createGestureHint } from './src/ui/gesture-hint';
+import { DailyNoteService, appendTaskLine } from './src/calendar/daily-notes';
+import { todayKey } from './src/calendar/calendar-dates';
+import { getCalendarLabels } from './src/calendar/calendar-localization';
+import { scheduleText } from './src/calendar/schedule-text';
+import { openSchedulePanel } from './src/ui/schedule-editor';
+import { openRemindPanel } from './src/ui/remind-editor';
+import { useKeymapOf } from './src/ui/escape-scope';
+import { TaskPropertySuggest } from './src/editor/property-suggest';
+import { RemovedBlock, blockEnd, childIndent, indentOf, removeBlock } from './src/task-lines';
+import { getActionLabels } from './src/board/task-actions';
+import { displayTitle } from './src/board/board-text';
+import { descendantsOf, indexFamilies } from './src/calendar/calendar-items';
+import { RelationIndex, linkPathOf, newBlockId } from './src/board/task-relations';
+import { MoveContext, PreparedBlock, blockIdOf, blockIdsIn, linkAfterMove, prepareBlock, relinkWaiting } from './src/board/task-move';
 
 /**
  * A task as the editing API addresses it. `lineNumber` is a hint: it is used
@@ -100,11 +130,15 @@ export default class TaskProPlugin extends Plugin {
   settings!: TaskProSettings;
   syncManager!: SyncManager;
   reminderService!: ReminderService;
+  planReminders!: PlanReminderService;
+  telegramSync!: TelegramSync;
   /** Hidden index of when each task was first seen. Never rendered anywhere. */
   taskRegistry!: TaskCreationRegistry;
   taskIndexService!: TaskIndexService;
   /** Every task in the vault, for the board and tag counts. Loaded on first use. */
   taskStore!: TaskStore;
+  /** One note per day, for the calendar: found, or made from the template. */
+  dailyNotes!: DailyNoteService;
   /** The board's floating window, while it is open. */
   private floatingBoard: TaskBoardModal | null = null;
   private isProcessingSync = false;
@@ -131,6 +165,8 @@ export default class TaskProPlugin extends Plugin {
 
   async onload() {
     await this.loadSettings();
+    // TaskPro's panels and calendar cards claim Escape through Obsidian's keymap.
+    useKeymapOf(this.app);
 
     // Hidden creation-time index. Created before anything can scan tasks.
     this.taskRegistry = new TaskCreationRegistry({
@@ -153,6 +189,14 @@ export default class TaskProPlugin extends Plugin {
       this.app,
       () => new Promise((resolve) => this.app.workspace.onLayoutReady(() => resolve()))
     );
+    // Dependencies point into any note, and plan reminders watch every plan,
+    // so the store is loaded once the layout is ready rather than when the
+    // board is first opened.
+    this.taskStore.subscribe(() => this.onTasksChanged());
+    this.app.workspace.onLayoutReady(() => {
+      void this.taskStore.ensureLoaded().then(() => this.onTasksChanged());
+    });
+    this.dailyNotes = new DailyNoteService(this.app, () => this.settings.calendar);
     this.registerView(VIEW_TYPE_TASK_BOARD, (leaf) => new TaskBoardView(leaf, this.createBoardHost()));
     this.addRibbonIcon('list-checks', getBoardLabels(this.settings.badgeLanguage).open, () => {
       void this.activateBoard();
@@ -211,14 +255,32 @@ export default class TaskProPlugin extends Plugin {
       void this.markOverdueTasksAsNotDone();
     });
 
+    // `@` on a task line: every property a task can be given, as suggestions
+    this.registerEditorSuggest(
+      new TaskPropertySuggest({
+        app: this.app,
+        settings: () => ({
+          enabled: this.settings.propertySuggest,
+          language: this.settings.badgeLanguage,
+          calendarSystem: this.settings.calendarSystem,
+          timeFormat: this.settings.calendar.timeFormat,
+          tags: this.settings.tags,
+          defaultDuration: this.settings.calendar.defaultDurationMinutes,
+        }),
+        appliesTo: (file) => !file || this.isFileInTargetFolder(file.path),
+        refresh: () => this.refreshDecorations(),
+      })
+    );
+
     // Register CodeMirror 6 extension for Live Preview badges
     this.registerEditorExtension(
      createTaskBadgePlugin(
        this.app,
-        () => ({ enableBadges: this.settings.enableBadges, badgeLanguage: this.settings.badgeLanguage, badgeSize: this.settings.badgeSize, targetFolder: this.settings.targetFolder, calendarSystem: this.settings.calendarSystem, showPriorityBadges: this.settings.showPriorityBadges, showTimerBadges: this.settings.showTimerBadges, showRepeatBadges: this.settings.showRepeatBadges, showTagBadges: this.settings.showTagBadges, tags: this.settings.tags }),
+        () => this.badgeSettings(),
         (filePath: string, blockId?: string) => this.getTaskProgress(filePath, blockId),
         (filePath: string, blockId?: string) => this.timerService.get(filePath, blockId),
-        (filePath: string, lineContent: string) => this.getStoredBlockId(filePath, lineContent)
+        (filePath: string, lineContent: string) => this.getStoredBlockId(filePath, lineContent),
+        (filePath: string, links: TaskLink[]) => this.waitingInfo(filePath, links)
      )
    );
 
@@ -226,12 +288,20 @@ export default class TaskProPlugin extends Plugin {
     this.registerMarkdownPostProcessor(
      createReadingModeProcessor(
        this.app,
-        () => ({ enableBadges: this.settings.enableBadges, badgeLanguage: this.settings.badgeLanguage, badgeSize: this.settings.badgeSize, showBadgesInEmbeds: this.settings.showBadgesInEmbeds, targetFolder: this.settings.targetFolder, calendarSystem: this.settings.calendarSystem, showPriorityBadges: this.settings.showPriorityBadges, showTimerBadges: this.settings.showTimerBadges, showRepeatBadges: this.settings.showRepeatBadges, showTagBadges: this.settings.showTagBadges, tags: this.settings.tags }),
+        () => ({ ...this.badgeSettings(), showBadgesInEmbeds: this.settings.showBadgesInEmbeds }),
         (filePath: string, blockId?: string) => this.getTaskProgress(filePath, blockId),
         (filePath: string, blockId?: string) => this.timerService.get(filePath, blockId),
-        (filePath: string, lineContent: string) => this.getStoredBlockId(filePath, lineContent)
+        (filePath: string, lineContent: string) => this.getStoredBlockId(filePath, lineContent),
+        (filePath: string, links: TaskLink[]) => this.waitingInfo(filePath, links)
      )
    );
+
+    // A waiting chip opens the task it waits on.
+    this.registerDomEvent(document.body, 'taskpro-waiting-click' as keyof HTMLElementEventMap, (evt: Event) => {
+      const { filePath, link } = (evt as CustomEvent).detail as { filePath: string; link: TaskLink };
+      const target = link.path ? `${link.path}#^${link.blockId}` : `${filePath.replace(/\.md$/i, '')}#^${link.blockId}`;
+      void this.app.workspace.openLinkText(target, filePath, false);
+    });
 
     // Listen for badge clicks to open popover
     this.registerDomEvent(document.body, 'taskpro-badge-click' as keyof HTMLElementEventMap, (evt: Event) => {
@@ -335,6 +405,15 @@ export default class TaskProPlugin extends Plugin {
     });
 
     // Command: Import Task
+    this.addCommand({
+      id: 'sync-telegram',
+      name: 'Sync with Telegram now',
+      callback: async () => {
+        const outcome = await this.telegramSync.syncNow();
+        new Notice(outcome.ok ? (outcome.applied ? `Synced; ${outcome.applied} change(s) made.` : 'Synced with Telegram.') : `Telegram sync failed: ${outcome.message ?? 'unknown error'}`);
+      },
+    });
+
     this.addCommand({
       id: 'import-task',
       name: 'Import Task from Reference Note',
@@ -533,12 +612,75 @@ export default class TaskProPlugin extends Plugin {
       },
     });
 
+    // Two fingers pulled down anywhere and then lifted open the task board, on a touch screen.
+    const hint = createGestureHint(document);
+    let armed = false;
+    const stopSwipe = watchTwoFingerSwipe(document, {
+      enabled: () => this.settings.boardGesture,
+      onPull: (pull) => {
+        hint.update(pull, this.settings.badgeLanguage);
+        // A tick when the pull has gone far enough that letting go would open it.
+        if (pull?.armed && !armed) haptic('tick');
+        armed = !!pull?.armed;
+      },
+      onSwipeDown: () => {
+        haptic('success');
+        void this.openBoardFromGesture();
+      },
+    });
+    this.register(() => {
+      stopSwipe();
+      hint.destroy();
+    });
+
     // Command: open the all-tasks board
     this.addCommand({
       id: 'open-task-board',
       name: 'Open Task Board',
       callback: () => {
         void this.activateBoard();
+      },
+    });
+
+    // Command: the board, opened on its calendar
+    this.addCommand({
+      id: 'open-task-calendar',
+      name: 'Open Task Calendar',
+      callback: () => {
+        void this.openCalendar();
+      },
+    });
+
+    // Command: today's daily note, made from the template when it is missing
+    this.addCommand({
+      id: 'open-todays-daily-note',
+      name: 'Open Today’s Daily Note',
+      callback: () => {
+        void this.openDailyNote(todayKey(), this.settings.board.calendarSystem ?? this.settings.calendarSystem);
+      },
+    });
+
+    // Command: plan the task under the cursor for a day, and a time on it
+    this.addCommand({
+      id: 'schedule-current-task',
+      name: 'Plan Current Task…',
+      editorCallback: async (editor: Editor, ctx: MarkdownView | MarkdownFileInfo) => {
+        const context = this.taskAtCursor(editor, ctx);
+        if (!context) return;
+        const choice = await openSchedulePanel({
+          language: this.settings.badgeLanguage,
+          calendarSystem: this.settings.calendarSystem,
+          schedule: extractSchedule(context.line),
+          defaultDuration: this.settings.calendar.defaultDurationMinutes,
+          timeFormat: this.settings.calendar.timeFormat,
+        });
+        if (choice === undefined) return;
+        await this.setTaskScheduleFor(
+          { filePath: context.filePath, lineContent: context.line, blockId: context.blockId, lineNumber: context.lineNumber },
+          choice
+        );
+        const labels = getCalendarLabels(this.settings.badgeLanguage);
+        new Notice(choice ? labels.scheduledNotice(this.scheduleLabel(choice)) : labels.unscheduledNotice);
       },
     });
 
@@ -581,6 +723,91 @@ export default class TaskProPlugin extends Plugin {
       getSettings: () => this.settings,
       saveSettings: () => this.saveSettings(),
       getTaskRegistry: () => this.taskRegistry,
+    });
+
+    // A notice shortly before a planned task starts. Plans in the target
+    // folder and in daily notes count, as they do on the calendar.
+    this.planReminders = new PlanReminderService({
+      tasks: () => {
+        if (!this.taskStore.isLoaded) return null;
+        const daily = this.settings.calendar.dailyNotesFolder.trim().replace(/^\/+|\/+$/g, '');
+        return this.taskStore
+          .all()
+          .filter((task) => this.isFileInTargetFolder(task.filePath) || (!!daily && task.filePath.startsWith(`${daily}/`)));
+      },
+      settings: () => this.settings.reminders,
+      language: () => this.settings.badgeLanguage,
+      planText: (schedule) => this.scheduleLabel(schedule),
+      announced: () => this.settings.reminderState?.firedPlanKeys ?? [],
+      setAnnounced: async (keys) => {
+        this.settings.reminderState = { ...this.settings.reminderState, firedPlanKeys: keys };
+        await this.saveSettings();
+      },
+      reveal: (task) => void this.revealTask(this.boardTaskRef(task)),
+      markDone: (task) => this.setTaskStatusFor(this.boardTaskRef(task), '[x]'),
+      playSound: () => this.reminderService?.playTimerSound(),
+      systemNotification: (title, body) => showSystemNotification(title, body),
+      registerInterval: (id) => this.registerInterval(id),
+    });
+    // The Telegram bot: tasks and reminders reach it, and what is asked for there reaches the notes.
+    this.telegramSync = new TelegramSync({
+      settings: () => this.settings.telegram,
+      tasks: () => (this.taskStore.isLoaded ? this.syncableTasks() : null),
+      defaults: () => ({ enabled: this.settings.reminders.planReminders, leadMinutes: this.settings.reminders.planLeadMinutes }),
+      definedTags: () => this.settings.tags,
+      post: async (url, token, body) => {
+        const response = await requestUrl({
+          url,
+          method: 'POST',
+          contentType: 'application/json',
+          headers: { Authorization: `Bearer ${token}` },
+          body: JSON.stringify(body),
+          throw: false,
+        });
+        let json: unknown = null;
+        try {
+          json = response.json;
+        } catch {
+          // Not JSON: the caller reads the status.
+        }
+        return { status: response.status, json: json as { commands?: never[]; error?: string } | null };
+      },
+      apply: {
+        tasks: () => this.syncableTasks(),
+        inboxPath: () => this.boardInboxPath() || null,
+        appendLine: (path, line) => this.appendTaskLine(path, line),
+        dayTarget: (day) => this.dayNoteTarget(day, this.settings.board.calendarSystem ?? this.settings.calendarSystem).path || null,
+        addTaskOnDay: (day, line) => this.addTaskOnDay(day, line, this.settings.board.calendarSystem ?? this.settings.calendarSystem),
+        insertChild: (parent, line) => this.insertTaskNear(this.boardTaskRef(parent), line, 'child'),
+        setStatus: (task, status) => this.setTaskStatusFor(this.boardTaskRef(task), status),
+        setRemind: (task, value) => this.setTaskRemindFor(this.boardTaskRef(task), value),
+        setSchedule: (task, schedule) => this.setTaskScheduleFor(this.boardTaskRef(task), schedule),
+        setPriority: (task, priority) => this.setTaskPriorityFor(this.boardTaskRef(task), priority),
+        setDeadline: (task, deadline) => this.setTaskDeadlineFor(this.boardTaskRef(task), deadline),
+        setTags: (task, keys) => this.setTaskTagsFor(this.boardTaskRef(task), keys),
+        setRepeat: (task, repeat) =>
+          this.handleRepeatUpdate(task.filePath, task.line, this.boardTaskRef(task).blockId, repeat, task.lineNumber),
+        setText: (task, text) => this.setTaskTextFor(this.boardTaskRef(task), text),
+        deleteTask: async (task) => {
+          const nested = descendantsOf(task, indexFamilies(this.taskStore.inFile(task.filePath))).length;
+          await this.deleteTaskFor(this.boardTaskRef(task), displayTitle(task.text) || task.text, nested);
+        },
+        settled: () => this.afterNextRead(),
+      },
+      save: () => this.saveSettings(),
+      report: (outcome) => {
+        if (outcome.applied) new Notice(`TaskPro: ${outcome.applied} change${outcome.applied === 1 ? '' : 's'} from Telegram made in your notes.`);
+        if (outcome.errors) console.warn(`TaskPro: ${outcome.errors} change(s) from Telegram could not be made.`);
+        if (!outcome.ok && outcome.message) console.warn(`TaskPro: Telegram sync: ${outcome.message}`);
+      },
+      registerInterval: (id) => this.registerInterval(id),
+      now: () => Date.now(),
+    });
+    this.app.workspace.onLayoutReady(() => {
+      void this.taskStore.ensureLoaded().then(() => {
+        this.planReminders.start();
+        this.telegramSync.start();
+      });
     });
 
     // Keep the hidden creation index in step with the vault so task ages
@@ -650,7 +877,11 @@ export default class TaskProPlugin extends Plugin {
     // Same for the board's remembered layout, and the tag list is cleaned so a
     // hand-edited data.json cannot break chip rendering.
     this.settings.board = Object.assign({}, DEFAULT_BOARD_PREFERENCES, saved?.board);
+    this.settings.calendar = Object.assign({}, DEFAULT_CALENDAR_SETTINGS, saved?.calendar);
     this.settings.tags = sanitizeTags(saved?.tags);
+    this.settings.telegram = Object.assign({}, DEFAULT_TELEGRAM_SETTINGS, saved?.telegram);
+    this.settings.board.views = sanitizeViews(saved?.board?.views);
+    if (!this.settings.board.views.some((view) => view.id === this.settings.board.activeView)) this.settings.board.activeView = undefined;
 
     // Active-note reminders are enabled by default. Apply this once to existing
     // installs as well; after migration, the user's own toggle is respected.
@@ -712,6 +943,7 @@ export default class TaskProPlugin extends Plugin {
     const progress = this.getTaskProgress(resolvedFilePath, blockId);
     const timer = this.timerService.get(resolvedFilePath, blockId);
     const repeat = extractRepeat(lineContent ?? '');
+    const schedule = extractSchedule(lineContent ?? '');
     const customTags = extractTags(lineContent ?? '').map((key) => resolveTag(key, this.settings.tags));
 
     // Find task mapping if it exists
@@ -737,6 +969,10 @@ export default class TaskProPlugin extends Plugin {
         repeat,
         defaultTimerMinutes: this.settings.defaultTimerMinutes,
         calendarSystem: this.settings.calendarSystem,
+        schedule,
+        timeFormat: this.settings.calendar.timeFormat,
+        defaultDuration: this.settings.calendar.defaultDurationMinutes,
+        onScheduleChange: (newSchedule) => this.setTaskScheduleFor(ref, newSchedule),
         onToggleSync: async (enabled) => {
           if (mapping) {
             await this.syncManager.setLinkState(resolvedFilePath, lineContent, enabled, { scope: 'imported', blockId });
@@ -893,6 +1129,34 @@ export default class TaskProPlugin extends Plugin {
   }
 
   /**
+   * Plans a task for a day (and a time), or takes it off the calendar with
+   * `null`. Unlike its status, deadline or tags, a plan is not synced to a
+   * linked source task: it says when this copy is to be worked on, and
+   * syncing it would put the same task on the calendar twice.
+   */
+  async setTaskScheduleFor(ref: TaskRef, schedule: TaskSchedule | null): Promise<void> {
+    const { blockId, file } = this.resolveTaskRef(ref);
+    if (!file) return;
+    const updated = await this.updateTaskLineInFile(
+      file,
+      ref.lineContent,
+      blockId,
+      (content) => setSchedule(content, schedule),
+      ref.lineNumber
+    );
+    if (updated) this.refreshDecorations();
+  }
+
+  /** A plan as the chips write it: "Today, 09:00 – 10:30". */
+  private scheduleLabel(schedule: TaskSchedule): string {
+    return scheduleText(schedule, {
+      language: this.settings.badgeLanguage,
+      calendarSystem: this.settings.calendarSystem,
+      timeFormat: this.settings.calendar.timeFormat,
+    });
+  }
+
+  /**
    * Renames a task, keeping every marker and the block ID. Mappings and the
    * block-ID cache are keyed partly by the task's text, so they are moved to
    * the new text as well; otherwise a linked copy would stop syncing.
@@ -1035,12 +1299,106 @@ export default class TaskProPlugin extends Plugin {
   /** Opens the board, or brings an already open one to the front. */
   async activateBoard(): Promise<void> {
     const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_TASK_BOARD)[0];
+    if (Platform.isMobile) {
+      await this.openBoardInPlace(existing);
+      return;
+    }
     if (existing) {
       await this.app.workspace.revealLeaf(existing);
       return;
     }
     const leaf = this.app.workspace.getLeaf('tab');
     await leaf.setViewState({ type: VIEW_TYPE_TASK_BOARD, active: true });
+    await this.app.workspace.revealLeaf(leaf);
+  }
+
+  /**
+   * On a phone the board takes the place of what is open, as another note
+   * would, instead of opening in a pane of its own. That puts the note it
+   * came from one step back in that pane's history, so the phone's back
+   * gesture (the back button, the edge swipe, Obsidian's two-finger swipe)
+   * closes the board and returns to the note. A board left open in another
+   * pane is closed, so there is one.
+   */
+  private async openBoardInPlace(existing: WorkspaceLeaf | undefined): Promise<void> {
+    const { workspace } = this.app;
+    // The pane the person is in, not a new one.
+    const leaf = workspace.getMostRecentLeaf(workspace.rootSplit) ?? workspace.getLeaf(false);
+    if (leaf.view.getViewType() === VIEW_TYPE_TASK_BOARD) {
+      await workspace.revealLeaf(leaf);
+      return;
+    }
+    if (existing && existing !== leaf) existing.detach();
+    await leaf.setViewState({ type: VIEW_TYPE_TASK_BOARD, active: true });
+    await workspace.revealLeaf(leaf);
+  }
+
+  /** From the two-finger gesture, wherever the fingers were. */
+  private async openBoardFromGesture(): Promise<void> {
+    if (this.floatingBoard) return;
+    await this.activateBoard();
+  }
+
+  /** Opens the board on its calendar layout. A floating board switches in place. */
+  async openCalendar(): Promise<void> {
+    if (this.settings.board.layout !== 'calendar') {
+      this.settings.board.layout = 'calendar';
+      await this.saveSettings();
+      this.refreshBoards();
+    }
+    if (!this.floatingBoard) await this.activateBoard();
+  }
+
+  /** The note the board's quick add writes to, if it still exists. */
+  private boardInboxPath(): string {
+    const { inboxPath } = this.settings.board;
+    if (inboxPath && this.app.vault.getFileByPath(inboxPath)) return inboxPath;
+    const reference = this.settings.referenceNotePath;
+    if (reference && this.app.vault.getFileByPath(reference)) return reference;
+    return '';
+  }
+
+  /** Where a task added on a day goes: that day's note, or the inbox when set so. */
+  private dayNoteTarget(day: string, system: CalendarSystem): { path: string; exists: boolean; isDailyNote: boolean } {
+    if (this.settings.calendar.newTaskTarget === 'inbox') {
+      const path = this.boardInboxPath();
+      return { path, exists: !!path, isDailyNote: false };
+    }
+    return { ...this.dailyNotes.target(day, system), isDailyNote: true };
+  }
+
+  /** Writes a task line on a day. Resolves the note it went into, or null. */
+  private async addTaskOnDay(day: string, line: string, system: CalendarSystem): Promise<string | null> {
+    try {
+      if (this.settings.calendar.newTaskTarget === 'inbox') {
+        const path = this.boardInboxPath();
+        return path && (await this.appendTaskLine(path, line)) ? path : null;
+      }
+      return (await this.dailyNotes.addTask(day, system, line)).path;
+    } catch (error) {
+      console.error('TaskPro: could not add the task to its day', error);
+      return null;
+    }
+  }
+
+  /** Opens a day's note, making it from the template first when it does not exist. */
+  async openDailyNote(day: string, system: CalendarSystem): Promise<void> {
+    let file: TFile;
+    try {
+      file = await this.dailyNotes.ensure(day, system);
+    } catch (error) {
+      console.error('TaskPro: could not create the daily note', error);
+      new Notice(getCalendarLabels(this.settings.badgeLanguage).addFailed);
+      return;
+    }
+    // A note opened from the floating board is opened to be read: step aside.
+    this.floatingBoard?.close();
+    const leaf =
+      this.app.workspace
+        .getLeavesOfType('markdown')
+        .find((candidate) => candidate.view instanceof MarkdownView && candidate.view.file?.path === file.path) ??
+      this.app.workspace.getLeaf('tab');
+    await leaf.openFile(file, { active: true });
     await this.app.workspace.revealLeaf(leaf);
   }
 
@@ -1110,6 +1468,12 @@ export default class TaskProPlugin extends Plugin {
         tags: this.settings.tags,
         board: this.settings.board,
         referenceNotePath: this.settings.referenceNotePath,
+        calendar: this.settings.calendar,
+        subtaskProgress: this.settings.showSubtaskProgress,
+        planReminder: {
+          enabled: this.settings.reminders.planReminders,
+          leadMinutes: this.settings.reminders.planLeadMinutes,
+        },
       }),
       savePreferences: () => this.saveSettings(),
       getProgress: (task) => {
@@ -1156,7 +1520,461 @@ export default class TaskProPlugin extends Plugin {
       openFloating: () => {
         if (!this.floatingBoard) this.toggleFloatingBoard();
       },
+      setSchedule: (task, schedule) => this.setTaskScheduleFor(this.boardTaskRef(task), schedule),
+      // Both calendars' names are looked up whichever is showing, so the view system does not matter here.
+      dailyNotesFor: (day) => this.dailyNotes.existing(day, 'gregorian').map((file) => file.path),
+      dayNoteTarget: (day, system) => this.dayNoteTarget(day, system),
+      addTaskOnDay: (day, line, system) => this.addTaskOnDay(day, line, system),
+      openDailyNote: (day, system) => this.openDailyNote(day, system),
+      setDeadline: (task, deadline) => this.setTaskDeadlineFor(this.boardTaskRef(task), deadline),
+      setRepeat: (task, repeat) =>
+        this.handleRepeatUpdate(task.filePath, task.line, this.boardTaskRef(task).blockId, repeat, task.lineNumber),
+      setProgress: (task, progress) =>
+        this.handleProgressUpdate(task.filePath, task.line, this.boardTaskRef(task).blockId, progress),
+      editSchedule: async (task) => {
+        const choice = await openSchedulePanel({
+          language: this.settings.badgeLanguage,
+          calendarSystem: this.settings.board.calendarSystem ?? this.settings.calendarSystem,
+          schedule: task.schedule,
+          defaultDuration: this.settings.calendar.defaultDurationMinutes,
+          timeFormat: this.settings.calendar.timeFormat,
+        });
+        if (choice !== undefined) await this.setTaskScheduleFor(this.boardTaskRef(task), choice);
+      },
+      insertTask: (task, line, as) => this.insertTaskNear(this.boardTaskRef(task), line, as),
+      deleteTask: (task) => {
+        const nested = descendantsOf(task, indexFamilies(this.taskStore.inFile(task.filePath))).length;
+        return this.deleteTaskFor(this.boardTaskRef(task), displayTitle(task.text) || task.text, nested);
+      },
+      blockLink: (task) => this.blockLinkFor(task),
+      notes: () => this.app.vault.getMarkdownFiles().map((file) => ({ path: file.path, name: file.basename })),
+      moveTask: (task, targetPath) => this.moveTaskTo(task, targetPath),
+      deleteTasks: (tasks) => this.deleteTasksFor(tasks),
+      setWaiting: (task, blockers) => this.setTaskWaiting(task, blockers),
+      setDates: (task, patch) => this.setTaskDatesFor(this.boardTaskRef(task), patch),
+      setRemind: (task, minutes) => this.setTaskRemindFor(this.boardTaskRef(task), minutes),
+      editRemind: async (task) => {
+        const choice = await openRemindPanel({
+          language: this.settings.badgeLanguage,
+          calendarSystem: this.settings.board.calendarSystem ?? this.settings.calendarSystem,
+          timeFormat: this.settings.calendar.timeFormat,
+          current: task.remindAt,
+          // A new one starts at the plan's start, when there is one.
+          suggest: task.schedule?.start ? { date: task.schedule.date, time: task.schedule.start } : undefined,
+        });
+        if (choice === undefined) return;
+        // Taking the moment off leaves the task with the setting's reminder again.
+        await this.setTaskRemindFor(this.boardTaskRef(task), choice === null ? undefined : choice);
+      },
     };
+  }
+
+  /** What the note chips need to know about a line's dependencies, from every task the store holds. */
+  private badgeSettings(): DecorationSettings {
+    return {
+      enableBadges: this.settings.enableBadges,
+      badgeLanguage: this.settings.badgeLanguage,
+      badgeSize: this.settings.badgeSize,
+      targetFolder: this.settings.targetFolder,
+      calendarSystem: this.settings.calendarSystem,
+      showPriorityBadges: this.settings.showPriorityBadges,
+      showTimerBadges: this.settings.showTimerBadges,
+      showRepeatBadges: this.settings.showRepeatBadges,
+      showTagBadges: this.settings.showTagBadges,
+      showScheduleBadges: this.settings.showScheduleBadges,
+      showSubtaskProgress: this.settings.showSubtaskProgress,
+      showWaitingBadges: this.settings.showWaitingBadges,
+      timeFormat: this.settings.calendar.timeFormat,
+      tags: this.settings.tags,
+    };
+  }
+
+  /** The tasks every task waits on, resolved once per change to the notes. */
+  private relationsCache: RelationIndex | null = null;
+  /** What the waiting chips last showed, so the editors are redrawn only when that changes. */
+  private waitingSignature = '';
+
+  private relations(): RelationIndex | null {
+    if (!this.taskStore.isLoaded) return null;
+    if (!this.relationsCache) this.relationsCache = new RelationIndex(this.taskStore.all());
+    return this.relationsCache;
+  }
+
+  /** The tasks a line waits on, as its chip names them: their titles, and whether each is done or gone. */
+  private waitingInfo(filePath: string, links: TaskLink[]): WaitingInfo[] {
+    const index = this.relations();
+    return links.map((link) => {
+      const task = index?.resolve(link, filePath);
+      return task
+        ? { link, title: displayTitle(task.text) || task.text, done: task.status === '[x]', missing: false }
+        : { link, title: link.path.split('/').pop() || link.blockId, done: false, missing: !!index };
+    });
+  }
+
+  /**
+   * The store changed: forget the resolved links, and redraw the note chips
+   * if a task something waits on was renamed, ticked off, or went away.
+   */
+  /** The tasks the bot knows: the ones plan reminders watch (the target folder and the daily notes). */
+  private syncableTasks(): BoardTask[] {
+    const daily = this.settings.calendar.dailyNotesFolder.trim().replace(/^\/+|\/+$/g, '');
+    return this.taskStore
+      .all()
+      .filter((task) => this.isFileInTargetFolder(task.filePath) || (!!daily && task.filePath.startsWith(`${daily}/`)));
+  }
+
+  /** Resolves once the notes have been read again after an edit, or a moment has gone by. */
+  private afterNextRead(): Promise<void> {
+    return new Promise((resolve) => {
+      let finished = false;
+      let off: () => void = () => undefined;
+      const finish = () => {
+        if (finished) return;
+        finished = true;
+        off();
+        window.clearTimeout(limit);
+        window.setTimeout(resolve, 120);
+      };
+      off = this.taskStore.subscribe(finish);
+      const limit = window.setTimeout(finish, 1500);
+    });
+  }
+
+  private onTasksChanged(): void {
+    this.telegramSync?.tasksChanged();
+    this.relationsCache = null;
+    const index = this.relations();
+    if (!index) return;
+    const parts: string[] = [];
+    for (const task of this.taskStore.all()) {
+      for (const blocker of index.blockersOf(task)) {
+        parts.push(`${blocker.link.path}#${blocker.link.blockId}=${blocker.task ? `${blocker.task.status}${blocker.task.text}` : '-'}`);
+      }
+    }
+    const signature = parts.join('|');
+    if (signature === this.waitingSignature) return;
+    this.waitingSignature = signature;
+    this.refreshDecorations();
+  }
+
+  /**
+   * Makes a task wait on exactly these tasks. A task waited on needs a block
+   * ID in its line for the link to point at: one it has already is used, the
+   * one TaskPro keeps for it out of the note is written in, or a new one is.
+   */
+  private async setTaskWaiting(task: BoardTask, blockers: BoardTask[]): Promise<void> {
+    const links: TaskLink[] = [];
+    for (const blocker of blockers) {
+      const id = await this.ensureInlineBlockId(blocker);
+      if (id) links.push({ path: linkPathOf(blocker.filePath), blockId: id });
+    }
+    const { blockId, file } = this.resolveTaskRef(this.boardTaskRef(task));
+    if (!file) return;
+    const updated = await this.updateTaskLineInFile(file, task.line, blockId, (content) => setWaiting(content, links), task.lineNumber);
+    if (updated) this.refreshDecorations();
+  }
+
+  private async ensureInlineBlockId(task: BoardTask): Promise<string | null> {
+    if (task.blockId) return task.blockId;
+    const file = this.app.vault.getFileByPath(task.filePath);
+    if (!file) return null;
+    const stored = this.getStoredBlockId(task.filePath, task.line);
+    const blocks = this.app.metadataCache.getFileCache(file)?.blocks ?? {};
+    const inNote = new Set(this.taskStore.inFile(task.filePath).map((t) => t.blockId).filter(Boolean));
+    const id = stored ?? newBlockId((candidate) => candidate in blocks || inNote.has(candidate));
+    let nextLine = '';
+    const updated = await this.updateTaskLineInFile(
+      file,
+      task.line,
+      stored,
+      (content) => (nextLine = `${content.replace(/\s+$/, '')} ^${id}`),
+      task.lineNumber
+    );
+    if (!updated) return null;
+    if (stored) {
+      this.removeStoredBlockId(task.filePath, task.line);
+      this.storeBlockId(task.filePath, nextLine, stored);
+    }
+    return id;
+  }
+
+  /**
+   * A plan and a deadline written in one edit, so a timeline drag that
+   * moves both is one change to the note. The deadline goes on to a linked
+   * source the way a deadline set anywhere else does; the plan does not.
+   */
+  async setTaskDatesFor(ref: TaskRef, patch: { schedule?: TaskSchedule | null; deadline?: string | null }): Promise<void> {
+    const { mapping, blockId, file } = this.resolveTaskRef(ref);
+    if (!file) return;
+    const updated = await this.updateTaskLineInFile(
+      file,
+      ref.lineContent,
+      blockId,
+      (content) => {
+        let next = content;
+        if (patch.schedule !== undefined) next = setSchedule(next, patch.schedule);
+        if (patch.deadline !== undefined) next = this.applyDeadlineToLine(next, patch.deadline);
+        return next;
+      },
+      ref.lineNumber
+    );
+    if (updated) this.refreshDecorations();
+    if (patch.deadline !== undefined && mapping?.linked) {
+      await this.syncManager.syncTaskDeadline(ref.filePath, ref.lineContent, patch.deadline, { blockId });
+    }
+  }
+
+  /** A task's own reminder before its plan starts, or back to the setting with `undefined`. */
+  async setTaskRemindFor(ref: TaskRef, minutes: number | null | RemindAt | undefined): Promise<void> {
+    const { blockId, file } = this.resolveTaskRef(ref);
+    if (!file) return;
+    const updated = await this.updateTaskLineInFile(file, ref.lineContent, blockId, (content) => setRemind(content, minutes), ref.lineNumber);
+    if (updated) this.refreshDecorations();
+  }
+
+  /**
+   * Writes a task line beside another: as its last subtask, indented one step
+   * further (by the note's own indent, a tab unless the note uses spaces), or
+   * after it and everything nested under it, at its own depth.
+   */
+  private async insertTaskNear(ref: TaskRef, line: string, as: 'child' | 'sibling'): Promise<boolean> {
+    const file = ref.filePath ? this.app.vault.getFileByPath(ref.filePath) : null;
+    if (!file) return false;
+    let written = false;
+    await this.app.vault.process(file, (content) => {
+      const lines = content.split('\n');
+      const index =
+        ref.lineNumber !== undefined && lines[ref.lineNumber] === ref.lineContent
+          ? ref.lineNumber
+          : this.findTaskLineIndex(lines, ref.lineContent, ref.blockId);
+      if (index === -1) return content;
+
+      const own = indentOf(lines[index]);
+      const end = blockEnd(lines, index);
+      let indent = own;
+      if (as === 'child') {
+        const existing = childIndent(lines, index);
+        if (existing !== null) indent = existing;
+        else {
+          const spaced = lines.find((text) => /^ +[-*+] /.test(text));
+          const tabbed = lines.some((text) => /^\t+[-*+] /.test(text));
+          indent = own + (!tabbed && spaced ? ' '.repeat(Math.min(4, indentOf(spaced).length) || 4) : '\t');
+        }
+      }
+      lines.splice(end + 1, 0, indent + line.trimStart());
+      written = true;
+      return lines.join('\n');
+    });
+    if (written) this.refreshDecorations();
+    return written;
+  }
+
+  /**
+   * Deletes a task from its note, with everything nested under it, and puts
+   * up a notice that can put it all back. Resolves whether anything went.
+   */
+  private async deleteTaskFor(ref: TaskRef, title: string, subtasks: number): Promise<boolean> {
+    const file = ref.filePath ? this.app.vault.getFileByPath(ref.filePath) : null;
+    if (!file) return false;
+    let taken: RemovedBlock | null = null;
+    await this.app.vault.process(file, (content) => {
+      const lines = content.split('\n');
+      const index =
+        ref.lineNumber !== undefined && lines[ref.lineNumber] === ref.lineContent
+          ? ref.lineNumber
+          : this.findTaskLineIndex(lines, ref.lineContent, ref.blockId);
+      if (index === -1) return content;
+      taken = removeBlock(lines, index);
+      return taken.lines.join('\n');
+    });
+    const removed = taken as RemovedBlock | null;
+    if (!removed) return false;
+    this.refreshDecorations();
+
+    const labels = getActionLabels(this.settings.badgeLanguage);
+    this.undoNotice(labels.deleted(title, subtasks), () => this.putBack(file, removed));
+    return true;
+  }
+
+  /**
+   * Deletes several tasks, each with what is nested under it, and puts up one
+   * notice that puts them all back. Within a note the lower ones go first, so
+   * the lines of the ones still to go do not move. Resolves how many went.
+   */
+  private async deleteTasksFor(tasks: BoardTask[]): Promise<number> {
+    const ordered = [...tasks].sort((a, b) => (a.filePath === b.filePath ? b.lineNumber - a.lineNumber : a.filePath.localeCompare(b.filePath)));
+    const taken: Array<{ file: TFile; removed: RemovedBlock }> = [];
+    for (const task of ordered) {
+      const ref = this.boardTaskRef(task);
+      const file = ref.filePath ? this.app.vault.getFileByPath(ref.filePath) : null;
+      if (!file) continue;
+      let cut: RemovedBlock | null = null;
+      await this.app.vault.process(file, (content) => {
+        const lines = content.split('\n');
+        const index =
+          ref.lineNumber !== undefined && lines[ref.lineNumber] === ref.lineContent
+            ? ref.lineNumber
+            : this.findTaskLineIndex(lines, ref.lineContent, ref.blockId);
+        if (index === -1) return content;
+        cut = removeBlock(lines, index);
+        return cut.lines.join('\n');
+      });
+      const removed = cut as RemovedBlock | null;
+      if (removed) taken.push({ file, removed });
+    }
+    if (!taken.length) return 0;
+    this.refreshDecorations();
+    const labels = getActionLabels(this.settings.badgeLanguage);
+    this.undoNotice(labels.deletedMany(taken.length), async () => {
+      // Last out, first back: each block returns to the place it was taken from.
+      for (const { file, removed } of [...taken].reverse()) await this.putBack(file, removed);
+    });
+    return taken.length;
+  }
+
+  /** A notice with an Undo in it, which stays a few seconds. */
+  private undoNotice(message: string, onUndo: () => void | Promise<void>): void {
+    const labels = getActionLabels(this.settings.badgeLanguage);
+    const notice = new Notice(message, 8000);
+    const messageEl = (notice as unknown as { messageEl?: HTMLElement; noticeEl?: HTMLElement }).messageEl
+      ?? (notice as unknown as { noticeEl?: HTMLElement }).noticeEl;
+    if (!messageEl?.createEl) return;
+    // Obsidian's notices are left to right; a Persian sentence needs its own direction.
+    messageEl.setAttribute('dir', this.settings.badgeLanguage === 'fa' ? 'rtl' : 'ltr');
+    messageEl.addClass('taskpro-notice-with-action');
+    const undo = messageEl.createEl('button', { cls: 'taskpro-notice-undo', text: labels.undo });
+    undo.addEventListener('click', (event) => {
+      event.stopPropagation();
+      notice.hide();
+      void onUndo();
+    });
+  }
+
+  /** Puts a removed block back where it was, exactly. */
+  private async putBack(file: TFile, removed: RemovedBlock): Promise<void> {
+    await this.app.vault.process(file, (content) => {
+      const lines = content.split('\n');
+      lines.splice(Math.min(removed.at, lines.length), 0, ...removed.removed);
+      return lines.join('\n');
+    });
+    this.refreshDecorations();
+  }
+
+  /**
+   * The link that points at a task, `[[Note#^id]]`, the way Obsidian's own
+   * "copy block link" writes it. A task without a block ID is given the kind
+   * the dependencies use, so the link has something to point at.
+   */
+  private async blockLinkFor(task: BoardTask): Promise<string | null> {
+    const id = await this.ensureInlineBlockId(task);
+    return id ? `[[${linkPathOf(task.filePath)}#^${id}]]` : null;
+  }
+
+  /**
+   * Moves a task, with everything nested under it, to the end of another
+   * note. What is kept about a task outside its line goes with it: its
+   * progress, its timer, the link between a copy and its source. The links
+   * that say a task waits on another are pointed at the note it is in now,
+   * whether they are written on the moved tasks or on tasks elsewhere.
+   * Resolves whether the task moved.
+   */
+  private async moveTaskTo(task: BoardTask, targetPath: string): Promise<boolean> {
+    const from = task.filePath;
+    const source = this.app.vault.getFileByPath(from);
+    const target = this.app.vault.getFileByPath(targetPath);
+    if (!source || !target || from === targetPath) return false;
+
+    // How the tasks relate now, before anything moves: who moves, who waits on them.
+    const family = [task, ...descendantsOf(task, indexFamilies(this.taskStore.inFile(from)))];
+    const index = new RelationIndex(this.taskStore.all());
+    const ref = this.boardTaskRef(task);
+
+    let cut: RemovedBlock | null = null;
+    await this.app.vault.process(source, (content) => {
+      const lines = content.split('\n');
+      const at =
+        ref.lineNumber !== undefined && lines[ref.lineNumber] === ref.lineContent
+          ? ref.lineNumber
+          : this.findTaskLineIndex(lines, ref.lineContent, ref.blockId);
+      if (at === -1) return content;
+      cut = removeBlock(lines, at);
+      return cut.lines.join('\n');
+    });
+    const taken = cut as RemovedBlock | null;
+    if (!taken) return false;
+    // The blank line that went with it to keep the note's spacing is not part of the task.
+    const block = [...taken.removed];
+    while (block.length && !block[block.length - 1].trim()) block.pop();
+
+    let prepared: PreparedBlock | null = null;
+    let context: MoveContext | null = null;
+    try {
+      await this.app.vault.process(target, (content) => {
+        const used = blockIdsIn(content);
+        prepared = prepareBlock(block, (id) => used.has(id));
+        context = { index, moved: new Set(family.map((t) => t.id)), from, to: targetPath, renamed: prepared.renamed };
+        const lines = prepared.lines.map((text) => relinkWaiting(text, (link) => linkAfterMove(link, from, context!, true)));
+        return appendTaskLine(content, lines.join('\n'));
+      });
+    } catch (error) {
+      // The other note could not be written: the task goes back where it was.
+      console.error('TaskPro: could not move the task', error);
+      await this.putBack(source, taken);
+      return false;
+    }
+    const landed = prepared as PreparedBlock | null;
+    const linking = context as MoveContext | null;
+    if (!landed || !linking) return false;
+
+    // Everything kept by note and block ID follows the block.
+    const ids = new Map<string, string>();
+    const relocated: Array<{ line: string; blockId?: string; nextBlockId?: string }> = [];
+    for (const text of block) {
+      const inline = blockIdOf(text);
+      if (inline) ids.set(inline, landed.renamed.get(inline) ?? inline);
+      if (!TASK_LINE_WITH_CONTENT_REGEX.test(text)) continue;
+      // A copy imported from another note keeps its ID with the mapping, out of the line.
+      const stored = inline ? undefined : this.getStoredBlockId(from, text);
+      relocated.push({ line: text, blockId: inline ?? stored, nextBlockId: inline ? landed.renamed.get(inline) : undefined });
+      if (stored) {
+        this.removeStoredBlockId(from, text);
+        this.storeBlockId(targetPath, text, stored);
+      }
+    }
+    let saved = false;
+    for (const entry of this.settings.taskProgress) {
+      const next = entry.filePath === from ? ids.get(entry.blockId) : undefined;
+      if (next === undefined) continue;
+      entry.filePath = targetPath;
+      entry.blockId = next;
+      saved = true;
+    }
+    if (saved) {
+      this.rebuildProgressCache();
+      await this.saveData(this.settings);
+    }
+    await this.syncManager.relocate(from, targetPath, relocated);
+    await this.timerService.move(from, targetPath, ids);
+
+    // Tasks elsewhere that wait on a moved task: their links follow it.
+    const seen = new Set(linking.moved);
+    for (const moving of family) {
+      for (const dependent of index.dependentsOf(moving)) {
+        if (seen.has(dependent.id)) continue;
+        seen.add(dependent.id);
+        const file = this.app.vault.getFileByPath(dependent.filePath);
+        if (!file) continue;
+        await this.updateTaskLineInFile(
+          file,
+          dependent.line,
+          dependent.blockId,
+          (line) => relinkWaiting(line, (link) => linkAfterMove(link, dependent.filePath, linking, false)),
+          dependent.lineNumber
+        );
+      }
+    }
+    this.refreshDecorations();
+    return true;
   }
 
   private boardMenuDetail(task: BoardTask, anchor: HTMLElement): TaskMenuDetail {
@@ -1179,6 +1997,8 @@ export default class TaskProPlugin extends Plugin {
       new Notice(getBoardLabels(this.settings.badgeLanguage).noteMissing);
       return;
     }
+    // Opened from the floating board, the note would open behind it.
+    this.floatingBoard?.close();
 
     const leaf =
       this.app.workspace
@@ -1206,10 +2026,7 @@ export default class TaskProPlugin extends Plugin {
   private async appendTaskLine(path: string, line: string): Promise<boolean> {
     const file = this.app.vault.getFileByPath(path);
     if (!file) return false;
-    await this.app.vault.process(file, (content) => {
-      const separator = content.length === 0 || content.endsWith('\n') ? '' : '\n';
-      return `${content}${separator}${line}\n`;
-    });
+    await this.app.vault.process(file, (content) => appendTaskLine(content, line));
     return true;
   }
 
@@ -2088,7 +2905,8 @@ export default class TaskProPlugin extends Plugin {
     filePath: string,
     lineContent: string,
     blockId: string | undefined,
-    newRepeat: TaskRepeat | null
+    newRepeat: TaskRepeat | null,
+    lineHint?: number
   ): Promise<void> {
     const resolvedFilePath = filePath || this.app.workspace.getActiveFile()?.path || '';
     if (!resolvedFilePath) return;
@@ -2106,7 +2924,8 @@ export default class TaskProPlugin extends Plugin {
       file,
       lineContent,
       effectiveBlockId,
-      (content) => setRepeat(content, newRepeat)
+      (content) => setRepeat(content, newRepeat),
+      lineHint
     );
     if (updated) this.refreshDecorations();
   }
@@ -2125,17 +2944,34 @@ export default class TaskProPlugin extends Plugin {
     const content = await this.app.vault.cachedRead(file);
     if (!content.includes('@repeat(')) return;
 
-    /** Rewrites one completed repeating line, or returns null to leave it be. */
-    const roll = (line: string): { line: string; nextDeadline: string } | null => {
+    /**
+     * Rewrites one completed repeating line, or returns null to leave it be.
+     * A plan moves on with the task, by the same interval, keeping its time:
+     * a weekly 09:00 slot stays a weekly 09:00 slot. A task with a plan and no
+     * deadline repeats by its plan alone and is not given a deadline.
+     */
+    const roll = (line: string): { line: string; nextDate: string; nextDeadline?: string } | null => {
       const match = TASK_LINE_REGEX.exec(line);
       if (!match || match[2].toLowerCase() !== 'x') return null;
 
       const repeat = extractRepeat(line);
       if (!repeat) return null;
 
-      const nextDeadline = nextRepeatDate(repeat, extractDeadline(line));
-      const reopened = setDeadline(line, nextDeadline).replace(TASK_STATUS_REGEX, '- [ ]');
-      return reopened === line ? null : { line: reopened, nextDeadline };
+      const deadline = extractDeadline(line);
+      const schedule = extractSchedule(line);
+      let reopened = line.replace(TASK_STATUS_REGEX, '- [ ]');
+      let nextDeadline: string | undefined;
+      if (deadline || !schedule) {
+        nextDeadline = nextRepeatDate(repeat, deadline);
+        reopened = setDeadline(reopened, nextDeadline);
+      }
+      let nextPlan: string | undefined;
+      if (schedule) {
+        nextPlan = nextRepeatDate(repeat, schedule.date);
+        reopened = setSchedule(reopened, { ...schedule, date: nextPlan });
+      }
+      const nextDate = nextDeadline ?? nextPlan!;
+      return reopened === line ? null : { line: reopened, nextDate, nextDeadline };
     };
 
     // The write below fires another `modify`, which lands back here. That pass
@@ -2144,7 +2980,7 @@ export default class TaskProPlugin extends Plugin {
     // writing is what keeps it from becoming a ping-pong.
     if (!content.split('\n').some((line) => roll(line) !== null)) return;
 
-    const rolled: Array<{ line: string; blockId?: string; nextDeadline: string }> = [];
+    const rolled: Array<{ line: string; blockId?: string; nextDate: string; nextDeadline?: string }> = [];
 
     await this.app.vault.process(file, (current) => {
       const lines = current.split('\n');
@@ -2157,6 +2993,7 @@ export default class TaskProPlugin extends Plugin {
         rolled.push({
           line: next.line,
           blockId: this.extractTaskBlockId(next.line),
+          nextDate: next.nextDate,
           nextDeadline: next.nextDeadline,
         });
         lines[i] = next.line;
@@ -2192,9 +3029,11 @@ export default class TaskProPlugin extends Plugin {
         blockId: entry.blockId,
       });
       if (mapping?.linked) {
-        await this.syncManager.syncTaskDeadline(file.path, entry.line, entry.nextDeadline, {
-          blockId: entry.blockId,
-        });
+        if (entry.nextDeadline) {
+          await this.syncManager.syncTaskDeadline(file.path, entry.line, entry.nextDeadline, {
+            blockId: entry.blockId,
+          });
+        }
         await this.syncManager.syncTaskStatus(file.path, entry.line, '[ ]', {
           blockId: entry.blockId,
         });
@@ -2208,7 +3047,7 @@ export default class TaskProPlugin extends Plugin {
     }
 
     const labels = getRepeatLabels(this.settings.badgeLanguage);
-    new Notice(labels.rolledForward(rolled[0].nextDeadline));
+    new Notice(labels.rolledForward(rolled[0].nextDate));
     this.refreshDecorations();
   }
 
@@ -2324,6 +3163,7 @@ export default class TaskProPlugin extends Plugin {
   }
 
   onunload() {
+    useKeymapOf(null);
     // Clear all debounce timers
     this.syncDebounceTimers.forEach(timer => clearTimeout(timer));
     this.fileTaskStates.clear();
@@ -2333,6 +3173,8 @@ export default class TaskProPlugin extends Plugin {
     document.body.removeClass('taskpro-hide-badges-in-embeds');
     // Release the reminder ticker, overlay and audio nodes
     this.reminderService?.stop();
+    this.planReminders?.destroy();
+    this.telegramSync?.stop();
     this.taskIndexService?.stop();
     // Closing the float also takes its class back off <body>, so a theme's
     // blur never outlives the plugin.

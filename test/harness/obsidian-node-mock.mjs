@@ -23,10 +23,37 @@ globalThis.document ??= {
 };
 
 export const notices = [];
+/** The notices as objects, for a test that presses the button in one. */
+export const noticeObjects = [];
 
 export class Notice {
   constructor(message) {
     notices.push(String(message));
+    this.buttons = [];
+    this.hidden = false;
+    // Just enough of a notice's element for the Undo button a notice can carry.
+    this.messageEl = {
+      setAttribute() {},
+      addClass() {},
+      createEl: (_tag, info) => {
+        const button = {
+          text: info?.text ?? '',
+          handlers: [],
+          addEventListener(_type, handler) {
+            this.handlers.push(handler);
+          },
+          click() {
+            for (const handler of this.handlers) handler({ stopPropagation() {} });
+          },
+        };
+        this.buttons.push(button);
+        return button;
+      },
+    };
+    noticeObjects.push(this);
+  }
+  hide() {
+    this.hidden = true;
   }
 }
 
@@ -71,6 +98,12 @@ export class Vault extends Events {
     this.files = new Map(Object.entries(files));
     this.metadataCache = metadataCache;
     this.writes = 0;
+    // Every folder the starting notes live in exists.
+    this.folders = new Set();
+    for (const path of this.files.keys()) {
+      const parts = path.split('/').slice(0, -1);
+      parts.forEach((_, i) => this.folders.add(parts.slice(0, i + 1).join('/')));
+    }
   }
   file(path) {
     return this.files.has(path) ? new TFile(path, this) : null;
@@ -79,7 +112,25 @@ export class Vault extends Events {
     return this.file(path);
   }
   getAbstractFileByPath(path) {
-    return this.file(path);
+    return this.file(path) ?? (this.folders.has(path) ? { path, children: [] } : null);
+  }
+  /** Like Obsidian: fails when the note exists or its folder does not. */
+  async create(path, content) {
+    if (this.files.has(path)) throw new Error('File already exists.');
+    const parent = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
+    if (parent && !this.folders.has(parent)) throw new Error(`Folder does not exist: ${parent}`);
+    this.files.set(path, content);
+    this.writes++;
+    const file = new TFile(path, this);
+    this.trigger('create', file);
+    this.metadataCache.trigger('changed', file, content, cacheFor(content));
+    return file;
+  }
+  async createFolder(path) {
+    if (this.folders.has(path)) throw new Error('Folder already exists.');
+    const parent = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
+    if (parent && !this.folders.has(parent)) throw new Error(`Folder does not exist: ${parent}`);
+    this.folders.add(path);
   }
   getMarkdownFiles() {
     return [...this.files.keys()].filter((p) => p.endsWith('.md')).map((p) => new TFile(p, this));
@@ -142,6 +193,16 @@ export class App {
     this.data = null;
     this.commands = [];
     this.views = {};
+    this.scope = {};
+    this.keymap = {
+      scopes: [],
+      pushScope(scope) {
+        this.scopes.push(scope);
+      },
+      popScope(scope) {
+        this.scopes = this.scopes.filter((s) => s !== scope);
+      },
+    };
   }
 }
 
@@ -185,6 +246,9 @@ export class Plugin extends Component {
   }
   registerEditorExtension() {}
   registerMarkdownPostProcessor() {}
+  registerEditorSuggest(suggest) {
+    this.app.suggests = [...(this.app.suggests ?? []), suggest];
+  }
 }
 
 export class ItemView extends Component {
@@ -253,9 +317,26 @@ export class Modal {
   }
 }
 export class FuzzySuggestModal {}
+export class EditorSuggest {
+  constructor(app) {
+    this.app = app;
+    this.context = null;
+  }
+  close() {}
+}
+export class Scope {
+  constructor(parent) {
+    this.parent = parent;
+    this.keys = [];
+  }
+  register(modifiers, key, handler) {
+    this.keys.push({ modifiers, key, handler });
+  }
+}
 export class Menu {}
 export class WorkspaceLeaf {}
 export const setIcon = () => {};
+export const requestUrl = async () => ({ status: 200, json: {}, text: "" });
 
 // ── CodeMirror, which the plugin also takes from the host at runtime ─────────
 export class EditorView {}
@@ -269,3 +350,4 @@ export class RangeSetBuilder {
 export const Decoration = { replace: () => ({}), widget: () => ({}), none: {} };
 export const ViewPlugin = { fromClass: () => ({}) };
 export const StateEffect = { define: () => ({ of: () => ({}), is: () => false }) };
+export const Platform = { isMobile: false, isPhone: false, isDesktop: true };

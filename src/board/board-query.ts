@@ -6,6 +6,7 @@
 import {
   BoardGroupBy,
   BoardPreferences,
+  DeadlineBucket,
   BoardSortDir,
   BoardSortKey,
   PRIORITY_RANK,
@@ -20,7 +21,7 @@ import { BoardTask } from './task-store';
 /** Status order used for grouping, board columns and sorting. */
 export const BOARD_STATUS_ORDER: readonly TaskStatus[] = ['[ ]', '[/]', '[!]', '[x]'];
 
-export type DeadlineBucket = 'overdue' | 'today' | 'week' | 'later' | 'past' | 'none';
+export type { DeadlineBucket };
 export const DEADLINE_BUCKET_ORDER: readonly DeadlineBucket[] = ['overdue', 'today', 'week', 'later', 'past', 'none'];
 
 export interface BoardGroup {
@@ -52,14 +53,23 @@ export function daysUntil(deadline: string, today: Date): number | undefined {
   return Math.round((date.getTime() - startOfDay(today).getTime()) / 86_400_000);
 }
 
-export function deadlineBucket(task: BoardTask, today: Date): DeadlineBucket {
-  if (!task.deadline) return 'none';
-  const days = daysUntil(task.deadline, today);
+function bucketOf(date: string | undefined, task: BoardTask, today: Date): DeadlineBucket {
+  if (!date) return 'none';
+  const days = daysUntil(date, today);
   if (days === undefined) return 'none';
   if (days < 0) return task.status === '[x]' ? 'past' : 'overdue';
   if (days === 0) return 'today';
   if (days <= 7) return 'week';
   return 'later';
+}
+
+export function deadlineBucket(task: BoardTask, today: Date): DeadlineBucket {
+  return bucketOf(task.deadline, task, today);
+}
+
+/** The same buckets for the day a task is planned for: `overdue` is a plan that was missed. */
+export function planBucket(task: BoardTask, today: Date): DeadlineBucket {
+  return bucketOf(task.schedule?.date, task, today);
 }
 
 /** Title text for searching: the visible title plus the tags' display names. */
@@ -70,18 +80,25 @@ function searchableText(task: BoardTask, tags: readonly TaskTag[]): string {
 
 export function filterTasks(
   tasks: readonly BoardTask[],
-  prefs: Pick<BoardPreferences, 'statuses' | 'priorities' | 'tags'>,
+  prefs: Pick<BoardPreferences, 'statuses' | 'priorities' | 'tags'> & Partial<Pick<BoardPreferences, 'deadlines' | 'plans' | 'notes'>>,
   search: string,
-  context: Pick<QueryContext, 'tags'>
+  context: Pick<QueryContext, 'tags'> & Partial<Pick<QueryContext, 'today'>>
 ): BoardTask[] {
   const terms = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
   const statuses = new Set(prefs.statuses);
   const priorities = new Set(prefs.priorities);
   const tags = new Set(prefs.tags);
+  const deadlines = new Set(prefs.deadlines ?? []);
+  const plans = new Set(prefs.plans ?? []);
+  const notes = new Set(prefs.notes ?? []);
+  const today = context.today ?? startOfDay(new Date());
 
   return tasks.filter((task) => {
     if (statuses.size && !statuses.has(task.status)) return false;
     if (priorities.size && !priorities.has(task.priority ?? 'none')) return false;
+    if (deadlines.size && !deadlines.has(deadlineBucket(task, today))) return false;
+    if (plans.size && !plans.has(planBucket(task, today))) return false;
+    if (notes.size && !notes.has(task.filePath)) return false;
     if (tags.size) {
       const matches = task.tags.length ? task.tags.some((key) => tags.has(key)) : tags.has('');
       if (!matches) return false;
@@ -121,6 +138,8 @@ export function sortTasks(
         return task.priority ? -PRIORITY_RANK[task.priority] : undefined;
       case 'deadline':
         return task.deadline ? daysUntil(task.deadline, context.today) : undefined;
+      case 'plan':
+        return task.schedule ? `${task.schedule.date} ${task.schedule.start ?? '00:00'}` : undefined;
       case 'progress': {
         const progress = context.getProgress(task);
         return progress?.enabled ? progress.currentSteps / progress.totalSteps : undefined;
@@ -182,6 +201,11 @@ export function groupTasks(
     case 'deadline':
       return DEADLINE_BUCKET_ORDER.map((bucket) =>
         make(bucket, tasks.filter((task) => deadlineBucket(task, context.today) === bucket))
+      ).filter((group) => group.tasks.length);
+
+    case 'plan':
+      return DEADLINE_BUCKET_ORDER.map((bucket) =>
+        make(bucket, tasks.filter((task) => planBucket(task, context.today) === bucket))
       ).filter((group) => group.tasks.length);
 
     case 'tag': {
