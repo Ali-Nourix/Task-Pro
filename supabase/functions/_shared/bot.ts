@@ -870,6 +870,39 @@ function planMenuView(ctx: Ctx, task: TaskRow, back: string): View {
   };
 }
 
+// ── Planning by itself ─────────────────────────────────────────────────────
+
+/**
+ * The plan a task made in Telegram gets when it has none: today, as the plugin's
+ * «Plan new tasks for today» gives a task typed into the notes, and with «Track start
+ * and end time» on, a start at this moment. The settings are the plugin's, sent with
+ * every sync.
+ */
+export function autoPlanFor(owner: OwnerRow, today: string, minutes: number): Plan | undefined {
+  const track = owner.track_time === true;
+  if (owner.auto_plan === false && !track) return undefined;
+  return track ? { date: today, start: toClock(minutes) } : { date: today };
+}
+
+/** With time tracking on, the plan a task ticked off now ends with: today's, started and not yet ended. */
+export function trackedEnd(owner: OwnerRow, task: { plan_date: string | null; plan_start: string | null; plan_end: string | null }, today: string, minutes: number): Plan | null {
+  if (owner.track_time !== true || task.plan_date !== today || !task.plan_start || task.plan_end) return null;
+  const start = clockMinutes(task.plan_start);
+  const end = Math.min(24 * 60 - 1, Math.max(minutes, start + 1));
+  if (end <= start) return null;
+  return { date: today, start: task.plan_start, end: toClock(end) };
+}
+
+/** Writes down when a task ticked off in Telegram ended, before the tick itself is queued. */
+async function endTracked(ctx: Ctx, task: TaskRow): Promise<void> {
+  const clock = localNow(ctx.owner.timezone, ctx.deps.now());
+  const plan = trackedEnd(ctx.owner, task, clock.date, clock.minutes);
+  if (!plan) return;
+  await ctx.deps.store.patchTask(task.key, { plan_end: plan.end ?? null });
+  const payload: PlanPayload = { key: task.key, plan };
+  await ctx.deps.store.addCommand('plan', payload);
+}
+
 // ── A new task ─────────────────────────────────────────────────────────────
 
 /** Makes a task and queues it for the notes, as if it had been typed in. `warning` says what was left out. */
@@ -893,6 +926,13 @@ async function createTask(ctx: Ctx, spec: NewTask): Promise<{ row: TaskRow; warn
     if (at.getTime() >= now.getTime()) remindAt = at.toISOString();
   }
 
+  // The task is made for the day it is planned, reminded or due on (else today), and written into that day's note.
+  const day = spec.plan?.date ?? remind?.date ?? spec.deadline ?? clock.date;
+  // Without a plan of its own it is planned for today, the day it was made, as the plugin plans a new
+  // task typed into the notes; with time tracking on, it starts at this moment.
+  const plan = spec.plan ?? autoPlanFor(owner, clock.date, clock.minutes);
+  const tracked = !spec.plan && !!plan?.start;
+
   const key = `tg:${crypto.randomUUID()}`;
   const row = await ctx.deps.store.insertTask({
     key,
@@ -900,9 +940,9 @@ async function createTask(ctx: Ctx, spec: NewTask): Promise<{ row: TaskRow; warn
     status: 'open',
     priority: spec.priority ?? null,
     deadline: spec.deadline ?? null,
-    plan_date: spec.plan?.date ?? null,
-    plan_start: spec.plan?.start ?? null,
-    plan_end: spec.plan?.end ?? null,
+    plan_date: plan?.date ?? null,
+    plan_start: plan?.start ?? null,
+    plan_end: plan?.end ?? null,
     remind_at: remindAt,
     tags: spec.tags,
     repeat: spec.repeat ?? null,
@@ -914,12 +954,11 @@ async function createTask(ctx: Ctx, spec: NewTask): Promise<{ row: TaskRow; warn
     origin: 'telegram',
     pending: true,
   });
-  // The task is made for the day it is planned, reminded or due on (else today), and written into that day's note.
-  const day = spec.plan?.date ?? remind?.date ?? spec.deadline ?? clock.date;
   const payload: AddPayload = { key, day, title: spec.title, tags: spec.tags };
   if (spec.priority) payload.priority = spec.priority;
   if (spec.deadline) payload.deadline = spec.deadline;
-  if (spec.plan) payload.plan = spec.plan;
+  if (plan) payload.plan = plan;
+  if (tracked) payload.tracked = true;
   if (remind) payload.remind = remind;
   if (spec.parent) payload.parent = spec.parent.key;
   await ctx.deps.store.addCommand('add', payload);
@@ -1196,6 +1235,7 @@ function effectsFor(ctx: Ctx): Effects {
     },
     edit: (task, fields, patch) => saveEdit(ctx, task, fields, patch),
     setStatus: async (task, status) => {
+      if (status === 'done') await endTracked(ctx, task);
       await ctx.deps.store.patchTask(task.key, { status });
       const payload: StatusPayload = { key: task.key, status };
       await ctx.deps.store.addCommand('status', payload);
@@ -1420,6 +1460,7 @@ async function markDone(n: number, ctx: Ctx): Promise<void> {
   const { w, owner } = ctx;
   const task = await ctx.deps.store.taskByN(n);
   if (!task || !isOpen(task.status)) return ctx.deps.tg.send(ctx.chatId, w.noSuchTask(digits(n, owner.language)));
+  await endTracked(ctx, task);
   await ctx.deps.store.patchTask(task.key, { status: 'done' });
   const payload: StatusPayload = { key: task.key, status: 'done' };
   await ctx.deps.store.addCommand('status', payload);
@@ -1691,6 +1732,7 @@ async function saveEdit(ctx: Ctx, task: TaskRow, fields: Omit<EditPayload, 'key'
 
 /** Closes a task as done or as not done; either way it leaves the open lists once the notes have it. */
 async function closeTask(task: TaskRow, status: 'done' | 'failed', ctx: Ctx): Promise<void> {
+  if (status === 'done') await endTracked(ctx, task);
   await ctx.deps.store.patchTask(task.key, { status });
   const payload: StatusPayload = { key: task.key, status };
   await ctx.deps.store.addCommand('status', payload);
@@ -1863,6 +1905,7 @@ async function route(data: string, ctx: Ctx): Promise<void> {
         ctx.toast = w.noSuchTask(digits(rawN, owner.language));
         return;
       }
+      await endTracked(ctx, task);
       await store.patchTask(task.key, { status: 'done' });
       const payload: StatusPayload = { key: task.key, status: 'done' };
       await store.addCommand('status', payload);

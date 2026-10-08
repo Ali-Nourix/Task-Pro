@@ -26,6 +26,8 @@ export interface SyncHost {
   defaults(): ReminderDefaults;
   /** The tags defined in the settings, for the bot to list. */
   definedTags?(): ReadonlyArray<{ key: string; name: string }>;
+  /** The planning settings, so that tasks made in Telegram are planned there as they would be in the notes. */
+  planning?(): { autoPlan: boolean; trackTime: boolean };
   post(url: string, token: string, body: unknown): Promise<Reply>;
   apply: ApplyHost;
   save(): Promise<void>;
@@ -132,6 +134,7 @@ export class TelegramSync {
         acks: sentAcks,
         snapshot: json === this.lastUploaded ? undefined : snapshot,
         tags: tagsJson === this.lastTags ? undefined : catalog,
+        planning: this.host.planning?.(),
       });
       this.lastUploaded = json;
       this.lastTags = tagsJson;

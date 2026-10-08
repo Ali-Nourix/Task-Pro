@@ -212,6 +212,9 @@ function notes(initial) {
   eq(later.error ?? null, null, 'and a later change finds the task by the key Telegram gave it');
   const [fresh] = await applyCommands([{ id: 'd4', kind: 'add', payload: { key: 'tg:4', day: '2026-11-01', title: 'Next month', tags: [] } }], host);
   eq([fresh.key, files.has('Daily/2026-11-01.md')], ['Daily/2026-11-01.md|Next month|0', true], 'a day with no note yet gets one');
+  const started = [];
+  await applyCommands([{ id: 'd6', kind: 'add', payload: { key: 'tg:6', day: '2026-10-12', title: 'Tracked', tags: [], plan: { date: '2026-10-12', start: '15:30' }, tracked: true } }], { ...host, trackedStart: (...args) => started.push(args) });
+  eq([files.get('Daily/2026-10-12.md').at(-1), started], ['- [ ] Tracked @schedule(2026-10-12 15:30)', [['Daily/2026-10-12.md', '2026-10-12', '15:30']]], 'a start Telegram tracked is written, and named so that it is not announced as starting now');
   const [broken] = await applyCommands([{ id: 'd5', kind: 'add', payload: { key: 'tg:5', day: '2026-10-12', title: 'Nope', tags: [] } }], { ...host, addTaskOnDay: async () => null });
   eq(broken.error, "the day's note could not be written", 'a day’s note that cannot be written says so rather than falling back silently');
 }
@@ -271,6 +274,7 @@ eq([syncEndpoint('https://abc.supabase.co'), syncEndpoint('https://abc.supabase.
     settings: () => settings,
     tasks: () => n.host.tasks(),
     defaults: () => defaults,
+    planning: () => ({ autoPlan: true, trackTime: false }),
     post: async (url, token, body) => {
       posts.push({ url, token, body });
       if (token !== 'secret') return { status: 403, json: { ok: false } };
@@ -292,6 +296,7 @@ eq([syncEndpoint('https://abc.supabase.co'), syncEndpoint('https://abc.supabase.
   eq([outcome.ok, outcome.applied], [true, 0], 'a first sync reports the notes');
   eq(posts[0].body.tags, [], 'the tags the notes know go up with it (none yet here)');
   eq(posts[0].url, 'https://abc.supabase.co/functions/v1/sync', 'to the sync function');
+  eq([posts[0].body.planning, store.owner.auto_plan ?? true, store.owner.track_time ?? false], [{ autoPlan: true, trackTime: false }, true, false], 'and the planning settings, for tasks made in Telegram');
   eq(store.tasks.map((t) => t.title).sort(), ['Existing', 'Report'], 'and the bot knows the open tasks');
   eq(store.tasks.find((t) => t.title === 'Report').remind_at, local(2026, 10, 3, 10, 50), 'with a reminder ten minutes before the plan');
 
@@ -336,7 +341,7 @@ eq([syncEndpoint('https://abc.supabase.co'), syncEndpoint('https://abc.supabase.
   const waiting = await store.pendingCommands();
   eq([waiting.at(-1).payload.parent, store.tasks.find((t) => t.title === 'Book flights').parent_key], [waiting[0].payload.key, waiting[0].payload.key], 'the subtask is queued under its task, and shown under it at once');
   outcome = await sync.syncNow();
-  eq(n.text('Inbox.md').split('\n').slice(-2), ['- [ ] Plan the trip', '\t- [ ] Book flights'], 'in the note it is indented under its task');
+  eq(n.text('Inbox.md').split('\n').slice(-2), ['- [ ] Plan the trip @schedule(2026-10-02)', '\t- [ ] Book flights @schedule(2026-10-02)'], 'in the note it is indented under its task (both planned for the day they were made)');
   const trip = store.tasks.find((t) => t.title === 'Plan the trip');
   const flights = store.tasks.find((t) => t.title === 'Book flights');
   eq([flights.key, flights.parent_key, trip.key, [trip.subs_done, trip.subs_total]], ['Inbox.md|Book flights|0', 'Inbox.md|Plan the trip|0', 'Inbox.md|Plan the trip|0', [0, 1]], 'and after the sync the bot has both under their note keys, the count from the notes');

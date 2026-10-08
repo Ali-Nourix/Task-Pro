@@ -2,6 +2,22 @@
 
 ## 1.5.0 - A calendar and a timeline to plan your days on, and a board that fits a phone
 
+### Tasks planned by themselves, in the notes and in Telegram
+
+- **Plan new tasks for today** (Settings → Calendar, on by default): a task you
+  type without a plan is planned for the day it was written, so the calendar and
+  the bot's lists show it there.
+- **Track start and end time** (off by default): the plan starts at the moment the
+  task was written and ends when it is ticked off that day (at least a minute).
+  No «starts now» reminder is shown for a start written this way.
+- **Telegram does the same at once**: the plugin sends both settings with each
+  sync, and a task made in the bot is planned (and started) the moment it is made
+  there, and ended the moment it is ticked off there, not when the notes next
+  sync. The bot's database learns two settings (`20261010000000_task_timing.sql`);
+  the functions add them themselves on first use after `update-bot.bat`.
+- **Long chip rows scroll** sideways with a fade at the edges, instead of
+  wrapping under the task.
+
 ### The phone, rebuilt: a frame, quick add, light rows, accessibility
 
 - **A frame made for a thumb**: a slim top bar, the layouts as tabs along the

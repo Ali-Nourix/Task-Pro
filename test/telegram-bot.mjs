@@ -521,7 +521,7 @@ async function paired() {
   const fs = await import('fs');
   const read = (name) => fs.readFileSync(new URL(`../supabase/migrations/${name}`, import.meta.url), 'utf8');
   const code = (text) => text.split('\n').filter((line) => !line.startsWith('--')).join(' ').replace(/\s+/g, ' ').trim();
-  eq(code(mod.TASK_SETTINGS_SQL), code(read('20261003000000_task_settings.sql') + '\n' + read('20261004000000_subtasks.sql') + '\n' + read('20261005000000_rich_messages.sql') + '\n' + read('20261006000000_message_width.sql') + '\n' + read('20261007000000_tags.sql') + '\n' + read('20261008000000_ai_assistant.sql') + '\n' + read('20261009000000_digests_and_planning.sql')), 'the update the functions run is the migration files, in order');
+  eq(code(mod.TASK_SETTINGS_SQL), code(read('20261003000000_task_settings.sql') + '\n' + read('20261004000000_subtasks.sql') + '\n' + read('20261005000000_rich_messages.sql') + '\n' + read('20261006000000_message_width.sql') + '\n' + read('20261007000000_tags.sql') + '\n' + read('20261008000000_ai_assistant.sql') + '\n' + read('20261009000000_digests_and_planning.sql') + '\n' + read('20261010000000_task_timing.sql')), 'the update the functions run is the migration files, in order');
 }
 
 // ── Every setting of a task ────────────────────────────────────────────────
@@ -1018,6 +1018,45 @@ async function paired() {
   eq(await tick(), 1, 'a reminder six minutes late is still sent (the phone may have been off)');
   await w.sync({ snapshot: [{ key: 'A.md|^a|0', title: 'Soon', status: 'open', remind_at: '2026-10-03T05:30:00Z' }, { key: 'A.md|^e|0', title: 'Missed', status: 'open', remind_at: '2026-10-03T05:00:00Z' }] });
   eq(await tick(), 0, 'one forty minutes late is let go');
+}
+
+// ── Planned by itself, as in the notes ─────────────────────────────────────
+{
+  // Friday 2 October 2026, 15:30 in Tehran.
+  const w = await paired();
+  await w.say('Call mum');
+  const add = () => w.store.commands.filter((c) => c.kind === 'add').at(-1).payload;
+  eq([w.store.tasks.at(-1).plan_date, w.store.tasks.at(-1).plan_start, add().plan, add().tracked], ['2026-10-02', null, { date: '2026-10-02' }, undefined], 'a task made in Telegram is planned for today at once, as one typed into the notes is');
+  await w.say('Dentist tomorrow 9');
+  eq(add().plan, { date: '2026-10-03', start: '09:00' }, 'a plan of its own is kept');
+
+  await w.sync({ planning: { autoPlan: false, trackTime: false } });
+  eq([w.store.owner.auto_plan, w.store.owner.track_time ?? false], [false, false], 'the plugin’s planning settings come with the sync');
+  await w.say('Water the plants');
+  eq([w.store.tasks.at(-1).plan_date, add().plan], [null, undefined], 'with planning off, a new task is left unplanned');
+
+  await w.sync({ planning: { autoPlan: true, trackTime: true } });
+  await w.say('Write the report');
+  const report = w.store.tasks.at(-1);
+  eq([report.plan_date, report.plan_start, report.plan_end, report.remind_at, add().plan, add().tracked], ['2026-10-02', '15:30', null, null, { date: '2026-10-02', start: '15:30' }, true], 'with time tracking on, it starts the moment it is made, without a reminder for that');
+  w.state.now = new Date('2026-10-02T13:15:00Z');
+  await w.press(`done:${report.n}`);
+  const queued = w.store.commands.slice(-2);
+  eq(queued.map((c) => c.kind), ['plan', 'status'], 'ticked off in Telegram, the end is queued before the tick');
+  eq([queued[0].payload.plan, w.store.tasks.find((t) => t.key === report.key).plan_end], [{ date: '2026-10-02', start: '15:30', end: '16:45' }, '16:45'], 'ending at that moment');
+
+  await w.say('Quick one');
+  const quick = w.store.tasks.at(-1);
+  await w.press(`done:${quick.n}`);
+  eq(w.store.commands.filter((c) => c.kind === 'plan').at(-1).payload.plan, { date: '2026-10-02', start: '16:45', end: '16:46' }, 'a task done within the minute lasts one minute');
+
+  await w.sync({ snapshot: [{ key: 'B.md|^b|0', title: 'Planned before', status: 'open', plan_date: '2026-10-01', plan_start: '10:00' }] });
+  const old = w.store.tasks.find((t) => t.key === 'B.md|^b|0');
+  const before = w.store.commands.length;
+  await w.press(`done:${old.n}`);
+  eq(w.store.commands.slice(before).map((c) => c.kind), ['status'], 'a task planned for another day is only ticked off');
+  await w.sync({ planning: { autoPlan: true } });
+  eq([w.store.owner.auto_plan, w.store.owner.track_time], [true, true], 'a setting the sync does not name is left as it is');
 }
 
 console.log(`TELEGRAM_BOT_OK (${checked} checks)`);

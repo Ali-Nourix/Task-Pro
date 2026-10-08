@@ -256,10 +256,10 @@ const plain = (html) => html.replace(/<[^>]+>/g, '');
   await w.say('چند کار');
   eq(w.store.tasks.map((t) => [t.title, t.plan_date, t.plan_start, t.remind_at]), [
     ['سررسید مالیات', '2026-10-17', null, null],
-    ['بدون روز درست', null, null, null],
+    ['بدون روز درست', '2026-10-02', null, null],
     ['دارو', '2026-10-03', '08:00', '2026-10-03T04:20:00.000Z'],
-    ['ورزش', null, null, null],
-  ], 'a Jalali day is converted, a day or hour that cannot be read is left out, a reminder in the past is dropped (the plan’s own reminder stays)');
+    ['ورزش', '2026-10-02', null, null],
+  ], 'a Jalali day is converted, a day or hour that cannot be read is left out (the task is planned for today, the day it was made), a reminder in the past is dropped (the plan’s own reminder stays)');
   eq([w.store.tasks[3].repeat, w.store.tasks[3].tags, w.store.tasks[3].deadline], ['1w', ['health'], '2026-10-30'], 'a repeat, tags without repeats, and a deadline');
   eq(w.store.commands.filter((c) => c.kind === 'edit').map((c) => c.payload.repeat), ['1w'], 'the repeat is queued as the edit it is');
   const text = plain(w.last().text);
@@ -359,7 +359,7 @@ const plain = (html) => html.replace(/<[^>]+>/g, '');
   const ai = scripted(says('', call('add_task', { title: 'سال غلط', plan_date: '2025-10-03' }), call('add_task', { title: 'خیلی دور', deadline: '2040-01-01' }), call('add_task', { title: 'دیروز', plan_date: '2026-10-01' })), says('', call('set_status', { n: '۱', status: 'doing' })));
   const w = await paired(ai);
   await w.say('سه چیز');
-  eq(w.store.tasks.map((t) => [t.title, t.plan_date, t.deadline]), [['سال غلط', null, null], ['خیلی دور', null, null], ['دیروز', '2026-10-01', null]], 'a day a year back or years ahead is a slip and is left out; yesterday is fine');
+  eq(w.store.tasks.map((t) => [t.title, t.plan_date, t.deadline]), [['سال غلط', '2026-10-02', null], ['خیلی دور', '2026-10-02', null], ['دیروز', '2026-10-01', null]], 'a day a year back or years ahead is a slip and is left out (the task is planned for today instead); yesterday is fine');
   eq(plain(w.last().text).includes('2025-10-03') && plain(w.last().text).includes('2040-01-01'), true, 'and named');
   w.deps.ai = scripted(says('', call('set_status', { n: '۱', status: 'doing' })), says(''));
   await w.say('شروع کردم');
@@ -570,7 +570,7 @@ const plain = (html) => html.replace(/<[^>]+>/g, '');
   await w.say('درس را به مرحله بشکن');
   eq(ai.asked[0][0].content.includes('#2 Already a step — subtask of «Prepare for the exam»') && ai.asked[0][0].content.includes('To break a task into steps'), true, 'the model is shown which tasks are subtasks, and how to break one into steps');
   const steps = w.store.tasks.filter((t) => t.origin === 'telegram');
-  eq(steps.map((t) => [t.title, t.parent_key, t.parent_title, t.plan_date]), [['Read chapters 1–3', 'A.md|^1|0', 'Prepare for the exam', null], ['Solve past papers', 'A.md|^1|0', 'Prepare for the exam', '2026-10-04']], 'each step is a subtask of the task, Persian digits in its number understood');
+  eq(steps.map((t) => [t.title, t.parent_key, t.parent_title, t.plan_date]), [['Read chapters 1–3', 'A.md|^1|0', 'Prepare for the exam', '2026-10-02'], ['Solve past papers', 'A.md|^1|0', 'Prepare for the exam', '2026-10-04']], 'each step is a subtask of the task, Persian digits in its number understood');
   eq(w.store.commands.map((c) => [c.kind, c.payload.parent ?? null]), [['add', 'A.md|^1|0'], ['add', 'A.md|^1|0']], 'queued to be written under it');
   eq([w.store.tasks[0].subs_total, w.store.tasks[0].subs_done], [2, 0], 'and its count shows them at once');
   const text = plain(w.last().text);
