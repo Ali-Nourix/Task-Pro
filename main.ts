@@ -763,6 +763,7 @@ export default class TaskProPlugin extends Plugin {
       tasks: () => (this.taskStore.isLoaded ? this.syncableTasks() : null),
       defaults: () => ({ enabled: this.settings.reminders.planReminders, leadMinutes: this.settings.reminders.planLeadMinutes }),
       definedTags: () => this.settings.tags,
+      planning: () => ({ autoPlan: this.settings.autoPlanNewTasks, trackTime: this.settings.autoTrackTaskTime }),
       post: async (url, token, body) => {
         const response = await requestUrl({
           url,
@@ -786,6 +787,7 @@ export default class TaskProPlugin extends Plugin {
         appendLine: (path, line) => this.appendTaskLine(path, line),
         dayTarget: (day) => this.dayNoteTarget(day, this.settings.board.calendarSystem ?? this.settings.calendarSystem).path || null,
         addTaskOnDay: (day, line) => this.addTaskOnDay(day, line, this.settings.board.calendarSystem ?? this.settings.calendarSystem),
+        trackedStart: (path, date, start) => void this.autoTimedPlans.add(`${path}|${date} ${start}`),
         insertChild: (parent, line) => this.insertTaskNear(this.boardTaskRef(parent), line, 'child'),
         setStatus: (task, status) => this.setTaskStatusFor(this.boardTaskRef(task), status),
         setRemind: (task, value) => this.setTaskRemindFor(this.boardTaskRef(task), value),

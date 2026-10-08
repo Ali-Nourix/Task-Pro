@@ -243,7 +243,7 @@ supabase secrets set CF_ACCOUNT_ID='...' CF_API_TOKEN='...'
 همین. توابع خودشان دیتابیس را هم به‌روز می‌کنند (ستون و نوع تغییرِ تازه)، پس لازم نیست
 SQL اجرا کنی. فقط اگر ربات گفت «ویرایش کامل هنوز آماده نیست» و چند ثانیه بعد هم درست
 نشد، محتوای فایل‌های `supabase/migrations/20261003000000_task_settings.sql`،
-`20261004000000_subtasks.sql` و `20261005000000_rich_messages.sql` و `20261006000000_message_width.sql` و `20261007000000_tags.sql` و `20261008000000_ai_assistant.sql` و `20261009000000_digests_and_planning.sql` را به ترتیب در Supabase ← SQL Editor اجرا کن (چند بار
+`20261004000000_subtasks.sql` و `20261005000000_rich_messages.sql` و `20261006000000_message_width.sql` و `20261007000000_tags.sql` و `20261008000000_ai_assistant.sql` و `20261009000000_digests_and_planning.sql` و `20261010000000_task_timing.sql` را به ترتیب در Supabase ← SQL Editor اجرا کن (چند بار
 اجرا شدنشان ضرری ندارد).
 
 پلاگین Obsidian را هم به‌روز کن (`main.js` را جایگزین کن و یک بار پلاگین را خاموش و روشن کن)
