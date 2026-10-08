@@ -17,7 +17,8 @@
 import { App, TFile } from 'obsidian';
 import { isWithinTargetFolder } from './path-utils';
 import { taskKeysInContent } from './task-identity';
-import { freshTaskKeys } from './auto-plan';
+import { completedTaskKeys, freshTaskKeys, taskStatuses } from './auto-plan';
+import type { TaskStatus } from './types';
 import { TaskCreationRegistry } from './task-registry';
 
 /** Waits for typing to settle before re-indexing a note. */
@@ -33,6 +34,14 @@ export interface TaskIndexServiceOptions {
    * it (not old tasks whose text changed, and never on the startup pass).
    */
   onNewTasks?: (file: TFile, keys: string[]) => void;
+  /** Called after an edit to a note with the tasks that were just ticked off in it. */
+  onTasksDone?: (file: TFile, keys: string[]) => void;
+}
+
+/** What one pass over a note found: the tasks just written into it, and the ones just ticked off. */
+export interface IndexChanges {
+  fresh: string[];
+  done: string[];
 }
 
 export class TaskIndexService {
@@ -40,6 +49,8 @@ export class TaskIndexService {
   private stopped = false;
   /** The task keys each note held at its last pass, to tell new tasks from edited ones. */
   private readonly lastKeys = new Map<string, Set<string>>();
+  /** The status each task had at its note's last pass, to see a task being ticked off. */
+  private readonly lastStatuses = new Map<string, Map<string, TaskStatus>>();
 
   constructor(private readonly options: TaskIndexServiceOptions) {}
 
@@ -80,25 +91,30 @@ export class TaskIndexService {
 
   /**
    * Indexes a single note. Read failures are logged, never swallowed.
-   * Resolves the tasks that were just written into the note, see
-   * {@link freshTaskKeys}; empty the first time a note is seen.
+   * Resolves the tasks that were just written into the note (see
+   * {@link freshTaskKeys}) and the ones just ticked off; both empty the first
+   * time a note is seen.
    */
-  async indexFile(file: TFile, now: number = Date.now()): Promise<string[]> {
-    if (!this.isTracked(file)) return [];
+  async indexFile(file: TFile, now: number = Date.now()): Promise<IndexChanges> {
+    const none: IndexChanges = { fresh: [], done: [] };
+    if (!this.isTracked(file)) return none;
 
     let content: string;
     try {
       content = await this.app.vault.cachedRead(file);
     } catch (error) {
       console.error(`TaskPro: failed to read "${file.path}" while indexing task ages`, error);
-      return [];
+      return none;
     }
 
     const keys = taskKeysInContent(file.path, content);
     const appeared = this.registry.indexFile(file.path, file.stat.ctime, keys, now);
     const fresh = freshTaskKeys(this.lastKeys.get(file.path), keys, appeared);
     this.lastKeys.set(file.path, new Set(keys));
-    return fresh;
+    const statuses = taskStatuses(file.path, content);
+    const done = completedTaskKeys(this.lastStatuses.get(file.path), statuses);
+    this.lastStatuses.set(file.path, statuses);
+    return { fresh, done };
   }
 
   /**
@@ -118,8 +134,10 @@ export class TaskIndexService {
       setTimeout(() => {
         this.timers.delete(file.path);
         void this.indexFile(file)
-          .then((fresh) => {
-            if (reportNew && fresh.length && !this.stopped) this.options.onNewTasks?.(file, fresh);
+          .then(({ fresh, done }) => {
+            if (!reportNew || this.stopped) return;
+            if (fresh.length) this.options.onNewTasks?.(file, fresh);
+            if (done.length) this.options.onTasksDone?.(file, done);
           })
           .then(() => this.registry.flush());
       }, INDEX_DEBOUNCE_MS)
@@ -129,6 +147,7 @@ export class TaskIndexService {
   handleFileRenamed(file: TFile, oldPath: string): void {
     this.registry.renameFile(oldPath, file.path);
     this.lastKeys.delete(oldPath);
+    this.lastStatuses.delete(oldPath);
     // Re-index under the new path so text-hashed keys line up again.
     void this.indexFile(file).then(() => this.registry.flush());
   }
@@ -142,6 +161,7 @@ export class TaskIndexService {
 
     this.registry.forgetFile(filePath);
     this.lastKeys.delete(filePath);
+    this.lastStatuses.delete(filePath);
     void this.registry.flush();
   }
 

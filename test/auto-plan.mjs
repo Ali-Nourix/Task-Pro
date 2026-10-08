@@ -6,7 +6,7 @@ import * as esbuild from 'esbuild';
 
 const build = await esbuild.build({
   stdin: {
-    contents: `export { localDayKey, planLineIfNew, planNewTasksInContent, freshTaskKeys } from "../src/auto-plan";
+    contents: `export { localDayKey, localClock, planLineIfNew, planNewTasksInContent, freshTaskKeys, finishLineIfDone, taskStatuses, completedTaskKeys } from "../src/auto-plan";
 export { parseTaskLine, taskKeyFor } from "../src/task-identity";
 export { TaskCreationRegistry } from "../src/task-registry";`,
     resolveDir: new URL('.', import.meta.url).pathname,
@@ -19,7 +19,7 @@ export { TaskCreationRegistry } from "../src/task-registry";`,
 });
 
 const mod = await import('data:text/javascript;base64,' + Buffer.from(build.outputFiles[0].text).toString('base64'));
-const { localDayKey, planLineIfNew, planNewTasksInContent, freshTaskKeys, parseTaskLine, taskKeyFor, TaskCreationRegistry } = mod;
+const { localDayKey, localClock, finishLineIfDone, taskStatuses, completedTaskKeys, planLineIfNew, planNewTasksInContent, freshTaskKeys, parseTaskLine, taskKeyFor, TaskCreationRegistry } = mod;
 
 let checked = 0;
 const eq = (actual, expected, label) => {
@@ -79,5 +79,23 @@ const registry = new TaskCreationRegistry({ getIndex: () => index, setIndex: (ne
 eq(registry.indexFile(path, 0, ['k1'], 1000), [], 'first pass: baseline, nothing reported');
 eq(registry.indexFile(path, 0, ['k1', 'k2'], 2000), ['k2'], 'a later pass reports the new key');
 eq(registry.indexFile(path, 0, ['k1', 'k2'], 3000), [], 'a known key is not reported again');
+
+// ── start and end time ─────────────────────────────────────────────────────
+eq(localClock(new Date(2026, 9, 8, 9, 5)), '09:05', 'clock is padded');
+eq(planLineIfNew(plain, path, new Set([keyOf(plain)]), day, '09:12'), '- [ ] Buy milk @schedule(2026-10-08 09:12)', 'a new task starts when it is written');
+const timed = '- [x] Buy milk @schedule(2026-10-08 09:12)';
+eq(finishLineIfDone(timed, path, new Set([keyOf(timed)]), day, '10:40'), '- [x] Buy milk @schedule(2026-10-08 09:12-10:40)', 'ticking it off ends the plan');
+eq(finishLineIfDone(timed, path, new Set([keyOf(timed)]), day, '09:12'), '- [x] Buy milk @schedule(2026-10-08 09:12-09:13)', 'same minute: one minute long');
+eq(finishLineIfDone(timed, path, new Set([keyOf(timed)]), '2026-10-09', '10:40'), null, 'ticked off on another day: left alone');
+const ended = '- [x] Buy milk @schedule(2026-10-08 09:00-09:30)';
+eq(finishLineIfDone(ended, path, new Set([keyOf(ended)]), day, '10:40'), null, 'a plan with an end keeps it');
+const dayOnly = '- [x] Buy milk @schedule(2026-10-08)';
+eq(finishLineIfDone(dayOnly, path, new Set([keyOf(dayOnly)]), day, '10:40'), null, 'a plan with no start gets no end');
+const openTimed = '- [ ] Buy milk @schedule(2026-10-08 09:12)';
+eq(finishLineIfDone(openTimed, path, new Set([keyOf(openTimed)]), day, '10:40'), null, 'an open task is not ended');
+const before = taskStatuses(path, '- [ ] A\n- [/] B\n- [x] C\n- [!] D');
+const after = taskStatuses(path, '- [x] A\n- [x] B\n- [x] C\n- [x] D');
+eq(completedTaskKeys(before, after), [keyOf('- [ ] A'), keyOf('- [ ] B')], 'open and in-progress tasks ticked off');
+eq(completedTaskKeys(undefined, after), [], 'nothing known before: nothing reported');
 
 console.log(`AUTO_PLAN_OK (${checked} checks)`);

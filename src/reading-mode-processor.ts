@@ -2,6 +2,7 @@
 // MarkdownPostProcessor for Reading Mode badges with localization support
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { makeChipRowScrollable } from './ui/chip-scroll';
 import { App, MarkdownPostProcessorContext } from 'obsidian';
 import {
   TaskStatus,
@@ -375,6 +376,7 @@ function createInteractiveBadgeContainer(
   const container = document.createElement('span');
   container.className = 'taskpro-badge-container';
   applyChipScale(container, settings.badgeSize);
+  makeChipRowScrollable(container);
 
   if (blockId) {
     container.setAttribute('data-block-id', blockId);
