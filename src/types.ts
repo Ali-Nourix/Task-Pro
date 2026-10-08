@@ -569,6 +569,11 @@ export interface TaskProSettings {
    * `@schedule(YYYY-MM-DD)`, so the calendar and the Telegram bot show it.
    */
   autoPlanNewTasks: boolean;
+  /**
+   * A new task's plan starts at the moment it was written, and ends at the
+   * moment it is ticked off: `@schedule(YYYY-MM-DD 09:12-10:40)`.
+   */
+  autoTrackTaskTime: boolean;
   /** On a touch screen, two fingers pulled down anywhere in Obsidian open the task board. */
   boardGesture: boolean;
   /** User-defined tags: key written into notes, name and colour kept here. */
@@ -618,6 +623,7 @@ export const DEFAULT_SETTINGS: TaskProSettings = {
   showWaitingBadges: true,
   propertySuggest: true,
   autoPlanNewTasks: true,
+  autoTrackTaskTime: false,
   boardGesture: true,
   tags: [],
   board: DEFAULT_BOARD_PREFERENCES,
