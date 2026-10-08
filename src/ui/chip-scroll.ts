@@ -12,6 +12,9 @@ const SCROLLER_CLASS = 'taskpro-chip-scroll';
 const FADE_START = 'is-fade-left';
 const FADE_END = 'is-fade-right';
 
+/** How much of the remaining distance a glide covers each frame: an ease-out. */
+const EASE = 0.2;
+
 const cleanups = new WeakMap<HTMLElement, () => void>();
 
 /** Which sides have chips beyond the visible part. Works for either writing direction. */
@@ -51,24 +54,68 @@ export function makeChipRowScrollable(row: HTMLElement): void {
     });
   };
 
-  // A vertical wheel scrolls the row sideways, but only while there is room
-  // to go that way, so the note still scrolls once the row reaches its end.
+  // A wheel scrolls the row sideways with an eased glide rather than in
+  // notches: each turn moves a target, and the row eases towards it frame by
+  // frame. Only while there is room to go that way, so the note still scrolls
+  // once the row reaches its end. A trackpad's own sideways swipe is already
+  // smooth and is left to the browser.
+  let target: number | null = null;
+  let glide = 0;
+  const range = (): [number, number] => {
+    // Where the row can scroll to depends on its direction (row-reverse, RTL),
+    // so the two ends are read rather than assumed.
+    const at = row.scrollLeft;
+    row.scrollLeft = -1e7;
+    const min = row.scrollLeft;
+    row.scrollLeft = 1e7;
+    const max = row.scrollLeft;
+    row.scrollLeft = at;
+    return [min, max];
+  };
+  const step = () => {
+    if (target === null) return void (glide = 0);
+    const current = row.scrollLeft;
+    const gap = target - current;
+    if (Math.abs(gap) < 0.5) {
+      row.scrollLeft = target;
+      target = null;
+      glide = 0;
+      schedule();
+      return;
+    }
+    // At least a pixel a frame, so the last of the glide is not lost to rounding.
+    const move = Math.sign(gap) * Math.min(Math.abs(gap), Math.max(1, Math.abs(gap) * EASE));
+    row.scrollLeft = current + move;
+    // A row that cannot move any further (resized, end reached) stops gliding.
+    if (row.scrollLeft === current) {
+      target = null;
+      glide = 0;
+      return;
+    }
+    glide = requestAnimationFrame(step);
+  };
   const onWheel = (event: WheelEvent) => {
     if (event.ctrlKey || Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
-    const max = row.scrollWidth - row.clientWidth;
-    if (max <= 1 || !event.deltaY) return;
-    const before = row.scrollLeft;
-    row.scrollLeft += event.deltaY;
-    if (row.scrollLeft !== before) {
-      event.preventDefault();
-      schedule();
+    if (row.scrollWidth - row.clientWidth <= 1 || !event.deltaY) return;
+    const delta = event.deltaMode === 1 ? event.deltaY * 16 : event.deltaMode === 2 ? event.deltaY * row.clientWidth : event.deltaY;
+    const [min, max] = range();
+    const from = target ?? row.scrollLeft;
+    const next = Math.min(max, Math.max(min, from + delta));
+    if (Math.abs(next - from) < 0.5) return;
+    event.preventDefault();
+    if (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      row.scrollLeft = next;
+      return;
     }
+    target = next;
+    if (!glide) glide = requestAnimationFrame(step);
   };
 
   // Keyboard focus moving onto a chip that is out of view brings it in.
   const onFocus = (event: FocusEvent) => {
     const target = event.target as HTMLElement | null;
-    target?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+    const reduce = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    target?.scrollIntoView?.({ block: 'nearest', inline: 'nearest', behavior: reduce ? 'auto' : 'smooth' });
     schedule();
   };
 
@@ -83,6 +130,7 @@ export function makeChipRowScrollable(row: HTMLElement): void {
 
   cleanups.set(row, () => {
     if (frame) cancelAnimationFrame(frame);
+    if (glide) cancelAnimationFrame(glide);
     row.removeEventListener('scroll', schedule);
     row.removeEventListener('wheel', onWheel);
     row.removeEventListener('focusin', onFocus);
