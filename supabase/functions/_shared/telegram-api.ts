@@ -62,6 +62,14 @@ export function telegramApi(token: string, options: { thinking?: 'text' | 'rich'
     if (!response.ok) throw new Error(`Telegram ${method}: ${response.status} ${(await response.text()).slice(0, 200)}`);
   };
 
+  /**
+   * The «Thinking…» draft still on screen in a chat. The answer is streamed into it first (the
+   * same draft id: Telegram animates the change) and then sent: the bubble grows into the answer
+   * where it stands instead of vanishing and a new one pushing the chat up.
+   */
+  const drafts = new Map<number, { id: number; at: number }>();
+  const DRAFT_LIFE_MS = 28_000;
+
   /** One try as a rich message, with the coloured buttons and without them. */
   const rich = async (method: string, body: Record<string, unknown>, content: Rich, buttons?: Button[][]) => {
     const hasStyle = needsNewest(buttons);
@@ -130,6 +138,11 @@ export function telegramApi(token: string, options: { thinking?: 'text' | 'rich'
       }
       // An answer to a message hangs from it, so with several in a row each finds its own.
       const reply = options?.replyTo ? { reply_parameters: { message_id: options.replyTo, allow_sending_without_reply: true } } : {};
+      const draft = drafts.get(chatId);
+      drafts.delete(chatId);
+      if (draft && options?.rich && Date.now() - draft.at < DRAFT_LIFE_MS && Date.now() >= richPausedUntil) {
+        await call('sendRichMessageDraft', { chat_id: chatId, draft_id: draft.id, rich_message: richBody(options.rich) }).catch(() => undefined);
+      }
       await show('sendRichMessage', 'sendMessage', { chat_id: chatId, ...reply }, text, buttons, options?.rich);
     },
     async edit(chatId: number, messageId: number, text: string, buttons?: Button[][], content?: Rich) {
@@ -150,7 +163,10 @@ export function telegramApi(token: string, options: { thinking?: 'text' | 'rich'
       // A draft lives for thirty seconds or until the bot sends a message, whichever is first.
       const draft_id = 1 + Math.floor(Math.random() * 2_000_000_000);
       try {
-        if (thinkingStyle === 'rich') await call('sendRichMessageDraft', { chat_id: chatId, draft_id, rich_message: { html } });
+        if (thinkingStyle === 'rich') {
+          await call('sendRichMessageDraft', { chat_id: chatId, draft_id, rich_message: { html } });
+          drafts.set(chatId, { id: draft_id, at: Date.now() });
+        }
         else await call('sendMessageDraft', { chat_id: chatId, draft_id, text: draftText(html) });
       } catch {
         await typing();

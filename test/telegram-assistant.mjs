@@ -200,7 +200,7 @@ const plain = (html) => html.replace(/<[^>]+>/g, '');
 
   eq(w.thought, [[7, '<tg-thinking>دارم فکر می‌کنم …</tg-thinking>']], 'while the model thinks the chat shows a «Thinking…» placeholder');
   eq(w.reacted, [[7, 101, '👀'], [7, 101, '👌']], 'and the message itself gets a glance at once, and a thumbs-up when the work is done');
-  eq(w.last().options.replyTo, 101, 'the answer hangs from the message it answers');
+  eq(w.last().options.replyTo, undefined, 'the answer is not hung from the message: a quote over it would push the chat up');
   const system = ai.asked[0][0].content;
   eq([ai.asked[0].map((m) => m.role), ai.asked[0][1].content], [['system', 'user'], 'فردا ساعت ۹ با سارا تماس بگیرم و عصر نان بخرم'], 'the model gets its instructions and the words as they were written');
   eq(system.includes('Friday 2026-10-02 (جمعه 10 مهر 1405), 15:30, time zone Asia/Tehran'), true, 'and is told today in the owner’s zone');
@@ -512,7 +512,7 @@ const plain = (html) => html.replace(/<[^>]+>/g, '');
   eq(w.store.tasks.map((t) => [t.n, t.title, t.plan_start]), [[1, 'کار 1', '09:00'], [2, 'کار 2', '10:00'], [3, 'کار 3', '11:00'], [4, 'کار 4', '12:00'], [5, 'کار 5', '13:00'], [6, 'کار 6', '14:00']], 'Apply makes them, numbered, as typed in');
   eq([w.store.commands.filter((c) => c.kind === 'add').length, w.store.owner.ai_pending], [6, null], 'queued for the notes, and the waiting plan is gone');
   const applied = w.edits.at(-1);
-  eq([plain(applied.text).startsWith('🤖 انجام شد'), plain(applied.text).includes('۱. کار 1'), w.data(applied).includes('ux:1.2.3.4.5.6')], [true, true, true], 'the same message becomes the card of what was done, with its undo');
+  eq([plain(applied.text).startsWith('✅ انجام شد'), plain(applied.text).includes('۱. کار 1'), w.data(applied).includes('ux:1.2.3.4.5.6')], [true, true, true], 'the same message becomes the card of what was done, with its undo');
   await w.press('ap');
   eq([w.store.tasks.length, w.toasts.at(-1)], [6, 'این پیشنهاد دیگر معتبر نیست؛ دوباره بخواه.'], 'a second tap does nothing twice');
 }
@@ -534,7 +534,7 @@ const plain = (html) => html.replace(/<[^>]+>/g, '');
   const patch = stuck.store.patchOwner.bind(stuck.store);
   stuck.store.patchOwner = async (p) => { if ('ai_pending' in p && p.ai_pending) throw new Error('column "ai_pending" does not exist'); return patch(p); };
   await stuck.say('پنج تا');
-  eq([stuck.store.tasks.length, plain(stuck.last().text).startsWith('🤖 انجام شد')], [5, true], 'where the plan cannot be kept it is done at once, as before');
+  eq([stuck.store.tasks.length, plain(stuck.last().text).startsWith('✅ انجام شد')], [5, true], 'where the plan cannot be kept it is done at once, as before');
 }
 {
   // The setting: always, only big jobs, never.
