@@ -89,6 +89,7 @@ import { displayTitle } from './src/board/board-text';
 import { descendantsOf, indexFamilies } from './src/calendar/calendar-items';
 import { RelationIndex, linkPathOf, newBlockId } from './src/board/task-relations';
 import { MoveContext, PreparedBlock, blockIdOf, blockIdsIn, linkAfterMove, prepareBlock, relinkWaiting } from './src/board/task-move';
+import { localDayKey, planLineIfNew, planNewTasksInContent } from './src/auto-plan';
 
 /**
  * A task as the editing API addresses it. `lineNumber` is a hint: it is used
@@ -183,6 +184,7 @@ export default class TaskProPlugin extends Plugin {
       app: this.app,
       registry: this.taskRegistry,
       getTargetFolder: () => this.settings.targetFolder,
+      onNewTasks: (file, keys) => void this.planNewTasks(file, keys),
     });
 
     this.taskStore = new TaskStore(
@@ -856,7 +858,7 @@ export default class TaskProPlugin extends Plugin {
       this.app.vault.on('modify', (file) => {
         if (file instanceof TFile) {
           this.handleFileModification(file);
-          this.taskIndexService.handleFileChanged(file);
+          this.taskIndexService.handleFileChanged(file, true);
         }
       })
     );
@@ -1369,6 +1371,11 @@ export default class TaskProPlugin extends Plugin {
 
   /** Writes a task line on a day. Resolves the note it went into, or null. */
   private async addTaskOnDay(day: string, line: string, system: CalendarSystem): Promise<string | null> {
+    // A task made on a day is planned for that day, so it is not planned for
+    // the day it was written on instead (see planNewTasks).
+    if (this.settings.autoPlanNewTasks && /^\d{4}-\d{2}-\d{2}$/.test(day) && !extractSchedule(line)) {
+      line = setSchedule(line, { date: day });
+    }
     try {
       if (this.settings.calendar.newTaskTarget === 'inbox') {
         const path = this.boardInboxPath();
@@ -2020,6 +2027,69 @@ export default class TaskProPlugin extends Plugin {
     const position = { line: index, ch: lines[index].length };
     view.editor.setCursor(position);
     view.editor.scrollIntoView({ from: position, to: position }, true);
+  }
+
+  /**
+   * Plans the tasks just written into a note for today, when they have no plan
+   * yet, so the calendar and the Telegram bot's weekly list show them on the
+   * day they were made. An open editor is changed in place, so the cursor
+   * stays where it is and nothing typed since the last save is lost.
+   */
+  private async planNewTasks(file: TFile, keys: string[]): Promise<void> {
+    if (!this.settings.autoPlanNewTasks || !keys.length) return;
+    const fresh = new Set(keys);
+    const day = localDayKey();
+    try {
+      const view = this.app.workspace
+        .getLeavesOfType('markdown')
+        .map((leaf) => leaf.view)
+        .find((candidate): candidate is MarkdownView => candidate instanceof MarkdownView && candidate.file?.path === file.path);
+      if (view && view.getMode() === 'source') {
+        const editor = view.editor;
+        // Only the part of a line that changes is replaced, and the cursor is
+        // put back where it was, so a task still being typed is not disturbed.
+        const selections = editor.listSelections();
+        const edits = new Map<number, { at: number; delta: number }>();
+        for (let index = 0; index < editor.lineCount(); index++) {
+          const line = editor.getLine(index);
+          const next = planLineIfNew(line, file.path, fresh, day);
+          if (next === null) continue;
+          let head = 0;
+          while (head < line.length && head < next.length && line[head] === next[head]) head++;
+          let tail = 0;
+          while (
+            tail < line.length - head &&
+            tail < next.length - head &&
+            line[line.length - 1 - tail] === next[next.length - 1 - tail]
+          ) tail++;
+          editor.replaceRange(
+            next.slice(head, next.length - tail),
+            { line: index, ch: head },
+            { line: index, ch: line.length - tail }
+          );
+          edits.set(index, { at: head, delta: next.length - line.length });
+        }
+        if (!edits.size) return;
+        const keep = (pos: { line: number; ch: number }) => {
+          const edit = edits.get(pos.line);
+          if (!edit || pos.ch <= edit.at) return pos;
+          return { line: pos.line, ch: Math.max(edit.at, pos.ch + edit.delta) };
+        };
+        editor.setSelections(selections.map((range) => ({ anchor: keep(range.anchor), head: keep(range.head) })));
+        this.refreshDecorations();
+        return;
+      }
+      let changed = false;
+      await this.app.vault.process(file, (content) => {
+        const next = planNewTasksInContent(content, file.path, fresh, day);
+        if (next === null) return content;
+        changed = true;
+        return next;
+      });
+      if (changed) this.refreshDecorations();
+    } catch (error) {
+      console.error('TaskPro: could not plan the new tasks for today', error);
+    }
   }
 
   /** Appends a task line at the end of a note. Resolves false when the note is gone. */

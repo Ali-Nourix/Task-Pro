@@ -17,6 +17,7 @@
 import { App, TFile } from 'obsidian';
 import { isWithinTargetFolder } from './path-utils';
 import { taskKeysInContent } from './task-identity';
+import { freshTaskKeys } from './auto-plan';
 import { TaskCreationRegistry } from './task-registry';
 
 /** Waits for typing to settle before re-indexing a note. */
@@ -27,11 +28,18 @@ export interface TaskIndexServiceOptions {
   registry: TaskCreationRegistry;
   /** Read live so changing the folder setting takes effect immediately. */
   getTargetFolder: () => string;
+  /**
+   * Called after an edit to a note with the tasks that were just written into
+   * it (not old tasks whose text changed, and never on the startup pass).
+   */
+  onNewTasks?: (file: TFile, keys: string[]) => void;
 }
 
 export class TaskIndexService {
   private readonly timers = new Map<string, ReturnType<typeof setTimeout>>();
   private stopped = false;
+  /** The task keys each note held at its last pass, to tell new tasks from edited ones. */
+  private readonly lastKeys = new Map<string, Set<string>>();
 
   constructor(private readonly options: TaskIndexServiceOptions) {}
 
@@ -70,23 +78,36 @@ export class TaskIndexService {
     await this.registry.flush();
   }
 
-  /** Indexes a single note. Read failures are logged, never swallowed. */
-  async indexFile(file: TFile, now: number = Date.now()): Promise<void> {
-    if (!this.isTracked(file)) return;
+  /**
+   * Indexes a single note. Read failures are logged, never swallowed.
+   * Resolves the tasks that were just written into the note, see
+   * {@link freshTaskKeys}; empty the first time a note is seen.
+   */
+  async indexFile(file: TFile, now: number = Date.now()): Promise<string[]> {
+    if (!this.isTracked(file)) return [];
 
     let content: string;
     try {
       content = await this.app.vault.cachedRead(file);
     } catch (error) {
       console.error(`TaskPro: failed to read "${file.path}" while indexing task ages`, error);
-      return;
+      return [];
     }
 
-    this.registry.indexFile(file.path, file.stat.ctime, taskKeysInContent(file.path, content), now);
+    const keys = taskKeysInContent(file.path, content);
+    const appeared = this.registry.indexFile(file.path, file.stat.ctime, keys, now);
+    const fresh = freshTaskKeys(this.lastKeys.get(file.path), keys, appeared);
+    this.lastKeys.set(file.path, new Set(keys));
+    return fresh;
   }
 
-  /** Debounced entry point for vault `create` / `modify` events. */
-  handleFileChanged(file: TFile): void {
+  /**
+   * Debounced entry point for vault `create` / `modify` events. With
+   * `reportNew`, the tasks just written into the note are handed to
+   * `onNewTasks`; a note that was only created (a template, a synced copy)
+   * is indexed without that.
+   */
+  handleFileChanged(file: TFile, reportNew = false): void {
     if (this.stopped || !this.isTracked(file)) return;
 
     const existing = this.timers.get(file.path);
@@ -96,13 +117,18 @@ export class TaskIndexService {
       file.path,
       setTimeout(() => {
         this.timers.delete(file.path);
-        void this.indexFile(file).then(() => this.registry.flush());
+        void this.indexFile(file)
+          .then((fresh) => {
+            if (reportNew && fresh.length && !this.stopped) this.options.onNewTasks?.(file, fresh);
+          })
+          .then(() => this.registry.flush());
       }, INDEX_DEBOUNCE_MS)
     );
   }
 
   handleFileRenamed(file: TFile, oldPath: string): void {
     this.registry.renameFile(oldPath, file.path);
+    this.lastKeys.delete(oldPath);
     // Re-index under the new path so text-hashed keys line up again.
     void this.indexFile(file).then(() => this.registry.flush());
   }
@@ -115,6 +141,7 @@ export class TaskIndexService {
     }
 
     this.registry.forgetFile(filePath);
+    this.lastKeys.delete(filePath);
     void this.registry.flush();
   }
 
