@@ -564,6 +564,11 @@ export interface TaskProSettings {
   showWaitingBadges: boolean;
   /** Typing `@` on a task line lists the properties it can be given. */
   propertySuggest: boolean;
+  /**
+   * A task written without a plan is planned for the day it was written on,
+   * `@schedule(YYYY-MM-DD)`, so the calendar and the Telegram bot show it.
+   */
+  autoPlanNewTasks: boolean;
   /** On a touch screen, two fingers pulled down anywhere in Obsidian open the task board. */
   boardGesture: boolean;
   /** User-defined tags: key written into notes, name and colour kept here. */
@@ -612,6 +617,7 @@ export const DEFAULT_SETTINGS: TaskProSettings = {
   showSubtaskProgress: true,
   showWaitingBadges: true,
   propertySuggest: true,
+  autoPlanNewTasks: true,
   boardGesture: true,
   tags: [],
   board: DEFAULT_BOARD_PREFERENCES,
