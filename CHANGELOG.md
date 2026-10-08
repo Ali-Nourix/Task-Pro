@@ -15,6 +15,17 @@
   runs into the digits.
 - **Home is a dashboard**: a greeting for the time of day, what is next, and today's
   first three tasks. The tab bar's ➕ (grey on dark themes) is now 📝.
+- **Telegram's rich formatting used where it helps**: home is a small dashboard
+  (the next task ==marked==, today as a task list, the counts on one line, the sync
+  in a footer); in the full list, «later» and «no plan» fold into `<details>` when
+  something nearer is on the page and overdue is marked; today's day is marked in
+  the week; hints and the «waiting for Obsidian» note are footers.
+- **The assistant's answer no longer pushes the chat up**: the «Thinking…» draft is a
+  rich draft by default and the answer is streamed into that same draft before it is
+  sent, so the bubble grows in place; the answer no longer quotes your message. Its
+  tasks are a task list with readable buttons; «📤» marks a task not yet in the notes
+  (the old 🕓 looked like the plan's 🕒).
+- The week's «free days» line is gone: the week shows only days with tasks.
 - The brief behind it is in `docs/telegram-bot-design.md`.
 
 ### Tasks planned by themselves, in the notes and in Telegram

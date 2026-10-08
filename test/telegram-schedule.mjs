@@ -326,11 +326,11 @@ const tasks = [
     '• Errand 1',
     '• Errand 2',
   ], 'a week by day, Saturday to Friday, under a summary: every task of each busy day (the ones with no hour too, in the order of the day), a heading with how many in brackets, today named');
-  eq(text.endsWith('🌿 روزهای آزاد: ی ۱۲، چ ۱۵، ج ۱۷'), true, 'the empty days share one line at the end');
+  eq(text.includes('روزهای آزاد') || text.includes('(۰)'), false, 'the empty days are left out altogether');
   eq(text.includes('• Errand 6\nو ۲ مورد دیگر؛ روز را باز کن.'), true, 'a crowded day shows six and points to its own screen');
   eq(text.includes('Dentist') || text.includes('Think about the trip'), false, 'what is of another week, or of no day, is not in this one');
   const rich = view.options.rich.markdown;
-  eq([rich.includes('|'), rich.split('\n').filter((line) => line.startsWith('#')).slice(0, 4)], [false, ['# 🗂 نمای کلی · هفته — شنبه ۱۱ مهر – جمعه ۱۷ مهر', '## شنبه ۱۱ مهر (۱)', '## دوشنبه ۱۳ مهر · امروز (۳)', '## سه‌شنبه ۱۴ مهر (۲)']], 'the rich message is headings and lists, no table');
+  eq([rich.includes('|'), rich.split('\n').filter((line) => line.startsWith('#')).slice(0, 4)], [false, ['# 🗂 نمای کلی · هفته — شنبه ۱۱ مهر – جمعه ۱۷ مهر', '## شنبه ۱۱ مهر (۱)', '## ==دوشنبه ۱۳ مهر · امروز (۳)==', '## سه‌شنبه ۱۴ مهر (۲)']], 'the rich message is headings and lists, no table; today marked');
   const rows = view.buttons;
   eq(rows[0].map((b) => b.data), ['dy:2026-10-09', 'dy:2026-10-08', 'dy:2026-10-07', 'dy:2026-10-06', 'dy:2026-10-05', 'dy:2026-10-04', 'dy:2026-10-03'], 'a button for each day, Saturday on the right as Persian reads');
   eq([rows[0][4].text, rows[0][4].style, rows[0][1].text, rows[0][5].text], ['•د ۱۳', 'primary', '•پ ۱۶', 'ی ۱۲'], 'each names its weekday and number, today is blue, a day with tasks has a dot (before the letter, away from the digits)');

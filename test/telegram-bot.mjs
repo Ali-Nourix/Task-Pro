@@ -878,6 +878,12 @@ async function paired() {
   await richTg.thinking(7, '<tg-thinking>Thinking</tg-thinking>');
   eq([calls[0].method, calls[0].body.rich_message], ['sendRichMessageDraft', { html: '<tg-thinking>Thinking</tg-thinking>' }], 'THINKING_DRAFT=rich gives the rich draft');
   calls.length = 0;
+  await richTg.send(7, '<b>Done</b>', [[{ text: 'Open', data: 'o' }]], { rich: { markdown: '**Done**', rtl: false } });
+  eq(calls.map((c) => [c.method, c.body.draft_id ?? null, c.body.rich_message?.markdown ?? null]), [['sendRichMessageDraft', calls[0].body.draft_id, '**Done**'], ['sendRichMessage', null, '**Done**']], 'the answer grows out of the same draft, then is sent for good');
+  calls.length = 0;
+  await richTg.send(7, '<b>Again</b>', undefined, { rich: { markdown: '**Again**', rtl: false } });
+  eq(calls.map((c) => c.method), ['sendRichMessage'], 'once: the next message has no draft to grow from');
+  calls.length = 0;
   await mod.telegramApi('TOKEN', { thinking: 'off' }).thinking(7, '<tg-thinking>Thinking</tg-thinking>');
   eq(calls.map((c) => [c.method, c.body.action]), [['sendChatAction', 'typing']], 'and THINKING_DRAFT=off only “typing…”');
   calls.length = 0;

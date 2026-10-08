@@ -369,7 +369,16 @@ async function homeView(ctx: Ctx): Promise<View> {
   // Under the name, before the counts.
   const summary = w.home(counts, sync.text, sync.health);
   const cut = summary.indexOf('\n');
-  return { text: `${summary.slice(0, cut)}\n${board}\n${summary.slice(cut + 1)}`, buttons: rows };
+  // The rich home: the name, a greeting, what is next marked, today as a task list, the counts on one line, the sync small at the foot.
+  const md: string[] = [`# ✨ TaskPro`, `*${w.ui.greeting(clock.minutes)}*`];
+  if (next) md.push(`==⏭ ${w.ui.nextUp}: **${mdEscape(truncate(next.title, 40))}** · ${clockLabel(next.plan_start!, owner.language)}==`);
+  if (todays.length) {
+    const items = todays.slice(0, 3).map((task) => `- [ ] ${task.plan_date === today && task.plan_start ? `\`${clockLabel(task.plan_start, owner.language)}\` ` : ''}${mdEscape(truncate(task.title, 40))}`);
+    md.push(`### 📅 ${w.ui.todayHeading}\n\n${items.join('\n')}${todays.length > 3 ? `\n\n${htmlToRich(w.ui.moreToday(todays.length - 3))}` : ''}`);
+  } else md.push(htmlToRich(w.empty.t));
+  md.push(w.ui.countsLine(counts));
+  md.push(footer(`${sync.health === 'ok' ? '🟢' : sync.health === 'stale' ? '🟡' : '⚪'} ${w.ui.syncLine(sync.text)} · ${w.ui.typeHint}`));
+  return { text: `${summary.slice(0, cut)}\n${board}\n${summary.slice(cut + 1)}`, rich: md.join('\n\n'), buttons: rows };
 }
 
 function helpView(ctx: Ctx): View {
@@ -589,10 +598,15 @@ async function listView(ctx: Ctx, filter: Filter, requestedPage: number, tag?: s
     let richGroup: string[] = [];
     // One section on a filtered page is the list's own title: it is not said twice.
     const single = !!(filter !== 'a' || tag) && new Set(slice.map((family) => family[0].bucket)).size === 1;
+    // What is not for now (later, no plan) folds away in the rich message when something nearer is on the page.
+    const near = slice.some((family) => family[0].bucket === 'overdue' || family[0].bucket === 'today' || family[0].bucket === 'tomorrow');
     const flush = () => {
       if (current !== null && group.length) {
         text += single ? `\n<blockquote>${group.join('\n\n')}</blockquote>` : `\n\n<b><u>${w.sections[current]}</u></b>\n<blockquote>${group.join('\n\n')}</blockquote>`;
-        rich += single ? `\n\n${richGroup.join('\n')}` : `\n\n## ${w.sections[current]}\n\n${richGroup.join('\n')}`;
+        const heading = current === 'overdue' ? `==${w.sections[current]}==` : w.sections[current];
+        if (single) rich += `\n\n${richGroup.join('\n')}`;
+        else if (near && (current === 'later' || current === 'none')) rich += `\n\n<details><summary>${w.sections[current]} (${digits(group.length, owner.language)})</summary>\n\n${richGroup.join('\n')}\n\n</details>`;
+        else rich += `\n\n## ${heading}\n\n${richGroup.join('\n')}`;
       }
       group = [];
       richGroup = [];
@@ -610,7 +624,7 @@ async function listView(ctx: Ctx, filter: Filter, requestedPage: number, tag?: s
 
     if (quick) {
       text += `\n\n${w.ui.quickHint}`;
-      rich += `\n\n${htmlToRich(w.ui.quickHint)}`;
+      rich += `\n\n${footer(w.ui.quickHint)}`;
     }
     buttons.push(...taskButtons(ctx, slice.flat().map(({ task }) => ({ task, position: position.get(task.key)! })), back, quick));
     if (pages > 1) {
@@ -1110,14 +1124,7 @@ async function weekView(ctx: Ctx, offset: number): Promise<View> {
     const shown = tasks.slice(0, SHOW);
     const more = tasks.length > shown.length ? w.week.more(tasks.length - shown.length) : '';
     html.push(`<b><u>${heading}</u></b>${shown.length ? `\n<blockquote>${shown.map((task) => `• ${dayItem(task, day, owner)}`).join('\n')}</blockquote>` : ''}${more ? `\n${more}` : ''}`);
-    rich.push(`## ${heading}${shown.length ? `\n\n${shown.map((task) => `- ${dayItem(task, day, owner, true)}`).join('\n')}` : ''}${more ? `\n\n${htmlToRich(more)}` : ''}`);
-  }
-  // The empty days share one line: seven headings with «(0)» under most of them say nothing.
-  const free = rowsOf.filter(({ tasks }) => !tasks.length).map(({ day }) => `${weekdayInitial(day, owner.language)} ${dayNumber(day, owner)}`);
-  if (free.length && busy.length) {
-    const line = `<i>🌿 ${w.ui.freeDays}: ${free.join(owner.language === 'fa' ? '، ' : ', ')}</i>`;
-    html.push(line);
-    rich.push(htmlToRich(line));
+    rich.push(`## ${day === today ? `==${heading}==` : heading}${shown.length ? `\n\n${shown.map((task) => `- ${dayItem(task, day, owner, true)}`).join('\n')}` : ''}${more ? `\n\n${htmlToRich(more)}` : ''}`);
   }
 
   const dayButtons: Button[] = rowsOf.map(({ day, tasks }) => ({
@@ -1306,6 +1313,11 @@ async function assistantView(ctx: Ctx, result: AssistantResult, heard?: string, 
   const statuses = await load(keysOf('status'));
   const removing = await load(result.proposals);
 
+  const richEntries = (tasks: TaskRow[]): string => {
+    const lines = tasks.slice(0, SHOWN).map((task) => taskEntryRich(task, owner, today, { position: task.n, bullet: task.n >= PROVISIONAL_N, parentHint: !!task.parent_key }));
+    if (tasks.length > SHOWN) lines.push(`*+${digits(tasks.length - SHOWN, owner.language)}*`);
+    return lines.join('\n');
+  };
   const entries = (tasks: TaskRow[]): string => {
     const lines = tasks.slice(0, SHOWN).map((task) => taskEntry(task, owner, today, { position: task.n, bullet: task.n >= PROVISIONAL_N, parentHint: !!task.parent_key }));
     if (tasks.length > SHOWN) lines.push(`<i>+${digits(tasks.length - SHOWN, owner.language)}</i>`);
@@ -1314,39 +1326,55 @@ async function assistantView(ctx: Ctx, result: AssistantResult, heard?: string, 
 
   const acted = added.length + changed.length + statuses.length + removing.length > 0;
   const sections: string[] = [];
-  if (heard) sections.push(w.ai.heard(heard));
+  /** The same screen as rich Markdown: the tasks as a task list, smaller headings, a footer. */
+  const richSections: string[] = [];
+  const group = (heading: string, body: string) => `#### ${htmlToRich(heading).replace(/^#+ /, '').replace(/\*\*/g, '')}\n\n${body}`;
+  if (heard) sections.push(w.ai.heard(heard)), richSections.push(htmlToRich(w.ai.heard(heard)));
   const say = result.say ? esc(result.say) : '';
-  if (acted) sections.push([preview ? w.ai.preview.title : w.ai.done, say].filter(Boolean).join('\n'));
-  else if (say) sections.push(`🤖 ${say}`);
-  else if (!result.warnings.length) sections.push(w.ai.nothing);
-  if (added.length) sections.push(`${w.ai.groups.added}\n${entries(added)}`);
-  if (changed.length) sections.push(`${w.ai.groups.changed}\n${entries(changed)}`);
+  if (acted) {
+    sections.push([preview ? w.ai.preview.title : w.ai.done, say].filter(Boolean).join('\n'));
+    richSections.push(`### ${htmlToRich(preview ? w.ai.preview.title : w.ai.done).replace(/^#+ /, '').replace(/\*\*/g, '')}${say ? `\n\n${htmlToRich(say)}` : ''}`);
+  } else if (say) sections.push(`🤖 ${say}`), richSections.push(htmlToRich(`🤖 ${say}`));
+  else if (!result.warnings.length) sections.push(w.ai.nothing), richSections.push(htmlToRich(w.ai.nothing));
+  if (added.length) sections.push(`${w.ai.groups.added}\n${entries(added)}`), richSections.push(group(w.ai.groups.added, richEntries(added)));
+  if (changed.length) sections.push(`${w.ai.groups.changed}\n${entries(changed)}`), richSections.push(group(w.ai.groups.changed, richEntries(changed)));
   if (statuses.length) {
     const lines = statuses.slice(0, SHOWN).map((task) => `${task.status === 'done' ? '✅' : task.status === 'failed' ? '❌' : '🔄'} <b>${digits(task.n, owner.language)}.</b> ${esc(truncate(task.title, 80))} · ${w.labels.statuses[task.status]}`);
     sections.push(`${w.ai.groups.status}\n<blockquote>${lines.join('\n')}</blockquote>`);
+    richSections.push(group(w.ai.groups.status, statuses.slice(0, SHOWN).map((task) => `- [${task.status === 'done' ? 'x' : ' '}] **${digits(task.n, owner.language)}.** ${mdEscape(truncate(task.title, 80))} · ${w.labels.statuses[task.status]}`).join('\n')));
   }
-  if (removing.length) sections.push(`${w.ai.groups.remove}\n${entries(removing)}`);
+  if (removing.length) sections.push(`${w.ai.groups.remove}\n${entries(removing)}`), richSections.push(group(w.ai.groups.remove, richEntries(removing)));
   if (result.warnings.length) {
-    sections.push(result.warnings.map((warning) => (warning.kind === 'noTitle' || warning.kind === 'tooMany' ? w.ai.warn[warning.kind] : w.ai.warn[warning.kind](warning.detail ?? ''))).join('\n'));
+    const warned = result.warnings.map((warning) => (warning.kind === 'noTitle' || warning.kind === 'tooMany' ? w.ai.warn[warning.kind] : w.ai.warn[warning.kind](warning.detail ?? ''))).join('\n');
+    sections.push(warned);
+    richSections.push(htmlToRich(`<blockquote>${warned}</blockquote>`));
   }
+  // What the notes have not got yet says so once, small, under it all.
+  if ([...added, ...changed].some((task) => task.pending)) richSections.push(footer(w.ui.pendingNote));
+  const rich = richSections.join('\n\n');
 
   if (preview) {
     return {
       text: sections.join('\n\n'),
+      rich,
       buttons: [[{ text: w.ai.preview.apply, data: 'ap', style: 'success' }, { text: w.ai.preview.cancel, data: 'ac', style: 'danger' }], navRow(ctx)],
     };
   }
   const buttons: Button[][] = [];
   const opened = [...added, ...changed].slice(0, 8);
-  for (let i = 0; i < opened.length; i += 2) {
-    buttons.push(opened.slice(i, i + 2).map((task) => ({ text: `${digits(task.n, owner.language)} · ${truncate(task.title, 15)}`, data: `t:${task.n}@a0` })));
-  }
+  buttons.push(...taskButtons(ctx, opened.map((task) => ({ task, position: task.n })), 'a0', false));
   // The numbers ride in the button's data (64 bytes): ten tasks at most.
   const undoable = added.slice(0, 10);
   if (undoable.length) buttons.push([{ text: w.ai.undoAll(undoable.length), data: `ux:${undoable.map((task) => task.n).join('.')}` }]);
   for (const task of removing.slice(0, 4)) buttons.push([{ text: `🗑 ${truncate(task.title, 24)}`, data: `del:${task.n}@a0`, style: 'danger' }]);
   buttons.push(navRow(ctx));
-  return { text: sections.join('\n\n'), buttons };
+  return { text: sections.join('\n\n'), rich, buttons };
+}
+
+/** A small grey line under a rich message. Markdown is not read inside it: the text is plain. */
+function footer(html: string): string {
+  const text = html.replace(/<[^>]+>/g, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+  return `<footer>${esc(text)}</footer>`;
 }
 
 /** Writes to the assistant, or says what it is. `heard`: the words came from a voice message. */
@@ -1415,7 +1443,8 @@ async function assist(text: string, ctx: Ctx, options: { heard?: string; fallbac
     console.error('assistant memory not kept', error);
   }
   const acted = result.changes.length > 0 || result.proposals.length > 0;
-  await sendView(ctx, await assistantView(ctx, result, options.heard, overlay ?? undefined), incoming);
+  // Not hung from the message: the quote over it would only repeat what was said and push the chat up.
+  await sendView(ctx, await assistantView(ctx, result, options.heard, overlay ?? undefined));
   if (!overlay) await react(acted ? '👌' : '👍');
 }
 
