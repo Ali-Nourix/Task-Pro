@@ -2,6 +2,21 @@
 
 ## 1.5.0 - A calendar and a timeline to plan your days on, and a board that fits a phone
 
+### A cleaner Telegram bot
+
+- **Quick tick**: a ☑️ button on every list turns its task buttons into check boxes;
+  a tap ticks the task off and the list stays, ready for the next.
+- **Nothing said twice**: today's list has the date in its title and no «today»
+  heading under it; a plan for today shows only its hour (🕒 16:00–16:30).
+- **Readable task buttons**: a few tasks get a row each with most of their title,
+  more go two to a row in reading order; «۱.» instead of «۱ ·», which looked like «۰۱».
+- **The week shows what is planned**: a summary line, only the days that have tasks,
+  and the free days in one line; day buttons mark busy days with a dot that no longer
+  runs into the digits.
+- **Home is a dashboard**: a greeting for the time of day, what is next, and today's
+  first three tasks. The tab bar's ➕ (grey on dark themes) is now 📝.
+- The brief behind it is in `docs/telegram-bot-design.md`.
+
 ### Tasks planned by themselves, in the notes and in Telegram
 
 - **Plan new tasks for today** (Settings → Calendar, on by default): a task you
