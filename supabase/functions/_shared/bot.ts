@@ -340,6 +340,15 @@ async function homeView(ctx: Ctx): Promise<View> {
     open: open.length,
   };
   const sync = syncHealth(owner, now);
+  // A dashboard: what is next, and the first of today's tasks.
+  const clock = localNow(owner.timezone, now);
+  const late = (task: TaskRow) => (bucketOf(task, today, owner.timezone) === 'overdue' ? 0 : 1);
+  const todays = open.filter((_, i) => buckets[i] === 'today' || buckets[i] === 'overdue').sort((a, b) => late(a) - late(b) || byPlan(a, b));
+  const next = todays.find((task) => task.plan_date === today && task.plan_start && clockMinutes(task.plan_start) >= clock.minutes - 30) ?? null;
+  const preview = todays.slice(0, 3).map((task) => `${task.plan_date === today && task.plan_start ? `<code>${clockLabel(task.plan_start, owner.language)}</code> ` : '• '}${esc(truncate(task.title, 40))}`);
+  let board = `<i>${w.ui.greeting(clock.minutes)}</i>`;
+  if (next) board += `\n⏭ ${w.ui.nextUp}: <b>${esc(truncate(next.title, 40))}</b> · ${clockLabel(next.plan_start!, owner.language)}`;
+  if (preview.length) board += `\n\n<b>📅 ${w.ui.todayHeading}</b>\n<blockquote>${preview.join('\n')}${todays.length > 3 ? `\n${w.ui.moreToday(todays.length - 3)}` : ''}</blockquote>`;
   const rows: Button[][] = [
     [
       { text: w.buttons.today, data: 'ls:t:0', style: 'primary' },
@@ -357,7 +366,10 @@ async function homeView(ctx: Ctx): Promise<View> {
     { text: w.buttons.settings, data: 'set' },
     { text: w.buttons.help, data: 'help' },
   ]);
-  return { text: w.home(counts, sync.text, sync.health), buttons: rows };
+  // Under the name, before the counts.
+  const summary = w.home(counts, sync.text, sync.health);
+  const cut = summary.indexOf('\n');
+  return { text: `${summary.slice(0, cut)}\n${board}\n${summary.slice(cut + 1)}`, buttons: rows };
 }
 
 function helpView(ctx: Ctx): View {
@@ -517,7 +529,7 @@ function families(shown: { task: TaskRow; bucket: Bucket }[]): Row[][] {
   return out;
 }
 
-async function listView(ctx: Ctx, filter: Filter, requestedPage: number, tag?: string): Promise<View> {
+async function listView(ctx: Ctx, filter: Filter, requestedPage: number, tag?: string, quick = false): Promise<View> {
   const { w, owner } = ctx;
   const now = ctx.deps.now();
   const today = localNow(owner.timezone, now).date;
@@ -550,7 +562,9 @@ async function listView(ctx: Ctx, filter: Filter, requestedPage: number, tag?: s
   const pages = Math.max(1, pageList.length);
   const index = Math.min(Math.max(0, requestedPage), pages - 1);
   const slice = pageList[index] ?? [];
-  const back = tag ? `g${index}~${tag}` : `${filter}${index}`;
+  // Quick tick (`q`) is kept by the list a tick comes back to; a tag's list has none.
+  if (tag) quick = false;
+  const back = tag ? `g${index}~${tag}` : `${filter}${index}${quick ? 'q' : ''}`;
 
   const filterRow = FILTERS.filter((f) => f === filter || f === 'a' || counts[f] > 0).map((f) => ({
     text: counted(w.filters[f], counts[f], owner.language),
@@ -559,7 +573,9 @@ async function listView(ctx: Ctx, filter: Filter, requestedPage: number, tag?: s
   }));
 
   const tagName = tag ? (await knownTags(ctx)).find((known) => known.key === tag)?.name : undefined;
-  const title = tag ? w.tagsUi.listTitle(tag, tagName) : `<b>${w.listTitle[filter]}</b>`;
+  // Today's list says which day it is: the heading under it would only say «today» again.
+  const dated = filter === 't' ? ` · ${dateLabel(today, owner)}` : '';
+  const title = tag ? w.tagsUi.listTitle(tag, tagName) : `<b>${w.listTitle[filter]}${dated}</b>`;
   let text = `${title}${shown.length ? ` — <i>${w.openCount(shown.length)}</i>` : ''}`;
   let rich = `# ${htmlToRich(title).replace(/^#+ /, '')}${shown.length ? ` — *${w.openCount(shown.length)}*` : ''}`;
   const buttons: Button[][] = [];
@@ -571,10 +587,12 @@ async function listView(ctx: Ctx, filter: Filter, requestedPage: number, tag?: s
     let current: Bucket | null = null;
     let group: string[] = [];
     let richGroup: string[] = [];
+    // One section on a filtered page is the list's own title: it is not said twice.
+    const single = !!(filter !== 'a' || tag) && new Set(slice.map((family) => family[0].bucket)).size === 1;
     const flush = () => {
       if (current !== null && group.length) {
-        text += `\n\n<b><u>${w.sections[current]}</u></b>\n<blockquote>${group.join('\n\n')}</blockquote>`;
-        rich += `\n\n## ${w.sections[current]}\n\n${richGroup.join('\n')}`;
+        text += single ? `\n<blockquote>${group.join('\n\n')}</blockquote>` : `\n\n<b><u>${w.sections[current]}</u></b>\n<blockquote>${group.join('\n\n')}</blockquote>`;
+        rich += single ? `\n\n${richGroup.join('\n')}` : `\n\n## ${w.sections[current]}\n\n${richGroup.join('\n')}`;
       }
       group = [];
       richGroup = [];
@@ -590,15 +608,11 @@ async function listView(ctx: Ctx, filter: Filter, requestedPage: number, tag?: s
     }
     flush();
 
-    const rows = slice.flat();
-    for (let i = 0; i < rows.length; i += 2) {
-      buttons.push(
-        rows.slice(i, i + 2).map(({ task }) => ({
-          text: `${digits(position.get(task.key)!, owner.language)} · ${truncate(task.title, 15)}`,
-          data: `t:${task.n}@${back}`,
-        }))
-      );
+    if (quick) {
+      text += `\n\n${w.ui.quickHint}`;
+      rich += `\n\n${htmlToRich(w.ui.quickHint)}`;
     }
+    buttons.push(...taskButtons(ctx, slice.flat().map(({ task }) => ({ task, position: position.get(task.key)! })), back, quick));
     if (pages > 1) {
       buttons.push([
         index > 0 ? { text: w.buttons.prev, data: listData({ filter, page: index - 1, tag }) } : idle('·'),
@@ -612,6 +626,7 @@ async function listView(ctx: Ctx, filter: Filter, requestedPage: number, tag?: s
     buttons.push(navRow(ctx));
     return { text, buttons, rich };
   }
+  if (slice.length) buttons.push([quick ? { text: w.ui.quickOff, data: listData({ filter, page: index }), style: 'success' } : { text: w.ui.quick, data: listData({ filter, page: index, quick: true }) }]);
   if (filter === 't') {
     buttons.push(dayNavRow(ctx, todayOf(ctx), { text: w.digest.buttons.overview, data: 'ov' }));
     if (ctx.deps.ai) buttons.push([{ text: w.digest.buttons.planDay, data: 'pd' }]);
@@ -629,6 +644,8 @@ interface ListRef {
   tag?: string;
   /** Not a list: one day's screen (`y2026-10-05`). */
   day?: string;
+  /** Its task buttons tick tasks off (`q` at the end of the code). */
+  quick?: boolean;
 }
 
 /** The list a card came from, as its «back» button names it: `a2` is page 3 of all, `g0~home` the first page of #home. */
@@ -638,15 +655,37 @@ function listOf(back: string): ListRef {
   const tagged = /^g(\d+)~(.+)$/u.exec(back);
   if (tagged) return { filter: 'a', page: Number(tagged[1]), tag: tagged[2] };
   const filter = FILTERS.find((f) => f === back[0]) ?? 'a';
-  const page = Number(back.slice(1)) || 0;
-  return { filter, page };
+  const quick = back.endsWith('q');
+  const page = Number(back.slice(1, quick ? -1 : undefined)) || 0;
+  return quick ? { filter, page, quick } : { filter, page };
 }
 
 /** The button data that opens a list. */
-const listData = (ref: ListRef): string => (ref.day ? `dy:${ref.day}` : ref.tag ? `lg:${ref.page}:${ref.tag}` : `ls:${ref.filter}:${ref.page}`);
+const listData = (ref: ListRef): string => (ref.day ? `dy:${ref.day}` : ref.tag ? `lg:${ref.page}:${ref.tag}` : `ls:${ref.filter}:${ref.page}${ref.quick ? ':q' : ''}`);
+
+/** Tasks to a page that each get a whole row, so their titles can be read. */
+const ROOMY = 4;
+
+/**
+ * A button for each task of a list. A few get a row each with most of their title; more go two
+ * to a row. In quick tick a tap ticks the task off (⬜) and the list comes back; otherwise it
+ * opens the task. «.» after the number: a «·» beside Persian digits reads as a zero.
+ */
+function taskButtons(ctx: Ctx, rows: { task: TaskRow; position: number }[], back: string, quick: boolean): Button[][] {
+  const { owner } = ctx;
+  const roomy = rows.length <= ROOMY;
+  const button = ({ task, position }: { task: TaskRow; position: number }): Button => ({
+    text: `${quick ? '⬜ ' : ''}${digits(position, owner.language)}. ${truncate(task.title, roomy ? 30 : quick ? 13 : 15)}`,
+    data: `${quick ? 'done' : 't'}:${task.n}@${back}`,
+  });
+  const out: Button[][] = [];
+  const step = roomy ? 1 : 2;
+  for (let i = 0; i < rows.length; i += step) out.push(readingOrder(ctx, rows.slice(i, i + step).map(button)));
+  return out;
+}
 
 const showList = (ctx: Ctx, ref: ListRef): Promise<View> =>
-  ref.day ? dayView(ctx, ref.day) : listView(ctx, ref.filter, ref.page, ref.tag);
+  ref.day ? dayView(ctx, ref.day) : listView(ctx, ref.filter, ref.page, ref.tag, ref.quick);
 
 /** A task's parent and its open subtasks, for its card. */
 async function relativesOf(ctx: Ctx, task: TaskRow): Promise<{ parent: TaskRow | null; children: TaskRow[]; relatives: Relatives }> {
@@ -1062,18 +1101,30 @@ async function weekView(ctx: Ctx, offset: number): Promise<View> {
   const range = `${dateLabel(days[0], owner)} – ${dateLabel(days[6], owner)}`;
   const SHOW = 6;
 
-  const html: string[] = [w.week.title(range)];
-  const rich: string[] = [`# ${withoutTags(w.week.title(range))}`];
-  for (const { day, tasks } of rowsOf) {
+  const busy = rowsOf.filter(({ tasks }) => tasks.length);
+  const summary = `<i>${w.ui.weekSummary(new Set(busy.flatMap(({ tasks }) => tasks.map((task) => task.key))).size, busy.length)}</i>`;
+  const html: string[] = [`${w.week.title(range)}\n${summary}`];
+  const rich: string[] = [`# ${withoutTags(w.week.title(range))}\n\n${htmlToRich(summary)}`];
+  for (const { day, tasks } of busy) {
     const heading = counted(`${dateLabel(day, owner)}${day === today ? ` · ${w.week.today}` : ''}`, tasks.length, owner.language);
     const shown = tasks.slice(0, SHOW);
     const more = tasks.length > shown.length ? w.week.more(tasks.length - shown.length) : '';
     html.push(`<b><u>${heading}</u></b>${shown.length ? `\n<blockquote>${shown.map((task) => `• ${dayItem(task, day, owner)}`).join('\n')}</blockquote>` : ''}${more ? `\n${more}` : ''}`);
     rich.push(`## ${heading}${shown.length ? `\n\n${shown.map((task) => `- ${dayItem(task, day, owner, true)}`).join('\n')}` : ''}${more ? `\n\n${htmlToRich(more)}` : ''}`);
   }
+  // The empty days share one line: seven headings with «(0)» under most of them say nothing.
+  const free = rowsOf.filter(({ tasks }) => !tasks.length).map(({ day }) => `${weekdayInitial(day, owner.language)} ${dayNumber(day, owner)}`);
+  if (free.length && busy.length) {
+    const line = `<i>🌿 ${w.ui.freeDays}: ${free.join(owner.language === 'fa' ? '، ' : ', ')}</i>`;
+    html.push(line);
+    rich.push(htmlToRich(line));
+  }
 
   const dayButtons: Button[] = rowsOf.map(({ day, tasks }) => ({
-    text: `${weekdayInitial(day, owner.language)} ${dayNumber(day, owner)}${tasks.length ? '•' : ''}`,
+    // In Persian the dot goes first: after the digits it was read as part of them («۱۶•»).
+    text: owner.language === 'fa'
+      ? `${tasks.length ? '•' : ''}${weekdayInitial(day, owner.language)} ${dayNumber(day, owner)}`
+      : `${weekdayInitial(day, owner.language)} ${dayNumber(day, owner)}${tasks.length ? '•' : ''}`,
     data: `dy:${day}`,
     ...(day === today ? { style: 'primary' as const } : {}),
   }));
@@ -1114,9 +1165,7 @@ async function dayView(ctx: Ctx, day: string): Promise<View> {
   const entries = shown.map((task, i) => taskEntry(task, owner, today, { position: i + 1 }));
   const text = `${w.week.dayTitle(dateLabel(day, owner), tasks.length)}${day === today ? ` · <i>${w.week.today}</i>` : ''}\n${entries.length ? `<blockquote>${entries.join('\n')}</blockquote>` : `<i>${w.week.dayEmpty}</i>`}`;
   const buttons: Button[][] = [];
-  for (let i = 0; i < shown.length; i += 2) {
-    buttons.push(shown.slice(i, i + 2).map((task, j) => ({ text: `${digits(i + j + 1, owner.language)} · ${truncate(task.title, 15)}`, data: `t:${task.n}@y${day}` })));
-  }
+  buttons.push(...taskButtons(ctx, shown.map((task, i) => ({ task, position: i + 1 })), `y${day}`, false));
   buttons.push(dayNavRow(ctx, day, day === today ? idle(w.digest.buttons.today) : { text: w.digest.buttons.today, data: `dy:${today}` }));
   buttons.push(modeRow(ctx, 'day', day, weekOffsetOf(ctx, day)));
   buttons.push([{ text: w.week.newOnDay, data: `cd:x:0:${day}`, style: 'success' }]);
@@ -1829,7 +1878,7 @@ async function route(data: string, ctx: Ctx): Promise<void> {
     case 'st':
       return present(ctx, await statusView(ctx));
     case 'ls':
-      return present(ctx, await listView(ctx, FILTERS.find((f) => f === rawN) ?? 'a', Number(arg) || 0));
+      return present(ctx, await listView(ctx, FILTERS.find((f) => f === rawN) ?? 'a', Number(arg) || 0, undefined, core.split(':')[3] === 'q'));
     case 'tg':
       return present(ctx, await tagsView(ctx, Number(rawN) || 0));
     case 'lg':
