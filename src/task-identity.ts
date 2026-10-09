@@ -81,3 +81,11 @@ export function taskKeysInContent(filePath: string, content: string): string[] {
 
   return keys;
 }
+
+/** The task key on each line of a note, null for lines that are not tasks (or bare checkboxes). */
+export function taskKeysByLine(filePath: string, content: string): (string | null)[] {
+  return content.split('\n').map((line) => {
+    const parsed = parseTaskLine(line);
+    return parsed && parsed.text ? taskKeyFor(filePath, parsed) : null;
+  });
+}

@@ -4,12 +4,15 @@
 
 ### Auto-plan that never misses
 
-- A task is seen **as you type it**, from the open editor, instead of only after
-  Obsidian saves the note (which could take minutes, or never be noticed).
-- A task saved half typed and then finished is still a **new** task, not an edit
-  of an old one, so it is still planned for today.
-- A bare checkbox (`- [ ] `, as Enter leaves after a task) is no longer counted
-  as a task, so the line typed into it is planned like any other.
+- Every task written into a note gets its plan (and, with time tracking, its start)
+  **3 seconds after you stop typing**, read from the open editor rather than the
+  saved file.
+- A task is new when its text was not in the note a moment ago; only a change to
+  an old task's text on the same line counts as an edit. TaskPro no longer asks
+  its age index, so a task deleted and written again, or a word typed before, is
+  still new.
+- A task saved half typed and then finished stays new; a note created a moment ago
+  counts all its tasks as new; a bare checkbox is not a task yet.
 - Notes in the **daily notes folder** are watched even when it is outside the
   target folder.
 
