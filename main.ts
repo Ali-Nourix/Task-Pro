@@ -186,6 +186,14 @@ export default class TaskProPlugin extends Plugin {
       app: this.app,
       registry: this.taskRegistry,
       getTargetFolder: () => this.settings.targetFolder,
+      getExtraFolders: () => [this.settings.calendar.dailyNotesFolder],
+      liveContent: (file) => {
+        const view = this.app.workspace
+          .getLeavesOfType('markdown')
+          .map((leaf) => leaf.view)
+          .find((candidate): candidate is MarkdownView => candidate instanceof MarkdownView && candidate.file?.path === file.path);
+        return view && view.getMode() === 'source' ? view.editor.getValue() : null;
+      },
       onNewTasks: (file, keys) => void this.planNewTasks(file, keys),
       onTasksDone: (file, keys) => void this.finishDoneTasks(file, keys),
     });
@@ -868,6 +876,12 @@ export default class TaskProPlugin extends Plugin {
           this.handleFileModification(file);
           this.taskIndexService.handleFileChanged(file, true);
         }
+      })
+    );
+    // Typing is seen as it happens, not only once Obsidian saves the note.
+    this.registerEvent(
+      this.app.workspace.on('editor-change', (_editor, info) => {
+        if (info.file instanceof TFile) this.taskIndexService.handleFileChanged(info.file, true);
       })
     );
 

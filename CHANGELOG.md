@@ -2,6 +2,17 @@
 
 ## 1.5.0 - A calendar and a timeline to plan your days on, and a board that fits a phone
 
+### Auto-plan that never misses
+
+- A task is seen **as you type it**, from the open editor, instead of only after
+  Obsidian saves the note (which could take minutes, or never be noticed).
+- A task saved half typed and then finished is still a **new** task, not an edit
+  of an old one, so it is still planned for today.
+- A bare checkbox (`- [ ] `, as Enter leaves after a task) is no longer counted
+  as a task, so the line typed into it is planned like any other.
+- Notes in the **daily notes folder** are watched even when it is outside the
+  target folder.
+
 ### A cleaner Telegram bot
 
 - **Quick tick**: a ☑️ button on every list turns its task buttons into check boxes;

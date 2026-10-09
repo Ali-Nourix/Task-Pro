@@ -59,14 +59,19 @@ export function taskKeyFor(filePath: string, parsed: ParsedTaskLine): string {
   return buildTaskKey(filePath, parsed.text, parsed.blockId);
 }
 
-/** Every task key in a note, in file order. Duplicates are collapsed. */
+/**
+ * Every task key in a note, in file order. Duplicates are collapsed. A bare
+ * checkbox with nothing written after it yet (`- [ ] `, as Enter leaves after
+ * a task) is not a task yet, so it has no key: otherwise typing into it would
+ * look like that blank task being edited rather than a new one being written.
+ */
 export function taskKeysInContent(filePath: string, content: string): string[] {
   const keys: string[] = [];
   const seen = new Set<string>();
 
   for (const line of content.split('\n')) {
     const parsed = parseTaskLine(line);
-    if (!parsed) continue;
+    if (!parsed || !parsed.text) continue;
 
     const key = taskKeyFor(filePath, parsed);
     if (seen.has(key)) continue;

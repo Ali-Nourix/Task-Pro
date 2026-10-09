@@ -10,14 +10,14 @@
 // - Watching the vault instead means "TaskPro saw this line appear at 14:32"
 //   is a real observation, not a guess.
 //
-// Cost control: one debounced pass per changed file, `cachedRead` only, and a
-// single full pass at startup.
+// Cost control: one debounced pass per changed file (the open editor's text,
+// else `cachedRead`), and a single full pass at startup.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { App, TFile } from 'obsidian';
 import { isWithinTargetFolder } from './path-utils';
 import { taskKeysInContent } from './task-identity';
-import { completedTaskKeys, freshTaskKeys, taskStatuses } from './auto-plan';
+import { WRITING_WINDOW_MS, completedTaskKeys, newTaskKeys, taskStatuses } from './auto-plan';
 import type { TaskStatus } from './types';
 import { TaskCreationRegistry } from './task-registry';
 
@@ -29,6 +29,13 @@ export interface TaskIndexServiceOptions {
   registry: TaskCreationRegistry;
   /** Read live so changing the folder setting takes effect immediately. */
   getTargetFolder: () => string;
+  /** More folders to watch even when outside the target folder (the daily notes folder). */
+  getExtraFolders?: () => string[];
+  /**
+   * The note as it is in an open editor, when it is open: ahead of what is
+   * saved on disk, so a task is seen as soon as it is typed. Null otherwise.
+   */
+  liveContent?: (file: TFile) => string | null;
   /**
    * Called after an edit to a note with the tasks that were just written into
    * it (not old tasks whose text changed, and never on the startup pass).
@@ -52,6 +59,9 @@ export class TaskIndexService {
   /** The status each task had at its note's last pass, to see a task being ticked off. */
   private readonly lastStatuses = new Map<string, Map<string, TaskStatus>>();
 
+  /** Tasks written moments ago in each note, with when that stops counting. */
+  private readonly writing = new Map<string, Map<string, number>>();
+
   constructor(private readonly options: TaskIndexServiceOptions) {}
 
   private get app(): App {
@@ -65,7 +75,8 @@ export class TaskIndexService {
   private isTracked(file: TFile): boolean {
     if (file.extension !== 'md') return false;
     const folder = this.options.getTargetFolder();
-    return !folder.trim() || isWithinTargetFolder(file.path, folder);
+    if (!folder.trim() || isWithinTargetFolder(file.path, folder)) return true;
+    return (this.options.getExtraFolders?.() ?? []).some((extra) => extra.trim() && isWithinTargetFolder(file.path, extra));
   }
 
   /**
@@ -101,7 +112,7 @@ export class TaskIndexService {
 
     let content: string;
     try {
-      content = await this.app.vault.cachedRead(file);
+      content = this.options.liveContent?.(file) ?? (await this.app.vault.cachedRead(file));
     } catch (error) {
       console.error(`TaskPro: failed to read "${file.path}" while indexing task ages`, error);
       return none;
@@ -109,7 +120,12 @@ export class TaskIndexService {
 
     const keys = taskKeysInContent(file.path, content);
     const appeared = this.registry.indexFile(file.path, file.stat.ctime, keys, now);
-    const fresh = freshTaskKeys(this.lastKeys.get(file.path), keys, appeared);
+    const writing = this.writing.get(file.path) ?? new Map<string, number>();
+    for (const [key, until] of writing) if (until <= now) writing.delete(key);
+    const fresh = newTaskKeys(this.lastKeys.get(file.path), keys, appeared, new Set(writing.keys()));
+    for (const key of fresh) writing.set(key, now + WRITING_WINDOW_MS);
+    if (writing.size) this.writing.set(file.path, writing);
+    else this.writing.delete(file.path);
     this.lastKeys.set(file.path, new Set(keys));
     const statuses = taskStatuses(file.path, content);
     const done = completedTaskKeys(this.lastStatuses.get(file.path), statuses);
@@ -148,6 +164,7 @@ export class TaskIndexService {
     this.registry.renameFile(oldPath, file.path);
     this.lastKeys.delete(oldPath);
     this.lastStatuses.delete(oldPath);
+    this.writing.delete(oldPath);
     // Re-index under the new path so text-hashed keys line up again.
     void this.indexFile(file).then(() => this.registry.flush());
   }
@@ -162,6 +179,7 @@ export class TaskIndexService {
     this.registry.forgetFile(filePath);
     this.lastKeys.delete(filePath);
     this.lastStatuses.delete(filePath);
+    this.writing.delete(filePath);
     void this.registry.flush();
   }
 

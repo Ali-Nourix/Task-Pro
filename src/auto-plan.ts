@@ -129,3 +129,26 @@ export function freshTaskKeys(previous: ReadonlySet<string> | undefined, current
   for (const key of previous) if (!now.has(key)) left++;
   return appeared.length > left ? [...appeared] : [];
 }
+
+/** How long a task just written stays "being written": edits to it in that time still count as writing it. */
+export const WRITING_WINDOW_MS = 2 * 60_000;
+
+/**
+ * Like {@link freshTaskKeys}, but remembers what is still being written. A
+ * task is often saved half typed ("- [ ] Bu"), so the next pass sees "Bu"
+ * leave and "Buy milk" arrive, which on its own reads as an edit. When one of
+ * the `writing` keys (tasks that arrived moments ago) is among those that
+ * left, the arrivals are the same new task, still new.
+ */
+export function newTaskKeys(
+  previous: ReadonlySet<string> | undefined,
+  current: readonly string[],
+  appeared: readonly string[],
+  writing: ReadonlySet<string> = new Set()
+): string[] {
+  const fresh = freshTaskKeys(previous, current, appeared);
+  if (fresh.length || !previous || !appeared.length || !writing.size) return fresh;
+  const now = new Set(current);
+  for (const key of writing) if (previous.has(key) && !now.has(key)) return [...appeared];
+  return [];
+}

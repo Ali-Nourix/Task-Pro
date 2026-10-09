@@ -6,8 +6,8 @@ import * as esbuild from 'esbuild';
 
 const build = await esbuild.build({
   stdin: {
-    contents: `export { localDayKey, localClock, planLineIfNew, planNewTasksInContent, freshTaskKeys, finishLineIfDone, taskStatuses, completedTaskKeys } from "../src/auto-plan";
-export { parseTaskLine, taskKeyFor } from "../src/task-identity";
+    contents: `export { localDayKey, localClock, planLineIfNew, planNewTasksInContent, freshTaskKeys, newTaskKeys, finishLineIfDone, taskStatuses, completedTaskKeys } from "../src/auto-plan";
+export { parseTaskLine, taskKeyFor, taskKeysInContent } from "../src/task-identity";
 export { TaskCreationRegistry } from "../src/task-registry";`,
     resolveDir: new URL('.', import.meta.url).pathname,
     loader: 'ts',
@@ -19,7 +19,7 @@ export { TaskCreationRegistry } from "../src/task-registry";`,
 });
 
 const mod = await import('data:text/javascript;base64,' + Buffer.from(build.outputFiles[0].text).toString('base64'));
-const { localDayKey, localClock, finishLineIfDone, taskStatuses, completedTaskKeys, planLineIfNew, planNewTasksInContent, freshTaskKeys, parseTaskLine, taskKeyFor, TaskCreationRegistry } = mod;
+const { localDayKey, localClock, finishLineIfDone, taskStatuses, completedTaskKeys, planLineIfNew, planNewTasksInContent, freshTaskKeys, newTaskKeys, parseTaskLine, taskKeyFor, TaskCreationRegistry } = mod;
 
 let checked = 0;
 const eq = (actual, expected, label) => {
@@ -72,6 +72,14 @@ eq(freshTaskKeys(new Set(['a']), ['a', 'b'], ['b']), ['b'], 'a task added to a n
 eq(freshTaskKeys(new Set(['a', 'b']), ['a', 'c'], ['c']), [], 'a task whose text changed is an edit');
 eq(freshTaskKeys(new Set(['a', 'b']), ['a', 'c', 'd'], ['c', 'd']), ['c', 'd'], 'more arrived than left');
 eq(freshTaskKeys(new Set(['a']), ['a'], []), [], 'nothing appeared');
+eq(newTaskKeys(new Set(['a', 'bu']), ['a', 'buy'], ['buy'], new Set(['bu'])), ['buy'], 'a task still being written stays new');
+eq(newTaskKeys(new Set(['a', 'b']), ['a', 'c'], ['c'], new Set(['x'])), [], 'an old task edited is still an edit');
+eq(newTaskKeys(new Set(['a']), ['a', 'b'], ['b'], new Set()), ['b'], 'a plain new task');
+eq(newTaskKeys(undefined, ['a'], ['a'], new Set(['a'])), [], 'first pass still plans nothing');
+{
+  const { taskKeysInContent } = mod;
+  eq(taskKeysInContent('n.md', '- [x] done\n- [ ] \n- [ ] real').length, 2, 'a bare checkbox is not a task yet');
+}
 
 // ── the registry reports what it saw appear ────────────────────────────────
 let index;
