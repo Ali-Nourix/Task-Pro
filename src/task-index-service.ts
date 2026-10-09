@@ -16,13 +16,15 @@
 
 import { App, TFile } from 'obsidian';
 import { isWithinTargetFolder } from './path-utils';
-import { taskKeysInContent } from './task-identity';
-import { WRITING_WINDOW_MS, completedTaskKeys, newTaskKeys, taskStatuses } from './auto-plan';
+import { taskKeysByLine, taskKeysInContent } from './task-identity';
+import { WRITING_WINDOW_MS, completedTaskKeys, taskStatuses, writtenTaskKeys } from './auto-plan';
 import type { TaskStatus } from './types';
 import { TaskCreationRegistry } from './task-registry';
 
 /** Waits for typing to settle before re-indexing a note. */
-const INDEX_DEBOUNCE_MS = 1_500;
+const INDEX_DEBOUNCE_MS = 3_000;
+/** A note this young, seen for the first time, is one being written: its tasks are new. */
+const NEW_NOTE_MS = 5 * 60_000;
 
 export interface TaskIndexServiceOptions {
   app: App;
@@ -55,7 +57,9 @@ export class TaskIndexService {
   private readonly timers = new Map<string, ReturnType<typeof setTimeout>>();
   private stopped = false;
   /** The task keys each note held at its last pass, to tell new tasks from edited ones. */
-  private readonly lastKeys = new Map<string, Set<string>>();
+  private readonly lastKeys = new Map<string, (string | null)[]>();
+  /** Notes with a pending pass that should report what was written. */
+  private readonly reporting = new Set<string>();
   /** The status each task had at its note's last pass, to see a task being ticked off. */
   private readonly lastStatuses = new Map<string, Map<string, TaskStatus>>();
 
@@ -119,14 +123,20 @@ export class TaskIndexService {
     }
 
     const keys = taskKeysInContent(file.path, content);
-    const appeared = this.registry.indexFile(file.path, file.stat.ctime, keys, now);
+    this.registry.indexFile(file.path, file.stat.ctime, keys, now);
+    const lines = taskKeysByLine(file.path, content);
     const writing = this.writing.get(file.path) ?? new Map<string, number>();
     for (const [key, until] of writing) if (until <= now) writing.delete(key);
-    const fresh = newTaskKeys(this.lastKeys.get(file.path), keys, appeared, new Set(writing.keys()));
+    // Whether a task is new is told from the note's last pass, never from the
+    // registry: a text the registry once saw (a task deleted and written
+    // again, a half-typed word) would otherwise never count as new.
+    let previous = this.lastKeys.get(file.path);
+    if (!previous && now - file.stat.ctime < NEW_NOTE_MS) previous = [];
+    const fresh = writtenTaskKeys(previous, lines, new Set(writing.keys()));
     for (const key of fresh) writing.set(key, now + WRITING_WINDOW_MS);
     if (writing.size) this.writing.set(file.path, writing);
     else this.writing.delete(file.path);
-    this.lastKeys.set(file.path, new Set(keys));
+    this.lastKeys.set(file.path, lines);
     const statuses = taskStatuses(file.path, content);
     const done = completedTaskKeys(this.lastStatuses.get(file.path), statuses);
     this.lastStatuses.set(file.path, statuses);
@@ -144,14 +154,17 @@ export class TaskIndexService {
 
     const existing = this.timers.get(file.path);
     if (existing) clearTimeout(existing);
+    // A note created and then typed into reports what was typed.
+    if (reportNew) this.reporting.add(file.path);
 
     this.timers.set(
       file.path,
       setTimeout(() => {
         this.timers.delete(file.path);
+        const report = this.reporting.delete(file.path);
         void this.indexFile(file)
           .then(({ fresh, done }) => {
-            if (!reportNew || this.stopped) return;
+            if (!report || this.stopped) return;
             if (fresh.length) this.options.onNewTasks?.(file, fresh);
             if (done.length) this.options.onTasksDone?.(file, done);
           })

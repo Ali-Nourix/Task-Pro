@@ -134,21 +134,30 @@ export function freshTaskKeys(previous: ReadonlySet<string> | undefined, current
 export const WRITING_WINDOW_MS = 2 * 60_000;
 
 /**
- * Like {@link freshTaskKeys}, but remembers what is still being written. A
- * task is often saved half typed ("- [ ] Bu"), so the next pass sees "Bu"
- * leave and "Buy milk" arrive, which on its own reads as an edit. When one of
- * the `writing` keys (tasks that arrived moments ago) is among those that
- * left, the arrivals are the same new task, still new.
+ * The tasks written into a note since its last pass, from the task key on
+ * each line then and now. A task is new when its key was not in the note
+ * before, unless it took the place of an old task on the same line that is
+ * now gone: that is the old task's text being edited, and it is left alone.
+ * A task saved half typed ("Bu", then "Buy milk") is in `writing`, so
+ * finishing it is still writing a new task, not editing an old one.
+ * Without a last pass (`previous` undefined) nothing is new.
  */
-export function newTaskKeys(
-  previous: ReadonlySet<string> | undefined,
-  current: readonly string[],
-  appeared: readonly string[],
+export function writtenTaskKeys(
+  previous: readonly (string | null)[] | undefined,
+  current: readonly (string | null)[],
   writing: ReadonlySet<string> = new Set()
 ): string[] {
-  const fresh = freshTaskKeys(previous, current, appeared);
-  if (fresh.length || !previous || !appeared.length || !writing.size) return fresh;
-  const now = new Set(current);
-  for (const key of writing) if (previous.has(key) && !now.has(key)) return [...appeared];
-  return [];
+  if (!previous) return [];
+  const before = new Set(previous.filter((key): key is string => key !== null));
+  const now = new Set(current.filter((key): key is string => key !== null));
+  const fresh: string[] = [];
+  const seen = new Set<string>();
+  current.forEach((key, index) => {
+    if (key === null || before.has(key) || seen.has(key)) return;
+    seen.add(key);
+    const replaced = previous[index];
+    const editedOld = replaced != null && !now.has(replaced) && !writing.has(replaced);
+    if (!editedOld) fresh.push(key);
+  });
+  return fresh;
 }
