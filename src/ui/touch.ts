@@ -11,6 +11,31 @@ const HOLD_MS = 420;
 /** How far it may drift meanwhile, in pixels. */
 const SLOP = 9;
 
+/** Suppress only the click belonging to the gesture that just ended.
+ * A new primary press is a new interaction and must never be swallowed. */
+export function suppressGestureClick(target: Document | HTMLElement, duration = 400): void {
+  // Documents in Obsidian pop-out windows have a different global constructor.
+  const doc = target.nodeType === 9 ? target as Document : target.ownerDocument!;
+  const win = doc.defaultView ?? window;
+  let timer = 0;
+  const clear = () => {
+    target.removeEventListener('click', swallow, true);
+    doc.removeEventListener('pointerdown', nextPress, true);
+    win.clearTimeout(timer);
+  };
+  const swallow = (event: Event) => {
+    // Keyboard activation is not a trailing touch click.
+    if ('detail' in event && (event as MouseEvent).detail === 0) { clear(); return; }
+    event.preventDefault();
+    event.stopPropagation();
+    clear();
+  };
+  const nextPress = (event: PointerEvent) => { if (event.isPrimary) clear(); };
+  target.addEventListener('click', swallow, { capture: true });
+  doc.addEventListener('pointerdown', nextPress, { capture: true });
+  timer = win.setTimeout(clear, duration);
+}
+
 function buzz(): void {
   try {
     navigator.vibrate?.(8);
@@ -43,12 +68,7 @@ export function onContextPress(el: HTMLElement, open: (at: { x: number; y: numbe
       cleanup();
       pressedAt = Date.now();
       buzz();
-      const swallow = (e: Event) => {
-        e.preventDefault();
-        e.stopPropagation();
-      };
-      doc.addEventListener('click', swallow, { capture: true, once: true });
-      window.setTimeout(() => doc.removeEventListener('click', swallow, true), 900);
+      suppressGestureClick(doc, 900);
       open({ x, y });
     }, HOLD_MS);
     const onMove = (e: PointerEvent) => {

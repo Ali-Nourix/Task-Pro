@@ -62,7 +62,7 @@ import { autoDirection } from '../ui/fields';
 import { ChangeTracker, enter, stagger, type Entrance } from '../ui/motion';
 import { claimEscape } from '../ui/escape-scope';
 import { swipeStrip } from '../ui/strip-swipe';
-import { fingersDown, holdToDrag, onContextPress, readyToCarry } from '../ui/touch';
+import { fingersDown, holdToDrag, onContextPress, readyToCarry, suppressGestureClick } from '../ui/touch';
 import { TaskTimeline } from '../timeline/timeline-view';
 import { getTimelineLabels } from '../timeline/timeline-localization';
 import { getCalendarLabels } from '../calendar/calendar-localization';
@@ -1127,7 +1127,11 @@ export class TaskBoard {
     );
     // Reaching for a bar with the keyboard or a switch brings it back.
     this.el.addEventListener('focusin', (event) => {
-      if ((event.target as HTMLElement).closest('.taskpro-board__header, .taskpro-tabbar, .taskpro-board__fab')) this.setChromeHidden(false);
+      const target = event.target as HTMLElement;
+      // Keyboard/switch focus reveals the bars. Pointer focus must not move the
+      // floating + from under a finger between pointerdown and its click,
+      // especially when reduced motion makes the movement instantaneous.
+      if (target.matches(':focus-visible') && target.closest('.taskpro-board__header, .taskpro-tabbar, .taskpro-board__fab')) this.setChromeHidden(false);
     });
   }
 
@@ -1299,6 +1303,8 @@ export class TaskBoard {
     fab.setAttribute('aria-label', labels.addTaskButton);
     setIcon(fab, 'plus');
     fab.addEventListener('click', () => {
+      // Reveal only after activation, when moving the control cannot lose the tap.
+      this.setChromeHidden(false);
       if (this.isCalendar) this.calendar().addTask();
       else this.openAddSheet(fab);
     });
@@ -3548,12 +3554,7 @@ export class TaskBoard {
       const lead = dx * sign;
       cancel();
       // The click this touch ends with is not a tap on the row.
-      const swallow = (e: Event) => {
-        e.stopPropagation();
-        e.preventDefault();
-      };
-      content.addEventListener('click', swallow, { capture: true, once: true });
-      window.setTimeout(() => content.removeEventListener('click', swallow, true), 400);
+      suppressGestureClick(content, 400);
       if (lead >= SWIPE_ACT) this.changeStatus(task, task.status === '[x]' ? '[ ]' : '[x]');
       else if (lead <= -SWIPE_ACT) this.openTaskActions(task, content.getBoundingClientRect(), row);
     };

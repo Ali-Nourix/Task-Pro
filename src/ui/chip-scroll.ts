@@ -100,7 +100,10 @@ export function makeChipRowScrollable(row: HTMLElement): void {
     const delta = event.deltaMode === 1 ? event.deltaY * 16 : event.deltaMode === 2 ? event.deltaY * row.clientWidth : event.deltaY;
     const [min, max] = range();
     const from = target ?? row.scrollLeft;
-    const next = Math.min(max, Math.max(min, from + delta));
+    // RTL (and reversed rows) use a negative scrollLeft range. A downward
+    // wheel still means 'show the next chips', not 'stay at the leading edge'.
+    const towardEnd = min < 0 && max <= 0 ? -delta : delta;
+    const next = Math.min(max, Math.max(min, from + towardEnd));
     if (Math.abs(next - from) < 0.5) return;
     event.preventDefault();
     if (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches) {
@@ -113,9 +116,14 @@ export function makeChipRowScrollable(row: HTMLElement): void {
 
   // Keyboard focus moving onto a chip that is out of view brings it in.
   const onFocus = (event: FocusEvent) => {
-    const target = event.target as HTMLElement | null;
+    // Focus owns the viewport now. An unfinished wheel glide must not pull it
+    // back toward its older target while scrollIntoView brings the chip in.
+    target = null;
+    if (glide) cancelAnimationFrame(glide);
+    glide = 0;
+    const focused = event.target as HTMLElement | null;
     const reduce = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
-    target?.scrollIntoView?.({ block: 'nearest', inline: 'nearest', behavior: reduce ? 'auto' : 'smooth' });
+    focused?.scrollIntoView?.({ block: 'nearest', inline: 'nearest', behavior: reduce ? 'auto' : 'smooth' });
     schedule();
   };
 
