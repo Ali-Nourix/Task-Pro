@@ -69,6 +69,10 @@ export interface OwnerRow {
   ai_memory?: Remembered[] | null;
   /** The tags the notes use or define, with how many tasks have each, as the plugin last uploaded them. */
   tag_catalog?: TagInfo[] | null;
+  /** A task made in Telegram without a plan is planned for its day, as the plugin's «Plan new tasks for today» does. On unless turned off. */
+  auto_plan?: boolean | null;
+  /** A task made in Telegram today starts its plan at that moment, and ticking it off there ends it, as the plugin's «Track start and end time» does. */
+  track_time?: boolean | null;
   last_sync_at: string | null;
 }
 
@@ -115,6 +119,8 @@ export interface AddPayload {
   tags: string[];
   deadline?: string;
   plan?: Plan;
+  /** The plan's start is the moment the task was made, not a time the owner chose: no «starts now» for it. */
+  tracked?: boolean;
   remind?: Moment;
   /** The key of the task it is a subtask of: it is written under that task. */
   parent?: string;

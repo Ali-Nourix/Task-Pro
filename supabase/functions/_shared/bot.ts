@@ -340,6 +340,15 @@ async function homeView(ctx: Ctx): Promise<View> {
     open: open.length,
   };
   const sync = syncHealth(owner, now);
+  // A dashboard: what is next, and the first of today's tasks.
+  const clock = localNow(owner.timezone, now);
+  const late = (task: TaskRow) => (bucketOf(task, today, owner.timezone) === 'overdue' ? 0 : 1);
+  const todays = open.filter((_, i) => buckets[i] === 'today' || buckets[i] === 'overdue').sort((a, b) => late(a) - late(b) || byPlan(a, b));
+  const next = todays.find((task) => task.plan_date === today && task.plan_start && clockMinutes(task.plan_start) >= clock.minutes - 30) ?? null;
+  const preview = todays.slice(0, 3).map((task) => `${task.plan_date === today && task.plan_start ? `<code>${clockLabel(task.plan_start, owner.language)}</code> ` : '• '}${esc(truncate(task.title, 40))}`);
+  let board = `<i>${w.ui.greeting(clock.minutes)}</i>`;
+  if (next) board += `\n⏭ ${w.ui.nextUp}: <b>${esc(truncate(next.title, 40))}</b> · ${clockLabel(next.plan_start!, owner.language)}`;
+  if (preview.length) board += `\n\n<b>📅 ${w.ui.todayHeading}</b>\n<blockquote>${preview.join('\n')}${todays.length > 3 ? `\n${w.ui.moreToday(todays.length - 3)}` : ''}</blockquote>`;
   const rows: Button[][] = [
     [
       { text: w.buttons.today, data: 'ls:t:0', style: 'primary' },
@@ -357,7 +366,19 @@ async function homeView(ctx: Ctx): Promise<View> {
     { text: w.buttons.settings, data: 'set' },
     { text: w.buttons.help, data: 'help' },
   ]);
-  return { text: w.home(counts, sync.text, sync.health), buttons: rows };
+  // Under the name, before the counts.
+  const summary = w.home(counts, sync.text, sync.health);
+  const cut = summary.indexOf('\n');
+  // The rich home: the name, a greeting, what is next marked, today as a task list, the counts on one line, the sync small at the foot.
+  const md: string[] = [`# ✨ TaskPro`, `*${w.ui.greeting(clock.minutes)}*`];
+  if (next) md.push(`==⏭ ${w.ui.nextUp}: **${mdEscape(truncate(next.title, 40))}** · ${clockLabel(next.plan_start!, owner.language)}==`);
+  if (todays.length) {
+    const items = todays.slice(0, 3).map((task) => `- [ ] ${task.plan_date === today && task.plan_start ? `\`${clockLabel(task.plan_start, owner.language)}\` ` : ''}${mdEscape(truncate(task.title, 40))}`);
+    md.push(`### 📅 ${w.ui.todayHeading}\n\n${items.join('\n')}${todays.length > 3 ? `\n\n${htmlToRich(w.ui.moreToday(todays.length - 3))}` : ''}`);
+  } else md.push(htmlToRich(w.empty.t));
+  md.push(w.ui.countsLine(counts));
+  md.push(footer(`${sync.health === 'ok' ? '🟢' : sync.health === 'stale' ? '🟡' : '⚪'} ${w.ui.syncLine(sync.text)} · ${w.ui.typeHint}`));
+  return { text: `${summary.slice(0, cut)}\n${board}\n${summary.slice(cut + 1)}`, rich: md.join('\n\n'), buttons: rows };
 }
 
 function helpView(ctx: Ctx): View {
@@ -517,7 +538,7 @@ function families(shown: { task: TaskRow; bucket: Bucket }[]): Row[][] {
   return out;
 }
 
-async function listView(ctx: Ctx, filter: Filter, requestedPage: number, tag?: string): Promise<View> {
+async function listView(ctx: Ctx, filter: Filter, requestedPage: number, tag?: string, quick = false): Promise<View> {
   const { w, owner } = ctx;
   const now = ctx.deps.now();
   const today = localNow(owner.timezone, now).date;
@@ -550,7 +571,9 @@ async function listView(ctx: Ctx, filter: Filter, requestedPage: number, tag?: s
   const pages = Math.max(1, pageList.length);
   const index = Math.min(Math.max(0, requestedPage), pages - 1);
   const slice = pageList[index] ?? [];
-  const back = tag ? `g${index}~${tag}` : `${filter}${index}`;
+  // Quick tick (`q`) is kept by the list a tick comes back to; a tag's list has none.
+  if (tag) quick = false;
+  const back = tag ? `g${index}~${tag}` : `${filter}${index}${quick ? 'q' : ''}`;
 
   const filterRow = FILTERS.filter((f) => f === filter || f === 'a' || counts[f] > 0).map((f) => ({
     text: counted(w.filters[f], counts[f], owner.language),
@@ -559,7 +582,9 @@ async function listView(ctx: Ctx, filter: Filter, requestedPage: number, tag?: s
   }));
 
   const tagName = tag ? (await knownTags(ctx)).find((known) => known.key === tag)?.name : undefined;
-  const title = tag ? w.tagsUi.listTitle(tag, tagName) : `<b>${w.listTitle[filter]}</b>`;
+  // Today's list says which day it is: the heading under it would only say «today» again.
+  const dated = filter === 't' ? ` · ${dateLabel(today, owner)}` : '';
+  const title = tag ? w.tagsUi.listTitle(tag, tagName) : `<b>${w.listTitle[filter]}${dated}</b>`;
   let text = `${title}${shown.length ? ` — <i>${w.openCount(shown.length)}</i>` : ''}`;
   let rich = `# ${htmlToRich(title).replace(/^#+ /, '')}${shown.length ? ` — *${w.openCount(shown.length)}*` : ''}`;
   const buttons: Button[][] = [];
@@ -571,10 +596,17 @@ async function listView(ctx: Ctx, filter: Filter, requestedPage: number, tag?: s
     let current: Bucket | null = null;
     let group: string[] = [];
     let richGroup: string[] = [];
+    // One section on a filtered page is the list's own title: it is not said twice.
+    const single = !!(filter !== 'a' || tag) && new Set(slice.map((family) => family[0].bucket)).size === 1;
+    // What is not for now (later, no plan) folds away in the rich message when something nearer is on the page.
+    const near = slice.some((family) => family[0].bucket === 'overdue' || family[0].bucket === 'today' || family[0].bucket === 'tomorrow');
     const flush = () => {
       if (current !== null && group.length) {
-        text += `\n\n<b><u>${w.sections[current]}</u></b>\n<blockquote>${group.join('\n\n')}</blockquote>`;
-        rich += `\n\n## ${w.sections[current]}\n\n${richGroup.join('\n')}`;
+        text += single ? `\n<blockquote>${group.join('\n\n')}</blockquote>` : `\n\n<b><u>${w.sections[current]}</u></b>\n<blockquote>${group.join('\n\n')}</blockquote>`;
+        const heading = current === 'overdue' ? `==${w.sections[current]}==` : w.sections[current];
+        if (single) rich += `\n\n${richGroup.join('\n')}`;
+        else if (near && (current === 'later' || current === 'none')) rich += `\n\n<details><summary>${w.sections[current]} (${digits(group.length, owner.language)})</summary>\n\n${richGroup.join('\n')}\n\n</details>`;
+        else rich += `\n\n## ${heading}\n\n${richGroup.join('\n')}`;
       }
       group = [];
       richGroup = [];
@@ -590,15 +622,11 @@ async function listView(ctx: Ctx, filter: Filter, requestedPage: number, tag?: s
     }
     flush();
 
-    const rows = slice.flat();
-    for (let i = 0; i < rows.length; i += 2) {
-      buttons.push(
-        rows.slice(i, i + 2).map(({ task }) => ({
-          text: `${digits(position.get(task.key)!, owner.language)} · ${truncate(task.title, 15)}`,
-          data: `t:${task.n}@${back}`,
-        }))
-      );
+    if (quick) {
+      text += `\n\n${w.ui.quickHint}`;
+      rich += `\n\n${footer(w.ui.quickHint)}`;
     }
+    buttons.push(...taskButtons(ctx, slice.flat().map(({ task }) => ({ task, position: position.get(task.key)! })), back, quick));
     if (pages > 1) {
       buttons.push([
         index > 0 ? { text: w.buttons.prev, data: listData({ filter, page: index - 1, tag }) } : idle('·'),
@@ -612,6 +640,7 @@ async function listView(ctx: Ctx, filter: Filter, requestedPage: number, tag?: s
     buttons.push(navRow(ctx));
     return { text, buttons, rich };
   }
+  if (slice.length) buttons.push([quick ? { text: w.ui.quickOff, data: listData({ filter, page: index }), style: 'success' } : { text: w.ui.quick, data: listData({ filter, page: index, quick: true }) }]);
   if (filter === 't') {
     buttons.push(dayNavRow(ctx, todayOf(ctx), { text: w.digest.buttons.overview, data: 'ov' }));
     if (ctx.deps.ai) buttons.push([{ text: w.digest.buttons.planDay, data: 'pd' }]);
@@ -629,6 +658,8 @@ interface ListRef {
   tag?: string;
   /** Not a list: one day's screen (`y2026-10-05`). */
   day?: string;
+  /** Its task buttons tick tasks off (`q` at the end of the code). */
+  quick?: boolean;
 }
 
 /** The list a card came from, as its «back» button names it: `a2` is page 3 of all, `g0~home` the first page of #home. */
@@ -638,15 +669,37 @@ function listOf(back: string): ListRef {
   const tagged = /^g(\d+)~(.+)$/u.exec(back);
   if (tagged) return { filter: 'a', page: Number(tagged[1]), tag: tagged[2] };
   const filter = FILTERS.find((f) => f === back[0]) ?? 'a';
-  const page = Number(back.slice(1)) || 0;
-  return { filter, page };
+  const quick = back.endsWith('q');
+  const page = Number(back.slice(1, quick ? -1 : undefined)) || 0;
+  return quick ? { filter, page, quick } : { filter, page };
 }
 
 /** The button data that opens a list. */
-const listData = (ref: ListRef): string => (ref.day ? `dy:${ref.day}` : ref.tag ? `lg:${ref.page}:${ref.tag}` : `ls:${ref.filter}:${ref.page}`);
+const listData = (ref: ListRef): string => (ref.day ? `dy:${ref.day}` : ref.tag ? `lg:${ref.page}:${ref.tag}` : `ls:${ref.filter}:${ref.page}${ref.quick ? ':q' : ''}`);
+
+/** Tasks to a page that each get a whole row, so their titles can be read. */
+const ROOMY = 4;
+
+/**
+ * A button for each task of a list. A few get a row each with most of their title; more go two
+ * to a row. In quick tick a tap ticks the task off (⬜) and the list comes back; otherwise it
+ * opens the task. «.» after the number: a «·» beside Persian digits reads as a zero.
+ */
+function taskButtons(ctx: Ctx, rows: { task: TaskRow; position: number }[], back: string, quick: boolean): Button[][] {
+  const { owner } = ctx;
+  const roomy = rows.length <= ROOMY;
+  const button = ({ task, position }: { task: TaskRow; position: number }): Button => ({
+    text: `${quick ? '⬜ ' : ''}${digits(position, owner.language)}. ${truncate(task.title, roomy ? 30 : quick ? 13 : 15)}`,
+    data: `${quick ? 'done' : 't'}:${task.n}@${back}`,
+  });
+  const out: Button[][] = [];
+  const step = roomy ? 1 : 2;
+  for (let i = 0; i < rows.length; i += step) out.push(readingOrder(ctx, rows.slice(i, i + step).map(button)));
+  return out;
+}
 
 const showList = (ctx: Ctx, ref: ListRef): Promise<View> =>
-  ref.day ? dayView(ctx, ref.day) : listView(ctx, ref.filter, ref.page, ref.tag);
+  ref.day ? dayView(ctx, ref.day) : listView(ctx, ref.filter, ref.page, ref.tag, ref.quick);
 
 /** A task's parent and its open subtasks, for its card. */
 async function relativesOf(ctx: Ctx, task: TaskRow): Promise<{ parent: TaskRow | null; children: TaskRow[]; relatives: Relatives }> {
@@ -870,6 +923,39 @@ function planMenuView(ctx: Ctx, task: TaskRow, back: string): View {
   };
 }
 
+// ── Planning by itself ─────────────────────────────────────────────────────
+
+/**
+ * The plan a task made in Telegram gets when it has none: today, as the plugin's
+ * «Plan new tasks for today» gives a task typed into the notes, and with «Track start
+ * and end time» on, a start at this moment. The settings are the plugin's, sent with
+ * every sync.
+ */
+export function autoPlanFor(owner: OwnerRow, today: string, minutes: number): Plan | undefined {
+  const track = owner.track_time === true;
+  if (owner.auto_plan === false && !track) return undefined;
+  return track ? { date: today, start: toClock(minutes) } : { date: today };
+}
+
+/** With time tracking on, the plan a task ticked off now ends with: today's, started and not yet ended. */
+export function trackedEnd(owner: OwnerRow, task: { plan_date: string | null; plan_start: string | null; plan_end: string | null }, today: string, minutes: number): Plan | null {
+  if (owner.track_time !== true || task.plan_date !== today || !task.plan_start || task.plan_end) return null;
+  const start = clockMinutes(task.plan_start);
+  const end = Math.min(24 * 60 - 1, Math.max(minutes, start + 1));
+  if (end <= start) return null;
+  return { date: today, start: task.plan_start, end: toClock(end) };
+}
+
+/** Writes down when a task ticked off in Telegram ended, before the tick itself is queued. */
+async function endTracked(ctx: Ctx, task: TaskRow): Promise<void> {
+  const clock = localNow(ctx.owner.timezone, ctx.deps.now());
+  const plan = trackedEnd(ctx.owner, task, clock.date, clock.minutes);
+  if (!plan) return;
+  await ctx.deps.store.patchTask(task.key, { plan_end: plan.end ?? null });
+  const payload: PlanPayload = { key: task.key, plan };
+  await ctx.deps.store.addCommand('plan', payload);
+}
+
 // ── A new task ─────────────────────────────────────────────────────────────
 
 /** Makes a task and queues it for the notes, as if it had been typed in. `warning` says what was left out. */
@@ -893,6 +979,13 @@ async function createTask(ctx: Ctx, spec: NewTask): Promise<{ row: TaskRow; warn
     if (at.getTime() >= now.getTime()) remindAt = at.toISOString();
   }
 
+  // The task is made for the day it is planned, reminded or due on (else today), and written into that day's note.
+  const day = spec.plan?.date ?? remind?.date ?? spec.deadline ?? clock.date;
+  // Without a plan of its own it is planned for today, the day it was made, as the plugin plans a new
+  // task typed into the notes; with time tracking on, it starts at this moment.
+  const plan = spec.plan ?? autoPlanFor(owner, clock.date, clock.minutes);
+  const tracked = !spec.plan && !!plan?.start;
+
   const key = `tg:${crypto.randomUUID()}`;
   const row = await ctx.deps.store.insertTask({
     key,
@@ -900,9 +993,9 @@ async function createTask(ctx: Ctx, spec: NewTask): Promise<{ row: TaskRow; warn
     status: 'open',
     priority: spec.priority ?? null,
     deadline: spec.deadline ?? null,
-    plan_date: spec.plan?.date ?? null,
-    plan_start: spec.plan?.start ?? null,
-    plan_end: spec.plan?.end ?? null,
+    plan_date: plan?.date ?? null,
+    plan_start: plan?.start ?? null,
+    plan_end: plan?.end ?? null,
     remind_at: remindAt,
     tags: spec.tags,
     repeat: spec.repeat ?? null,
@@ -914,12 +1007,11 @@ async function createTask(ctx: Ctx, spec: NewTask): Promise<{ row: TaskRow; warn
     origin: 'telegram',
     pending: true,
   });
-  // The task is made for the day it is planned, reminded or due on (else today), and written into that day's note.
-  const day = spec.plan?.date ?? remind?.date ?? spec.deadline ?? clock.date;
   const payload: AddPayload = { key, day, title: spec.title, tags: spec.tags };
   if (spec.priority) payload.priority = spec.priority;
   if (spec.deadline) payload.deadline = spec.deadline;
-  if (spec.plan) payload.plan = spec.plan;
+  if (plan) payload.plan = plan;
+  if (tracked) payload.tracked = true;
   if (remind) payload.remind = remind;
   if (spec.parent) payload.parent = spec.parent.key;
   await ctx.deps.store.addCommand('add', payload);
@@ -1023,18 +1115,23 @@ async function weekView(ctx: Ctx, offset: number): Promise<View> {
   const range = `${dateLabel(days[0], owner)} – ${dateLabel(days[6], owner)}`;
   const SHOW = 6;
 
-  const html: string[] = [w.week.title(range)];
-  const rich: string[] = [`# ${withoutTags(w.week.title(range))}`];
-  for (const { day, tasks } of rowsOf) {
+  const busy = rowsOf.filter(({ tasks }) => tasks.length);
+  const summary = `<i>${w.ui.weekSummary(new Set(busy.flatMap(({ tasks }) => tasks.map((task) => task.key))).size, busy.length)}</i>`;
+  const html: string[] = [`${w.week.title(range)}\n${summary}`];
+  const rich: string[] = [`# ${withoutTags(w.week.title(range))}\n\n${htmlToRich(summary)}`];
+  for (const { day, tasks } of busy) {
     const heading = counted(`${dateLabel(day, owner)}${day === today ? ` · ${w.week.today}` : ''}`, tasks.length, owner.language);
     const shown = tasks.slice(0, SHOW);
     const more = tasks.length > shown.length ? w.week.more(tasks.length - shown.length) : '';
     html.push(`<b><u>${heading}</u></b>${shown.length ? `\n<blockquote>${shown.map((task) => `• ${dayItem(task, day, owner)}`).join('\n')}</blockquote>` : ''}${more ? `\n${more}` : ''}`);
-    rich.push(`## ${heading}${shown.length ? `\n\n${shown.map((task) => `- ${dayItem(task, day, owner, true)}`).join('\n')}` : ''}${more ? `\n\n${htmlToRich(more)}` : ''}`);
+    rich.push(`## ${day === today ? `==${heading}==` : heading}${shown.length ? `\n\n${shown.map((task) => `- ${dayItem(task, day, owner, true)}`).join('\n')}` : ''}${more ? `\n\n${htmlToRich(more)}` : ''}`);
   }
 
   const dayButtons: Button[] = rowsOf.map(({ day, tasks }) => ({
-    text: `${weekdayInitial(day, owner.language)} ${dayNumber(day, owner)}${tasks.length ? '•' : ''}`,
+    // In Persian the dot goes first: after the digits it was read as part of them («۱۶•»).
+    text: owner.language === 'fa'
+      ? `${tasks.length ? '•' : ''}${weekdayInitial(day, owner.language)} ${dayNumber(day, owner)}`
+      : `${weekdayInitial(day, owner.language)} ${dayNumber(day, owner)}${tasks.length ? '•' : ''}`,
     data: `dy:${day}`,
     ...(day === today ? { style: 'primary' as const } : {}),
   }));
@@ -1075,9 +1172,7 @@ async function dayView(ctx: Ctx, day: string): Promise<View> {
   const entries = shown.map((task, i) => taskEntry(task, owner, today, { position: i + 1 }));
   const text = `${w.week.dayTitle(dateLabel(day, owner), tasks.length)}${day === today ? ` · <i>${w.week.today}</i>` : ''}\n${entries.length ? `<blockquote>${entries.join('\n')}</blockquote>` : `<i>${w.week.dayEmpty}</i>`}`;
   const buttons: Button[][] = [];
-  for (let i = 0; i < shown.length; i += 2) {
-    buttons.push(shown.slice(i, i + 2).map((task, j) => ({ text: `${digits(i + j + 1, owner.language)} · ${truncate(task.title, 15)}`, data: `t:${task.n}@y${day}` })));
-  }
+  buttons.push(...taskButtons(ctx, shown.map((task, i) => ({ task, position: i + 1 })), `y${day}`, false));
   buttons.push(dayNavRow(ctx, day, day === today ? idle(w.digest.buttons.today) : { text: w.digest.buttons.today, data: `dy:${today}` }));
   buttons.push(modeRow(ctx, 'day', day, weekOffsetOf(ctx, day)));
   buttons.push([{ text: w.week.newOnDay, data: `cd:x:0:${day}`, style: 'success' }]);
@@ -1196,6 +1291,7 @@ function effectsFor(ctx: Ctx): Effects {
     },
     edit: (task, fields, patch) => saveEdit(ctx, task, fields, patch),
     setStatus: async (task, status) => {
+      if (status === 'done') await endTracked(ctx, task);
       await ctx.deps.store.patchTask(task.key, { status });
       const payload: StatusPayload = { key: task.key, status };
       await ctx.deps.store.addCommand('status', payload);
@@ -1217,6 +1313,11 @@ async function assistantView(ctx: Ctx, result: AssistantResult, heard?: string, 
   const statuses = await load(keysOf('status'));
   const removing = await load(result.proposals);
 
+  const richEntries = (tasks: TaskRow[]): string => {
+    const lines = tasks.slice(0, SHOWN).map((task) => taskEntryRich(task, owner, today, { position: task.n, bullet: task.n >= PROVISIONAL_N, parentHint: !!task.parent_key }));
+    if (tasks.length > SHOWN) lines.push(`*+${digits(tasks.length - SHOWN, owner.language)}*`);
+    return lines.join('\n');
+  };
   const entries = (tasks: TaskRow[]): string => {
     const lines = tasks.slice(0, SHOWN).map((task) => taskEntry(task, owner, today, { position: task.n, bullet: task.n >= PROVISIONAL_N, parentHint: !!task.parent_key }));
     if (tasks.length > SHOWN) lines.push(`<i>+${digits(tasks.length - SHOWN, owner.language)}</i>`);
@@ -1225,39 +1326,55 @@ async function assistantView(ctx: Ctx, result: AssistantResult, heard?: string, 
 
   const acted = added.length + changed.length + statuses.length + removing.length > 0;
   const sections: string[] = [];
-  if (heard) sections.push(w.ai.heard(heard));
+  /** The same screen as rich Markdown: the tasks as a task list, smaller headings, a footer. */
+  const richSections: string[] = [];
+  const group = (heading: string, body: string) => `#### ${htmlToRich(heading).replace(/^#+ /, '').replace(/\*\*/g, '')}\n\n${body}`;
+  if (heard) sections.push(w.ai.heard(heard)), richSections.push(htmlToRich(w.ai.heard(heard)));
   const say = result.say ? esc(result.say) : '';
-  if (acted) sections.push([preview ? w.ai.preview.title : w.ai.done, say].filter(Boolean).join('\n'));
-  else if (say) sections.push(`🤖 ${say}`);
-  else if (!result.warnings.length) sections.push(w.ai.nothing);
-  if (added.length) sections.push(`${w.ai.groups.added}\n${entries(added)}`);
-  if (changed.length) sections.push(`${w.ai.groups.changed}\n${entries(changed)}`);
+  if (acted) {
+    sections.push([preview ? w.ai.preview.title : w.ai.done, say].filter(Boolean).join('\n'));
+    richSections.push(`### ${htmlToRich(preview ? w.ai.preview.title : w.ai.done).replace(/^#+ /, '').replace(/\*\*/g, '')}${say ? `\n\n${htmlToRich(say)}` : ''}`);
+  } else if (say) sections.push(`🤖 ${say}`), richSections.push(htmlToRich(`🤖 ${say}`));
+  else if (!result.warnings.length) sections.push(w.ai.nothing), richSections.push(htmlToRich(w.ai.nothing));
+  if (added.length) sections.push(`${w.ai.groups.added}\n${entries(added)}`), richSections.push(group(w.ai.groups.added, richEntries(added)));
+  if (changed.length) sections.push(`${w.ai.groups.changed}\n${entries(changed)}`), richSections.push(group(w.ai.groups.changed, richEntries(changed)));
   if (statuses.length) {
     const lines = statuses.slice(0, SHOWN).map((task) => `${task.status === 'done' ? '✅' : task.status === 'failed' ? '❌' : '🔄'} <b>${digits(task.n, owner.language)}.</b> ${esc(truncate(task.title, 80))} · ${w.labels.statuses[task.status]}`);
     sections.push(`${w.ai.groups.status}\n<blockquote>${lines.join('\n')}</blockquote>`);
+    richSections.push(group(w.ai.groups.status, statuses.slice(0, SHOWN).map((task) => `- [${task.status === 'done' ? 'x' : ' '}] **${digits(task.n, owner.language)}.** ${mdEscape(truncate(task.title, 80))} · ${w.labels.statuses[task.status]}`).join('\n')));
   }
-  if (removing.length) sections.push(`${w.ai.groups.remove}\n${entries(removing)}`);
+  if (removing.length) sections.push(`${w.ai.groups.remove}\n${entries(removing)}`), richSections.push(group(w.ai.groups.remove, richEntries(removing)));
   if (result.warnings.length) {
-    sections.push(result.warnings.map((warning) => (warning.kind === 'noTitle' || warning.kind === 'tooMany' ? w.ai.warn[warning.kind] : w.ai.warn[warning.kind](warning.detail ?? ''))).join('\n'));
+    const warned = result.warnings.map((warning) => (warning.kind === 'noTitle' || warning.kind === 'tooMany' ? w.ai.warn[warning.kind] : w.ai.warn[warning.kind](warning.detail ?? ''))).join('\n');
+    sections.push(warned);
+    richSections.push(htmlToRich(`<blockquote>${warned}</blockquote>`));
   }
+  // What the notes have not got yet says so once, small, under it all.
+  if ([...added, ...changed].some((task) => task.pending)) richSections.push(footer(w.ui.pendingNote));
+  const rich = richSections.join('\n\n');
 
   if (preview) {
     return {
       text: sections.join('\n\n'),
+      rich,
       buttons: [[{ text: w.ai.preview.apply, data: 'ap', style: 'success' }, { text: w.ai.preview.cancel, data: 'ac', style: 'danger' }], navRow(ctx)],
     };
   }
   const buttons: Button[][] = [];
   const opened = [...added, ...changed].slice(0, 8);
-  for (let i = 0; i < opened.length; i += 2) {
-    buttons.push(opened.slice(i, i + 2).map((task) => ({ text: `${digits(task.n, owner.language)} · ${truncate(task.title, 15)}`, data: `t:${task.n}@a0` })));
-  }
+  buttons.push(...taskButtons(ctx, opened.map((task) => ({ task, position: task.n })), 'a0', false));
   // The numbers ride in the button's data (64 bytes): ten tasks at most.
   const undoable = added.slice(0, 10);
   if (undoable.length) buttons.push([{ text: w.ai.undoAll(undoable.length), data: `ux:${undoable.map((task) => task.n).join('.')}` }]);
   for (const task of removing.slice(0, 4)) buttons.push([{ text: `🗑 ${truncate(task.title, 24)}`, data: `del:${task.n}@a0`, style: 'danger' }]);
   buttons.push(navRow(ctx));
-  return { text: sections.join('\n\n'), buttons };
+  return { text: sections.join('\n\n'), rich, buttons };
+}
+
+/** A small grey line under a rich message. Markdown is not read inside it: the text is plain. */
+function footer(html: string): string {
+  const text = html.replace(/<[^>]+>/g, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+  return `<footer>${esc(text)}</footer>`;
 }
 
 /** Writes to the assistant, or says what it is. `heard`: the words came from a voice message. */
@@ -1326,7 +1443,8 @@ async function assist(text: string, ctx: Ctx, options: { heard?: string; fallbac
     console.error('assistant memory not kept', error);
   }
   const acted = result.changes.length > 0 || result.proposals.length > 0;
-  await sendView(ctx, await assistantView(ctx, result, options.heard, overlay ?? undefined), incoming);
+  // Not hung from the message: the quote over it would only repeat what was said and push the chat up.
+  await sendView(ctx, await assistantView(ctx, result, options.heard, overlay ?? undefined));
   if (!overlay) await react(acted ? '👌' : '👍');
 }
 
@@ -1420,6 +1538,7 @@ async function markDone(n: number, ctx: Ctx): Promise<void> {
   const { w, owner } = ctx;
   const task = await ctx.deps.store.taskByN(n);
   if (!task || !isOpen(task.status)) return ctx.deps.tg.send(ctx.chatId, w.noSuchTask(digits(n, owner.language)));
+  await endTracked(ctx, task);
   await ctx.deps.store.patchTask(task.key, { status: 'done' });
   const payload: StatusPayload = { key: task.key, status: 'done' };
   await ctx.deps.store.addCommand('status', payload);
@@ -1691,6 +1810,7 @@ async function saveEdit(ctx: Ctx, task: TaskRow, fields: Omit<EditPayload, 'key'
 
 /** Closes a task as done or as not done; either way it leaves the open lists once the notes have it. */
 async function closeTask(task: TaskRow, status: 'done' | 'failed', ctx: Ctx): Promise<void> {
+  if (status === 'done') await endTracked(ctx, task);
   await ctx.deps.store.patchTask(task.key, { status });
   const payload: StatusPayload = { key: task.key, status };
   await ctx.deps.store.addCommand('status', payload);
@@ -1787,7 +1907,7 @@ async function route(data: string, ctx: Ctx): Promise<void> {
     case 'st':
       return present(ctx, await statusView(ctx));
     case 'ls':
-      return present(ctx, await listView(ctx, FILTERS.find((f) => f === rawN) ?? 'a', Number(arg) || 0));
+      return present(ctx, await listView(ctx, FILTERS.find((f) => f === rawN) ?? 'a', Number(arg) || 0, undefined, core.split(':')[3] === 'q'));
     case 'tg':
       return present(ctx, await tagsView(ctx, Number(rawN) || 0));
     case 'lg':
@@ -1863,6 +1983,7 @@ async function route(data: string, ctx: Ctx): Promise<void> {
         ctx.toast = w.noSuchTask(digits(rawN, owner.language));
         return;
       }
+      await endTracked(ctx, task);
       await store.patchTask(task.key, { status: 'done' });
       const payload: StatusPayload = { key: task.key, status: 'done' };
       await store.addCommand('status', payload);

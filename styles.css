@@ -9169,3 +9169,95 @@ body.is-mobile .taskpro-board.taskpro-board button.taskpro-board__bar-btn {
     border-color: Highlight;
   }
 }
+
+/* ── Scrolling chip row ──────────────────────────────────────────────────── */
+/* A task with many chips keeps one tidy row: it scrolls sideways (wheel,
+   trackpad or swipe), the scrollbar stays hidden, and a side with more chips
+   beyond it fades out instead of cutting a chip off with a hard edge.
+   Set --taskpro-chip-row-max-width (Style Settings or a snippet) to change
+   how wide the row may grow. */
+@property --taskpro-chip-fade-left {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --taskpro-chip-fade-right {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+
+body {
+  --taskpro-chip-row-max-width: min(26rem, 62%);
+  --taskpro-chip-fade-size: 22px;
+}
+
+.taskpro-badge-container.taskpro-chip-scroll {
+  max-width: var(--taskpro-chip-row-max-width);
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x;
+  /* Room for chip shadows and focus rings, which overflow: auto would clip. */
+  padding-block: 3px;
+  margin-block: -3px;
+  padding-inline: 2px;
+  --taskpro-chip-fade-left: 0px;
+  --taskpro-chip-fade-right: 0px;
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    #000 var(--taskpro-chip-fade-left),
+    #000 calc(100% - var(--taskpro-chip-fade-right)),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    #000 var(--taskpro-chip-fade-left),
+    #000 calc(100% - var(--taskpro-chip-fade-right)),
+    transparent 100%
+  );
+  transition:
+    --taskpro-chip-fade-left 180ms ease,
+    --taskpro-chip-fade-right 180ms ease;
+}
+
+.taskpro-badge-container.taskpro-chip-scroll::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.taskpro-badge-container.taskpro-chip-scroll > * {
+  flex-shrink: 0;
+}
+
+.taskpro-badge-container.taskpro-chip-scroll.is-fade-left {
+  --taskpro-chip-fade-left: var(--taskpro-chip-fade-size);
+}
+
+.taskpro-badge-container.taskpro-chip-scroll.is-fade-right {
+  --taskpro-chip-fade-right: var(--taskpro-chip-fade-size);
+}
+
+.taskpro-badge-container.taskpro-chip-scroll.is-overflowing {
+  cursor: default;
+}
+
+@media (max-width: 600px) {
+  body {
+    --taskpro-chip-row-max-width: min(100%, 78vw);
+    --taskpro-chip-fade-size: 18px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .taskpro-badge-container.taskpro-chip-scroll {
+    transition: none;
+  }
+}

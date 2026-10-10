@@ -234,7 +234,7 @@ async function paired() {
   const today = w.last().text;
   eq([today.includes('Late'), today.includes('Today'), today.includes('Later')], [true, true, false], '/today lists what is late and what is today');
   eq(today.indexOf('عقب‌افتاده') < today.indexOf('Late') && today.indexOf('Late') < today.lastIndexOf('📅 امروز'), true, 'in sections of their own, the late first');
-  eq(w.data(w.last()), ['t:1@t0', 't:2@t0', 'dy:2026-10-03', 'ov', 'dy:2026-10-01', 'ls:a:0', 'ls:t:0', 'ls:o:0', 'home', 'ls:t:0', 'ls:a:0', 'new', 'set'], 'each task opens by a button; the days around today and the overview (turned round for Persian: tomorrow on the left), the filters that have tasks, then the tab bar');
+  eq(w.data(w.last()), ['t:1@t0', 't:2@t0', 'ls:t:0:q', 'dy:2026-10-03', 'ov', 'dy:2026-10-01', 'ls:a:0', 'ls:t:0', 'ls:o:0', 'home', 'ls:t:0', 'ls:a:0', 'new', 'set'], 'each task opens by a button, quick tick turns them into ticks; the days around today and the overview (turned round for Persian: tomorrow on the left), the filters that have tasks, then the tab bar');
   eq(w.last().buttons.flat().find((b) => b.data === 'ls:t:0').style, 'primary', 'the filter in use is blue');
   await w.say('/list');
   eq(w.last().text.includes('Later') && w.last().text.includes('🗓 بعداً'), true, '/list lists them all, the far ones under “later”');
@@ -348,9 +348,9 @@ async function paired() {
   await w.say('/list');
   const first = w.last();
   eq(first.buttons.slice(0, 4).map((row) => row.length), [2, 2, 2, 2], 'a page holds eight tasks, two buttons to a row');
-  eq(first.buttons[1][0].text.endsWith('…'), true, 'a long title is cut on its button');
+  eq(first.buttons[1].some((b) => b.text.endsWith('…')), true, 'a long title is cut on its button');
   eq(w.data(first).filter((d) => d.startsWith('t:')).length, 8, 'eight task buttons');
-  eq(w.data(first).filter((d) => d.startsWith('ls:')), ['ls:a:1', 'ls:a:0', 'ls:u:0', 'ls:t:0', 'ls:a:0'], 'a way to the next page, the filters that have tasks, then the tab bar’s today and all');
+  eq(w.data(first).filter((d) => d.startsWith('ls:')), ['ls:a:1', 'ls:a:0:q', 'ls:a:0', 'ls:u:0', 'ls:t:0', 'ls:a:0'], 'a way to the next page, quick tick, the filters that have tasks, then the tab bar’s today and all');
   eq(first.buttons[4].map((b) => b.text), ['·', '۱ از ۳', '›'], 'the page number sits between the arrows');
   eq(first.text.includes('<b>۱.</b>') && !first.text.includes('<b>۹.</b>'), true, 'the text holds the same eight');
   await w.press('ls:a:1');
@@ -521,7 +521,7 @@ async function paired() {
   const fs = await import('fs');
   const read = (name) => fs.readFileSync(new URL(`../supabase/migrations/${name}`, import.meta.url), 'utf8');
   const code = (text) => text.split('\n').filter((line) => !line.startsWith('--')).join(' ').replace(/\s+/g, ' ').trim();
-  eq(code(mod.TASK_SETTINGS_SQL), code(read('20261003000000_task_settings.sql') + '\n' + read('20261004000000_subtasks.sql') + '\n' + read('20261005000000_rich_messages.sql') + '\n' + read('20261006000000_message_width.sql') + '\n' + read('20261007000000_tags.sql') + '\n' + read('20261008000000_ai_assistant.sql') + '\n' + read('20261009000000_digests_and_planning.sql')), 'the update the functions run is the migration files, in order');
+  eq(code(mod.TASK_SETTINGS_SQL), code(read('20261003000000_task_settings.sql') + '\n' + read('20261004000000_subtasks.sql') + '\n' + read('20261005000000_rich_messages.sql') + '\n' + read('20261006000000_message_width.sql') + '\n' + read('20261007000000_tags.sql') + '\n' + read('20261008000000_ai_assistant.sql') + '\n' + read('20261009000000_digests_and_planning.sql') + '\n' + read('20261010000000_task_timing.sql')), 'the update the functions run is the migration files, in order');
 }
 
 // ── Every setting of a task ────────────────────────────────────────────────
@@ -751,8 +751,8 @@ async function paired() {
   eq(text.includes('↳ 🔄 <b>۴.</b> Design') || text.includes('↳ <b>۴.</b>'), true, 'a subtask is marked with an arrow and set in from its parent');
   eq(text.includes('<code>۱ از ۳</code>') && text.includes('▰▱▱'), true, 'a parent shows how many subtasks are done, with a bar');
   eq(text.includes('زیرتسکِ «Closed parent»'), true, 'a subtask whose parent is not in the list says whose it is');
-  eq(w.data(w.last()).filter((d) => d.startsWith('t:')), ['t:5@a0', 't:1@a0', 't:2@a0', 't:3@a0', 't:4@a0'], 'the buttons follow the same order');
-  eq(w.last().buttons[0][0].text.startsWith('۱ · '), true, 'and carry the same numbers');
+  eq(w.data(w.last()).filter((d) => d.startsWith('t:')), ['t:1@a0', 't:5@a0', 't:3@a0', 't:2@a0', 't:4@a0'], 'the buttons follow the same order, right to left in Persian');
+  eq(w.last().buttons.flat().find((b) => b.data === 't:5@a0').text.startsWith('۱. '), true, 'and carry the same numbers');
 
   await w.press('t:1@a0');
   const card = w.lastEdit();
@@ -877,6 +877,12 @@ async function paired() {
   const richTg = mod.telegramApi('TOKEN', { thinking: 'rich' });
   await richTg.thinking(7, '<tg-thinking>Thinking</tg-thinking>');
   eq([calls[0].method, calls[0].body.rich_message], ['sendRichMessageDraft', { html: '<tg-thinking>Thinking</tg-thinking>' }], 'THINKING_DRAFT=rich gives the rich draft');
+  calls.length = 0;
+  await richTg.send(7, '<b>Done</b>', [[{ text: 'Open', data: 'o' }]], { rich: { markdown: '**Done**', rtl: false } });
+  eq(calls.map((c) => [c.method, c.body.draft_id ?? null, c.body.rich_message?.markdown ?? null]), [['sendRichMessageDraft', calls[0].body.draft_id, '**Done**'], ['sendRichMessage', null, '**Done**']], 'the answer grows out of the same draft, then is sent for good');
+  calls.length = 0;
+  await richTg.send(7, '<b>Again</b>', undefined, { rich: { markdown: '**Again**', rtl: false } });
+  eq(calls.map((c) => c.method), ['sendRichMessage'], 'once: the next message has no draft to grow from');
   calls.length = 0;
   await mod.telegramApi('TOKEN', { thinking: 'off' }).thinking(7, '<tg-thinking>Thinking</tg-thinking>');
   eq(calls.map((c) => [c.method, c.body.action]), [['sendChatAction', 'typing']], 'and THINKING_DRAFT=off only “typing…”');
@@ -1018,6 +1024,75 @@ async function paired() {
   eq(await tick(), 1, 'a reminder six minutes late is still sent (the phone may have been off)');
   await w.sync({ snapshot: [{ key: 'A.md|^a|0', title: 'Soon', status: 'open', remind_at: '2026-10-03T05:30:00Z' }, { key: 'A.md|^e|0', title: 'Missed', status: 'open', remind_at: '2026-10-03T05:00:00Z' }] });
   eq(await tick(), 0, 'one forty minutes late is let go');
+}
+
+// ── Planned by itself, as in the notes ─────────────────────────────────────
+{
+  // Friday 2 October 2026, 15:30 in Tehran.
+  const w = await paired();
+  await w.say('Call mum');
+  const add = () => w.store.commands.filter((c) => c.kind === 'add').at(-1).payload;
+  eq([w.store.tasks.at(-1).plan_date, w.store.tasks.at(-1).plan_start, add().plan, add().tracked], ['2026-10-02', null, { date: '2026-10-02' }, undefined], 'a task made in Telegram is planned for today at once, as one typed into the notes is');
+  await w.say('Dentist tomorrow 9');
+  eq(add().plan, { date: '2026-10-03', start: '09:00' }, 'a plan of its own is kept');
+
+  await w.sync({ planning: { autoPlan: false, trackTime: false } });
+  eq([w.store.owner.auto_plan, w.store.owner.track_time ?? false], [false, false], 'the plugin’s planning settings come with the sync');
+  await w.say('Water the plants');
+  eq([w.store.tasks.at(-1).plan_date, add().plan], [null, undefined], 'with planning off, a new task is left unplanned');
+
+  await w.sync({ planning: { autoPlan: true, trackTime: true } });
+  await w.say('Write the report');
+  const report = w.store.tasks.at(-1);
+  eq([report.plan_date, report.plan_start, report.plan_end, report.remind_at, add().plan, add().tracked], ['2026-10-02', '15:30', null, null, { date: '2026-10-02', start: '15:30' }, true], 'with time tracking on, it starts the moment it is made, without a reminder for that');
+  w.state.now = new Date('2026-10-02T13:15:00Z');
+  await w.press(`done:${report.n}`);
+  const queued = w.store.commands.slice(-2);
+  eq(queued.map((c) => c.kind), ['plan', 'status'], 'ticked off in Telegram, the end is queued before the tick');
+  eq([queued[0].payload.plan, w.store.tasks.find((t) => t.key === report.key).plan_end], [{ date: '2026-10-02', start: '15:30', end: '16:45' }, '16:45'], 'ending at that moment');
+
+  await w.say('Quick one');
+  const quick = w.store.tasks.at(-1);
+  await w.press(`done:${quick.n}`);
+  eq(w.store.commands.filter((c) => c.kind === 'plan').at(-1).payload.plan, { date: '2026-10-02', start: '16:45', end: '16:46' }, 'a task done within the minute lasts one minute');
+
+  await w.sync({ snapshot: [{ key: 'B.md|^b|0', title: 'Planned before', status: 'open', plan_date: '2026-10-01', plan_start: '10:00' }] });
+  const old = w.store.tasks.find((t) => t.key === 'B.md|^b|0');
+  const before = w.store.commands.length;
+  await w.press(`done:${old.n}`);
+  eq(w.store.commands.slice(before).map((c) => c.kind), ['status'], 'a task planned for another day is only ticked off');
+  await w.sync({ planning: { autoPlan: true } });
+  eq([w.store.owner.auto_plan, w.store.owner.track_time], [true, true], 'a setting the sync does not name is left as it is');
+}
+
+// ── The redesigned screens ─────────────────────────────────────────────────
+{
+  // Friday 2 October 2026, 15:30 in Tehran.
+  const w = await paired();
+  await w.sync({ planning: { autoPlan: false } });
+  await w.sync({ snapshot: [
+    { key: 'A.md|^1|0', title: 'Call the bank', status: 'open', tags: [], plan_date: '2026-10-02', plan_start: '16:00', plan_end: '16:30' },
+    { key: 'A.md|^2|0', title: 'Buy bread', status: 'open', tags: [], plan_date: '2026-10-02' },
+  ] });
+  await w.say('/today');
+  const today = w.last();
+  const text = today.text.replace(/[\n\u2800]+$/, '');
+  eq(text.split('\n')[0].includes('امروز · جمعه ۱۰ مهر'), true, 'today’s list says the date in its title');
+  eq(text.includes('<u>'), false, 'and does not repeat «today» as a heading under it');
+  eq([text.includes('🕒 ۱۶:۰۰–۱۶:۳۰'), text.split('\n').slice(1).join('\n').includes('📅 امروز')], [true, false], 'a plan for today shows only its hour');
+  eq(today.buttons.slice(0, 2).map((row) => row.map((b) => b.text)), [['۱. Buy bread'], ['۲. Call the bank']], 'a few tasks get a row each, «.» after the number');
+  await w.press('ls:t:0:q');
+  const quick = w.lastEdit();
+  const bread = w.store.tasks.find((t) => t.title === 'Buy bread').n;
+  const bank = w.store.tasks.find((t) => t.title === 'Call the bank').n;
+  eq([quick.buttons[0][0].text, quick.buttons[0][0].data, quick.text.includes('روی هر تسک بزن')], ['⬜ ۱. Buy bread', `done:${bread}@t0q`, true], 'quick tick: each button ticks its task off');
+  eq(quick.buttons.flat().find((b) => b.data === 'ls:t:0').text, '✔️ پایان تیک سریع', 'and a button ends it');
+  await w.press(`done:${bread}@t0q`);
+  const after = w.lastEdit();
+  eq([w.store.tasks.find((t) => t.n === bread).status, after.buttons[0][0].data, w.toasts.at(-1)], ['done', `done:${bank}@t0q`, '✅ انجام شد'], 'a tap ticks it off, and the list stays in quick tick');
+  await w.say('/start');
+  const home = w.sent.filter((m) => m.text.startsWith('✨ <b>')).at(-1).text;
+  eq([home.includes('🌤 ظهر بخیر'), home.includes('Call the bank'), home.includes('⏭ بعدی')], [true, true, true], 'home greets for the time of day, says what is next and shows today’s first tasks');
 }
 
 console.log(`TELEGRAM_BOT_OK (${checked} checks)`);

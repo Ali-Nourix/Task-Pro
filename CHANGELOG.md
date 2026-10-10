@@ -2,6 +2,62 @@
 
 ## 1.5.0 - A calendar and a timeline to plan your days on, and a board that fits a phone
 
+### Auto-plan that never misses
+
+- Every task written into a note gets its plan (and, with time tracking, its start)
+  **3 seconds after you stop typing**, read from the open editor rather than the
+  saved file.
+- A task is new when its text was not in the note a moment ago; only a change to
+  an old task's text on the same line counts as an edit. TaskPro no longer asks
+  its age index, so a task deleted and written again, or a word typed before, is
+  still new.
+- A task saved half typed and then finished stays new; a note created a moment ago
+  counts all its tasks as new; a bare checkbox is not a task yet.
+- Notes in the **daily notes folder** are watched even when it is outside the
+  target folder.
+
+### A cleaner Telegram bot
+
+- **Quick tick**: a ☑️ button on every list turns its task buttons into check boxes;
+  a tap ticks the task off and the list stays, ready for the next.
+- **Nothing said twice**: today's list has the date in its title and no «today»
+  heading under it; a plan for today shows only its hour (🕒 16:00–16:30).
+- **Readable task buttons**: a few tasks get a row each with most of their title,
+  more go two to a row in reading order; «۱.» instead of «۱ ·», which looked like «۰۱».
+- **The week shows what is planned**: a summary line, only the days that have tasks,
+  and the free days in one line; day buttons mark busy days with a dot that no longer
+  runs into the digits.
+- **Home is a dashboard**: a greeting for the time of day, what is next, and today's
+  first three tasks. The tab bar's ➕ (grey on dark themes) is now 📝.
+- **Telegram's rich formatting used where it helps**: home is a small dashboard
+  (the next task ==marked==, today as a task list, the counts on one line, the sync
+  in a footer); in the full list, «later» and «no plan» fold into `<details>` when
+  something nearer is on the page and overdue is marked; today's day is marked in
+  the week; hints and the «waiting for Obsidian» note are footers.
+- **The assistant's answer no longer pushes the chat up**: the «Thinking…» draft is a
+  rich draft by default and the answer is streamed into that same draft before it is
+  sent, so the bubble grows in place; the answer no longer quotes your message. Its
+  tasks are a task list with readable buttons; «📤» marks a task not yet in the notes
+  (the old 🕓 looked like the plan's 🕒).
+- The week's «free days» line is gone: the week shows only days with tasks.
+- The brief behind it is in `docs/telegram-bot-design.md`.
+
+### Tasks planned by themselves, in the notes and in Telegram
+
+- **Plan new tasks for today** (Settings → Calendar, on by default): a task you
+  type without a plan is planned for the day it was written, so the calendar and
+  the bot's lists show it there.
+- **Track start and end time** (off by default): the plan starts at the moment the
+  task was written and ends when it is ticked off that day (at least a minute).
+  No «starts now» reminder is shown for a start written this way.
+- **Telegram does the same at once**: the plugin sends both settings with each
+  sync, and a task made in the bot is planned (and started) the moment it is made
+  there, and ended the moment it is ticked off there, not when the notes next
+  sync. The bot's database learns two settings (`20261010000000_task_timing.sql`);
+  the functions add them themselves on first use after `update-bot.bat`.
+- **Long chip rows scroll** sideways with a fade at the edges, instead of
+  wrapping under the task.
+
 ### The phone, rebuilt: a frame, quick add, light rows, accessibility
 
 - **A frame made for a thumb**: a slim top bar, the layouts as tabs along the

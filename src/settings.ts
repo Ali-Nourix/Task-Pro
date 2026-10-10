@@ -829,6 +829,26 @@ export class TaskProSettingTab extends PluginSettingTab {
         }));
 
     new Setting(containerEl)
+      .setName('Plan new tasks for today')
+      .setDesc('A task written without a plan is planned for the day it is made, as @schedule(2026-10-08), so it shows on the calendar and in the Telegram bot’s week. A task that already has a plan, or that is ticked off, is left as it is.')
+      .addToggle(toggle => toggle
+        .setValue(this.plugin.settings.autoPlanNewTasks)
+        .onChange(async (value) => {
+          this.plugin.settings.autoPlanNewTasks = value;
+          await save();
+        }));
+
+    new Setting(containerEl)
+      .setName('Track start and end time')
+      .setDesc('A new task’s plan starts at the moment it is written, and ends at the moment it is ticked off the same day: @schedule(2026-10-08 09:12-10:40). Works on its own too: a new task is then planned with its start time even when the option above is off.')
+      .addToggle(toggle => toggle
+        .setValue(this.plugin.settings.autoTrackTaskTime)
+        .onChange(async (value) => {
+          this.plugin.settings.autoTrackTaskTime = value;
+          await save();
+        }));
+
+    new Setting(containerEl)
       .setName('Week starts on')
       .setDesc('Automatic starts a Jalali week on Saturday and a Gregorian one on Monday.')
       .addDropdown(dropdown => dropdown

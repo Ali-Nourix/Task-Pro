@@ -148,17 +148,21 @@ export class TaskCreationRegistry {
    * Keys that disappeared are kept until {@link prune} removes them, so
    * temporarily editing a task's text does not reset its age when the edit is
    * undone.
+   *
+   * Resolves the keys registered as `exact` in this pass: the tasks TaskPro
+   * has just seen appear.
    */
   indexFile(
     filePath: string,
     noteCreatedAt: number,
     taskKeys: string[],
     now: number = Date.now()
-  ): void {
+  ): string[] {
     const index = this.getIndex(now);
     const firstPass = typeof index.files[filePath] !== 'number';
     const safeNoteCreatedAt =
       Number.isFinite(noteCreatedAt) && noteCreatedAt > 0 ? Math.min(noteCreatedAt, now) : now;
+    const appeared: string[] = [];
 
     for (const key of taskKeys) {
       const existing = index.tasks[key];
@@ -179,6 +183,7 @@ export class TaskCreationRegistry {
             noteCreatedAt: safeNoteCreatedAt,
           }
         : { createdAt: now, origin: 'exact', seenAt: now };
+      if (!firstPass) appeared.push(key);
       this.dirty = true;
     }
 
@@ -186,6 +191,8 @@ export class TaskCreationRegistry {
       index.files[filePath] = now;
       this.dirty = true;
     }
+
+    return appeared;
   }
 
   /** Forgets everything about a note. Call when a file is deleted. */
