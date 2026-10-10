@@ -9,6 +9,8 @@
 
 **A powerful task management plugin for Obsidian**
 
+[فارسی](README.fa.md) · [Features](#features) · [Installation](#installation) · [Development](#development)
+
 </div>
 
 An Obsidian plugin for task management: interactive chips on every task line,
