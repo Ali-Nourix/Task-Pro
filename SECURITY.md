@@ -15,3 +15,9 @@ A clean working tree is not a clean history. Audit all Git refs and historical b
 Run a current secret scanner on both files and the complete authenticated Git history, with redacted reports. If a credential was committed, revoke/rotate it first; deletion or history rewriting is not revocation. Coordinate any destructive history cleanup with collaborators. Alternatively keep the original repository private and publish a separately audited source snapshot in a new public repository with no private history or artifacts.
 
 Do not post credentials in public issues. Report a potential exposure privately to the repository owner and omit the secret itself from the report.
+
+## Commit identity and rewritten history
+
+Use a GitHub-provided `users.noreply.github.com` commit email instead of a personal address. Enable **Keep my email addresses private** and **Block command line pushes that expose my email** in GitHub Settings → Emails, and configure Git in every local clone. Account privacy settings are not changed automatically by this repository.
+
+After a coordinated history rewrite, discard stale clones and clone again; never merge old history into the cleaned branches. Keep the original recovery bundle confidential and outside GitHub. Updating branch/tag refs does not erase GitHub's read-only pull-request refs, caches or other people's copies. Ask GitHub Support about remaining sensitive-data references, or keep this repository private and use a separately reviewed clean repository. Support may decline removal of non-sensitive information; do not assume a force-push alone makes publication safe.

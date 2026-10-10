@@ -19,6 +19,6 @@ Deno.serve(async (request) => {
     return json({ ok: true, sent });
   } catch (error) {
     console.error("tick failed");
-    return json({ ok: false, error: String((error as Error).message ?? error) }, 500);
+    return json({ ok: false, error: 'Tick failed. Check the server configuration.' }, 500);
   }
 });

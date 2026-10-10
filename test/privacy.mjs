@@ -30,6 +30,7 @@ ok(!/https:\/\/[a-z]{20}\.supabase\.co/.test(read('supabase/README.md')), 'setup
 for (const pattern of ['.env', '.env.*', 'data.json', '.obsidian/', 'supabase/.temp/', '*.log']) ok(read('.gitignore').split('\n').includes(pattern), `ignored local state: ${pattern}`);
 ok(read('src/settings.ts').includes("text.inputEl.type = 'password'"), 'sync token field is masked');
 ok(read('supabase/functions/sync/index.ts').includes("error: 'Sync failed. Check the server configuration.'"), 'server response does not echo exceptions');
+ok(read('supabase/functions/tick/index.ts').includes("error: 'Tick failed. Check the server configuration.'"), 'tick response does not echo exceptions');
 const bundle = await esbuild.build({ stdin: { contents: 'export { TelegramSync } from "../src/telegram/sync-service"; export { applyCommands } from "../src/telegram/apply";', resolveDir: path.join(base, 'test'), loader: 'ts' }, bundle: true, format: 'esm', platform: 'node', write: false, logLevel: 'error' });
 const { TelegramSync, applyCommands } = await import('data:text/javascript;base64,' + Buffer.from(bundle.outputFiles[0].text).toString('base64'));
 globalThis.window = globalThis;
@@ -47,4 +48,22 @@ assert.equal((await outcome(async () => ({ status: 403, json: { error: canary } 
 const results = await applyCommands([{ id: 'privacy-command', kind: 'add', payload: { title: 'Synthetic task' } }], { tasks: () => [], inboxPath: () => 'Synthetic.md', appendLine: async () => { throw new Error(canary); } });
 assert.equal(results[0].error, 'The change could not be applied.'); checks++;
 ok(!JSON.stringify(results).includes(canary), 'command acknowledgement does not upload exception text');
+// The real tick HTTP handler must not echo a provider exception (fake dependencies only).
+const tickBundle = await esbuild.build({ entryPoints: [path.join(base, 'supabase/functions/tick/index.ts')], bundle: true, platform: 'node', format: 'cjs', write: false, logLevel: 'error', plugins: [{name:'privacy-tick-stubs',setup(b){
+  b.onResolve({filter:/_shared\/(schema|supabase-store|telegram-api|tick)\.ts$/},args=>({path:args.path,namespace:'privacy-stub'}));
+  b.onLoad({filter:/.*/,namespace:'privacy-stub'},()=>({contents:'export async function ensureSchema() {} export function supabaseStore() { return {}; } export function telegramApi() { return {}; } export async function runTick() { throw Error("PRIVATE_DIAGNOSTIC_CANARY"); }',loader:'js'}));
+}}]});
+let tickHandler;
+const savedDeno = globalThis.Deno;
+const savedError = console.error;
+try {
+  globalThis.Deno = {env:{get:key=>key==='SYNC_TOKEN'?'synthetic-tick-value':undefined},serve:handler=>tickHandler=handler};
+  console.error = () => {};
+  new Function('module','exports',tickBundle.outputFiles[0].text)({exports:{}},{});
+  const reply = await tickHandler(new Request('https://example.invalid/tick',{method:'POST',headers:{Authorization:'Bearer synthetic-tick-value'}}));
+  assert.equal(reply.status,500);checks++;
+  const text = await reply.text();
+  assert.equal(JSON.parse(text).error,'Tick failed. Check the server configuration.');checks++;
+  ok(!text.includes(canary),'tick provider exception is not returned');
+} finally {globalThis.Deno=savedDeno;console.error=savedError;}
 console.log(`PRIVACY_OK (${checks} checks)`);
