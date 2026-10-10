@@ -273,7 +273,7 @@ export class TaskCreationRegistry {
     } catch (error) {
       // Re-arm so the next flush retries instead of losing the data silently.
       this.dirty = true;
-      console.error('TaskPro: failed to persist the task creation index', error);
+      console.error("TaskPro: failed to persist the task creation index");
     }
   }
 }

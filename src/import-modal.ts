@@ -68,7 +68,7 @@ export class TaskImportModal extends FuzzySuggestModal<TaskOption> {
       const content = await this.app.vault.read(refFile);
       const tasks = parseTasksWithHierarchy(content);
       
-      console.log('TaskPro: Parsed tasks from reference note:', tasks.length);
+      console.log("TaskPro: Parsed tasks from reference note:");
 
       for (const task of tasks) {
         items.push({

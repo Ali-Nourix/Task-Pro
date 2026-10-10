@@ -15,10 +15,13 @@ if errorlevel 1 (
   goto :end
 )
 
-rem The project is the one this folder was linked to; the address is not a secret.
-set "REF=hjycjrqsavmutdiwtwfj"
+rem Use only a locally linked project; never ship a personal project reference.
+set "REF=%SUPABASE_PROJECT_REF%"
 if exist "supabase\.temp\project-ref" set /p REF=<"supabase\.temp\project-ref"
-echo   Project: %REF%
+if not defined REF (
+  echo   No project linked. Run: npx supabase link --project-ref YOUR_PROJECT_REF
+  goto :end
+)
 echo.
 
 set "FAILED="
@@ -35,7 +38,7 @@ if defined FAILED (
 
 if defined FAILED (
   echo.
-  echo   It still did not work. Take a screenshot of this window and send it to Claude.
+  echo   It still did not work. Review the error locally. Redact credentials and project identifiers before sharing logs.
   goto :end
 )
 

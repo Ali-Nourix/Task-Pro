@@ -118,7 +118,7 @@ export class TaskIndexService {
     try {
       content = this.options.liveContent?.(file) ?? (await this.app.vault.cachedRead(file));
     } catch (error) {
-      console.error(`TaskPro: failed to read "${file.path}" while indexing task ages`, error);
+      console.error("TaskPro: failed to read \"[redacted]\" while indexing task ages");
       return none;
     }
 

@@ -110,7 +110,7 @@ export async function collectReminderTasks(
     try {
       content = await app.vault.cachedRead(file);
     } catch (error) {
-      console.error(`TaskPro: failed to read "${file.path}" while scanning reminders`, error);
+      console.error("TaskPro: failed to read \"[redacted]\" while scanning reminders");
       failedFiles.push(file.path);
       continue;
     }

@@ -307,7 +307,7 @@ async function present(ctx: Ctx, view: View): Promise<void> {
       await tg.edit(ctx.chatId, ctx.messageId, textOf(ctx, view), view.buttons, richOf(ctx, view));
       return;
     } catch (error) {
-      console.error('edit failed, sending instead', error);
+      console.error("edit failed, sending instead");
     }
   }
   await sendView(ctx, view);
@@ -1024,7 +1024,7 @@ async function createTask(ctx: Ctx, spec: NewTask): Promise<{ row: TaskRow; warn
     try {
       await ctx.deps.store.addCommand('edit', { key, repeat: spec.repeat });
     } catch (error) {
-      console.error('repeat not queued', error);
+      console.error("repeat not queued");
       await ctx.deps.store.patchTask(key, { repeat: null });
     }
   }
@@ -1258,7 +1258,7 @@ async function notifications(what: string | undefined, ctx: Ctx): Promise<void> 
     await ctx.deps.store.patchOwner(patch);
   } catch (error) {
     // The database has not learnt these settings yet (it updates itself on first use).
-    console.error('notification setting not saved', error);
+    console.error("notification setting not saved");
     ctx.toast = w.notif.unavailable;
     return;
   }
@@ -1419,14 +1419,14 @@ async function assist(text: string, ctx: Ctx, options: { heard?: string; fallbac
           result = { ...tried, summary: `The user has NOT accepted these yet, nothing is applied: ${tried.summary}` };
         } catch (error) {
           // Nowhere to keep it until the owner answers: it is done now, as it would have been.
-          console.error('plan not kept, applying it', error);
+          console.error("plan not kept, applying it");
           result = { ...(await replayCalls(tried.calls, { store, effects: effectsFor(ctx), owner, now })), say: tried.say };
           overlay = null;
         }
       }
     }
   } catch (error) {
-    console.error('assistant failed', error);
+    console.error("assistant failed");
     await react('🤔');
     const problem = w.ai.errors[error instanceof AiError ? error.kind : 'busy'];
     const heard = options.heard ? `${w.ai.heard(options.heard)}\n\n` : '';
@@ -1440,7 +1440,7 @@ async function assist(text: string, ctx: Ctx, options: { heard?: string; fallbac
     await store.patchOwner({ ai_memory: remember(memory, text, result, now) });
   } catch (error) {
     // The database has not learnt the column yet: the assistant just forgets between messages.
-    console.error('assistant memory not kept', error);
+    console.error("assistant memory not kept");
   }
   const acted = result.changes.length > 0 || result.proposals.length > 0;
   // Not hung from the message: the quote over it would only repeat what was said and push the chat up.
@@ -1479,7 +1479,7 @@ async function applyPending(ctx: Ctx): Promise<void> {
     // Forgotten first: a second tap on the same button must not do it twice.
     await store.patchOwner({ ai_pending: null });
   } catch (error) {
-    console.error('plan not cleared', error);
+    console.error("plan not cleared");
     ctx.toast = w.notif.unavailable;
     return;
   }
@@ -1487,7 +1487,7 @@ async function applyPending(ctx: Ctx): Promise<void> {
   try {
     await store.patchOwner({ ai_memory: remember(freshMemory(owner.ai_memory, now), pending.text, result, now) });
   } catch (error) {
-    console.error('assistant memory not kept', error);
+    console.error("assistant memory not kept");
   }
   ctx.toast = w.ai.done.replace(/<[^>]+>/g, '');
   await present(ctx, await assistantView(ctx, result));
@@ -1510,7 +1510,7 @@ async function handleVoice(voice: Voice, ctx: Ctx): Promise<void> {
   try {
     heard = (await ai.transcribe(await tg.download(voice.file_id), owner.language)).trim();
   } catch (error) {
-    console.error('voice not read', error);
+    console.error("voice not read");
     return tg.send(chatId, error instanceof AiError && error.kind !== 'bad' && error.kind !== 'format' ? w.ai.errors[error.kind] : w.ai.voice.failed);
   }
   if (!heard) return tg.send(chatId, w.ai.voice.empty);
@@ -1800,7 +1800,7 @@ async function saveEdit(ctx: Ctx, task: TaskRow, fields: Omit<EditPayload, 'key'
     await ctx.deps.store.addCommand('edit', { key: task.key, ...fields });
   } catch (error) {
     // The database has not learnt the edit yet (it updates itself on first use).
-    console.error('edit not queued', error);
+    console.error("edit not queued");
     await ctx.deps.tg.send(ctx.chatId, ctx.w.task.editUnavailable);
     return false;
   }
@@ -2140,7 +2140,7 @@ async function settings(what: string | undefined, ctx: Ctx): Promise<void> {
       next = { ...owner, rich };
     } catch (error) {
       // The database has not learnt this setting yet (it updates itself on first use).
-      console.error('rich setting not saved', error);
+      console.error("rich setting not saved");
       ctx.toast = w.richUnavailable;
       return;
     }
@@ -2151,7 +2151,7 @@ async function settings(what: string | undefined, ctx: Ctx): Promise<void> {
       await store.patchOwner({ pad });
       next = { ...owner, pad };
     } catch (error) {
-      console.error('width setting not saved', error);
+      console.error("width setting not saved");
       ctx.toast = w.richUnavailable;
       return;
     }
@@ -2165,7 +2165,7 @@ async function settings(what: string | undefined, ctx: Ctx): Promise<void> {
       await store.patchOwner({ ai });
       next = { ...owner, ai };
     } catch (error) {
-      console.error('assistant setting not saved', error);
+      console.error("assistant setting not saved");
       ctx.toast = w.richUnavailable;
       return;
     }

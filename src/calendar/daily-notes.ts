@@ -345,7 +345,7 @@ export class DailyNoteService {
     const path = /\.md$/i.test(trimmed) ? trimmed : `${trimmed}.md`;
     const file = this.app.vault.getFileByPath(path);
     if (!file) {
-      console.warn(`TaskPro: daily note template "${path}" was not found; the note starts empty.`);
+      console.warn("TaskPro: daily note template \"[redacted]\" was not found; the note starts empty.");
       return '';
     }
     return this.app.vault.cachedRead(file);
@@ -378,7 +378,7 @@ export class DailyNoteService {
     try {
       await templater.templater?.overwrite_file_commands?.(file);
     } catch (error) {
-      console.error('TaskPro: Templater could not process the new daily note', error);
+      console.error("TaskPro: Templater could not process the new daily note");
     }
   }
 }

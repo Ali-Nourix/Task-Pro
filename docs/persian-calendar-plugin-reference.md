@@ -218,7 +218,7 @@ MIT License - مشاهده [LICENSE](LICENSE)
 
 - 🐛 گزارش باگ: [Issues](https://github.com/your-repo/issues)
 - 💡 پیشنهادات: [Discussions](https://github.com/your-repo/discussions)
-- 📧 ایمیل: your-email@example.com
+اطلاعات تماس نویسنده در منبع مرجع موجود است و اینجا بازنشر نشده.
 
 ---
 

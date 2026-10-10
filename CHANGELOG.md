@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.5.0 - A calendar and a timeline to plan your days on, and a board that fits a phone
+## 1.6.0 - Automatic planning, time tracking, scrolling chips and private diagnostics
 
 ### Auto-plan that never misses
 
@@ -57,6 +57,26 @@
   the functions add them themselves on first use after `update-bot.bat`.
 - **Long chip rows scroll** sideways with a fade at the edges, instead of
   wrapping under the task.
+
+### Accessibility and validation fixes
+
+- Reduced-motion mode disables animations and transitions outright; zero-duration backwards-filled animations no longer expose a transient scaled hit target.
+- Gesture click guards expire at the next primary press and do not block keyboard activation, so a legitimate next tap is not swallowed after a swipe/long press.
+- Chip rows map downward wheel input to the trailing edge in negative-scroll RTL/reversed layouts.
+- Keyboard focus cancels an unfinished wheel glide, so it cannot pull an offscreen focused chip back out of view.
+- Pointer focus no longer reveals collapsed mobile chrome mid-tap and moves the floating + away; keyboard/switch focus still reveals it.
+- Small table controls keep their keyboard focus rings inside clipped cells.
+- Added a light/dark × LTR/RTL × motion-preference chip-scroll regression matrix.
+- Pinned the tested Obsidian API declarations and updated build tooling/transitive Moment to resolve the three reported development-dependency advisories.
+
+### Privacy hardening
+
+- Deployment instructions and the update script no longer contain a personal Supabase project reference.
+- Runtime diagnostics log fixed events only, not exception objects, provider responses or note paths.
+- Sync failures and command failures no longer persist or upload raw exception messages.
+- Local credentials and vault/deployment state are ignored. See `SECURITY.md` before publishing.
+
+## 1.5.0 - A calendar and a timeline to plan your days on, and a board that fits a phone
 
 ### The phone, rebuilt: a frame, quick add, light rows, accessibility
 

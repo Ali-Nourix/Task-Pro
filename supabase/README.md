@@ -38,7 +38,7 @@ openssl rand -hex 24   # سه بار؛ برای PAIRING_CODE ،SYNC_TOKEN ،TELE
 ```bash
 npm i -g supabase          # یا هر بار با npx supabase ...
 supabase login
-supabase link --project-ref hjycjrqsavmutdiwtwfj
+supabase link --project-ref YOUR_PROJECT_REF
 ```
 
 ### ۴. جدول‌ها و توابع
@@ -59,7 +59,7 @@ supabase functions deploy telegram sync tick --no-verify-jwt
 
 ```bash
 curl -sS "https://api.telegram.org/bot<TOKEN>/setWebhook" \
-  -d "url=https://hjycjrqsavmutdiwtwfj.supabase.co/functions/v1/telegram" \
+  -d "url=https://YOUR_PROJECT_REF.supabase.co/functions/v1/telegram" \
   -d "secret_token=<TELEGRAM_WEBHOOK_SECRET>"
 ```
 
@@ -74,7 +74,7 @@ create extension if not exists pg_net with schema extensions;
 
 select cron.schedule('taskpro-tick', '* * * * *', $$
   select net.http_post(
-    url     := 'https://hjycjrqsavmutdiwtwfj.supabase.co/functions/v1/tick',
+    url     := 'https://YOUR_PROJECT_REF.supabase.co/functions/v1/tick',
     headers := jsonb_build_object('Authorization', 'Bearer SYNC_TOKEN_را_اینجا_بگذار', 'Content-Type', 'application/json'),
     body    := '{}'::jsonb
   );
@@ -84,7 +84,7 @@ $$);
 ### ۷. وصل شدن
 - در تلگرام به ربات خودت بنویس: `/start <PAIRING_CODE>`
 - در Obsidian: **Settings → TaskPro → Telegram** : آدرس پروژه
-  (`https://hjycjrqsavmutdiwtwfj.supabase.co`) و `SYNC_TOKEN` را بگذار و
+  (`https://YOUR_PROJECT_REF.supabase.co`) و `SYNC_TOKEN` را بگذار و
   «Sync now» را بزن.
 
 ## فقط برای یک کاربر (پیشنهادی)

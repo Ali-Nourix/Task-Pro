@@ -108,7 +108,7 @@ export function telegramApi(token: string, options: { thinking?: 'text' | 'rich'
         const message = String(error);
         if (/not modified/i.test(message)) return;
         if (PARSE_ERROR.test(message) && i < modes.length - 1) {
-          console.error(`${modes[i]} refused, trying ${modes[i + 1]}`, message.slice(0, 160));
+          console.error("[redacted] refused, trying [redacted]");
           continue;
         }
         if (hasStyle && !markup && message.includes(': 400')) return attempt(modes[i], false);
@@ -123,7 +123,7 @@ export function telegramApi(token: string, options: { thinking?: 'text' | 'rich'
       try {
         return await rich(richMethod, body, content, buttons);
       } catch (error) {
-        console.error('rich message refused, sending the classic one', error);
+        console.error("rich message refused, sending the classic one");
         if (NO_RICH.test(String(error))) richPausedUntil = Date.now() + RICH_PAUSE_MS;
       }
     }
