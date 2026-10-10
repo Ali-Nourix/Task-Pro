@@ -38,6 +38,8 @@ export interface ApplyHost {
    */
   dayTarget?(day: string): string | null;
   addTaskOnDay?(day: string, line: string): Promise<string | null>;
+  /** A task made in Telegram whose plan starts at the moment it was made there (time tracking): no «starts now» for it. */
+  trackedStart?(path: string, date: string, start: string): void;
   /** Writes a task as the last subtask of another, indented under it. False when it could not. */
   insertChild?(parent: BoardTask, line: string): Promise<boolean>;
   setStatus(task: BoardTask, status: TaskStatus): Promise<void>;
@@ -142,6 +144,8 @@ async function applyOne(command: Command, host: ApplyHost, aliases: Map<string, 
       if (!path) return void (result.error = 'no inbox note is set');
       if (!(await host.appendLine(path, line))) return void (result.error = 'the inbox note could not be written');
     }
+    const schedule = payload.tracked === true ? plan(payload.plan) : null;
+    if (schedule?.start) host.trackedStart?.(path, schedule.date, schedule.start);
     result.key = keyForNewTask(before, path, title);
     if (typeof payload.key === 'string') {
       aliases.set(payload.key, result.key);

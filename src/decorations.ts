@@ -2,6 +2,7 @@
 // Refactored widget rendering with robust state management
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { makeChipRowScrollable, releaseChipRow } from './ui/chip-scroll';
 import {
   EditorView,
   WidgetType,
@@ -286,11 +287,16 @@ class TaskBadgeWidget extends WidgetType {
     );
   }
 
+  destroy(dom: HTMLElement): void {
+    releaseChipRow(dom);
+  }
+
   toDOM(): HTMLElement {
     const s = this.widgetState;
     const container = document.createElement('span');
     container.className = 'taskpro-badge-container';
     applyChipScale(container, s.badgeSize);
+    makeChipRowScrollable(container);
 
     // Embed block ID as a hidden element inside the widget — never in file text
     if (s.blockId) {

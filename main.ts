@@ -89,6 +89,7 @@ import { displayTitle } from './src/board/board-text';
 import { descendantsOf, indexFamilies } from './src/calendar/calendar-items';
 import { RelationIndex, linkPathOf, newBlockId } from './src/board/task-relations';
 import { MoveContext, PreparedBlock, blockIdOf, blockIdsIn, linkAfterMove, prepareBlock, relinkWaiting } from './src/board/task-move';
+import { editLines, finishLineIfDone, localClock, localDayKey, planLineIfNew } from './src/auto-plan';
 
 /**
  * A task as the editing API addresses it. `lineNumber` is a hint: it is used
@@ -132,6 +133,8 @@ export default class TaskProPlugin extends Plugin {
   reminderService!: ReminderService;
   planReminders!: PlanReminderService;
   telegramSync!: TelegramSync;
+  /** Plans whose start was written automatically this session (`path|date HH:mm`); they are not announced. */
+  private readonly autoTimedPlans = new Set<string>();
   /** Hidden index of when each task was first seen. Never rendered anywhere. */
   taskRegistry!: TaskCreationRegistry;
   taskIndexService!: TaskIndexService;
@@ -183,6 +186,16 @@ export default class TaskProPlugin extends Plugin {
       app: this.app,
       registry: this.taskRegistry,
       getTargetFolder: () => this.settings.targetFolder,
+      getExtraFolders: () => [this.settings.calendar.dailyNotesFolder],
+      liveContent: (file) => {
+        const view = this.app.workspace
+          .getLeavesOfType('markdown')
+          .map((leaf) => leaf.view)
+          .find((candidate): candidate is MarkdownView => candidate instanceof MarkdownView && candidate.file?.path === file.path);
+        return view && view.getMode() === 'source' ? view.editor.getValue() : null;
+      },
+      onNewTasks: (file, keys) => void this.planNewTasks(file, keys),
+      onTasksDone: (file, keys) => void this.finishDoneTasks(file, keys),
     });
 
     this.taskStore = new TaskStore(
@@ -733,7 +746,10 @@ export default class TaskProPlugin extends Plugin {
         const daily = this.settings.calendar.dailyNotesFolder.trim().replace(/^\/+|\/+$/g, '');
         return this.taskStore
           .all()
-          .filter((task) => this.isFileInTargetFolder(task.filePath) || (!!daily && task.filePath.startsWith(`${daily}/`)));
+          .filter((task) => this.isFileInTargetFolder(task.filePath) || (!!daily && task.filePath.startsWith(`${daily}/`)))
+          // A start written automatically is the moment the task was typed,
+          // so announcing that it "starts now" would only interrupt.
+          .filter((task) => !task.schedule?.start || !this.autoTimedPlans.has(`${task.filePath}|${task.schedule.date} ${task.schedule.start}`));
       },
       settings: () => this.settings.reminders,
       language: () => this.settings.badgeLanguage,
@@ -755,6 +771,7 @@ export default class TaskProPlugin extends Plugin {
       tasks: () => (this.taskStore.isLoaded ? this.syncableTasks() : null),
       defaults: () => ({ enabled: this.settings.reminders.planReminders, leadMinutes: this.settings.reminders.planLeadMinutes }),
       definedTags: () => this.settings.tags,
+      planning: () => ({ autoPlan: this.settings.autoPlanNewTasks, trackTime: this.settings.autoTrackTaskTime }),
       post: async (url, token, body) => {
         const response = await requestUrl({
           url,
@@ -778,6 +795,7 @@ export default class TaskProPlugin extends Plugin {
         appendLine: (path, line) => this.appendTaskLine(path, line),
         dayTarget: (day) => this.dayNoteTarget(day, this.settings.board.calendarSystem ?? this.settings.calendarSystem).path || null,
         addTaskOnDay: (day, line) => this.addTaskOnDay(day, line, this.settings.board.calendarSystem ?? this.settings.calendarSystem),
+        trackedStart: (path, date, start) => void this.autoTimedPlans.add(`${path}|${date} ${start}`),
         insertChild: (parent, line) => this.insertTaskNear(this.boardTaskRef(parent), line, 'child'),
         setStatus: (task, status) => this.setTaskStatusFor(this.boardTaskRef(task), status),
         setRemind: (task, value) => this.setTaskRemindFor(this.boardTaskRef(task), value),
@@ -856,8 +874,14 @@ export default class TaskProPlugin extends Plugin {
       this.app.vault.on('modify', (file) => {
         if (file instanceof TFile) {
           this.handleFileModification(file);
-          this.taskIndexService.handleFileChanged(file);
+          this.taskIndexService.handleFileChanged(file, true);
         }
+      })
+    );
+    // Typing is seen as it happens, not only once Obsidian saves the note.
+    this.registerEvent(
+      this.app.workspace.on('editor-change', (_editor, info) => {
+        if (info.file instanceof TFile) this.taskIndexService.handleFileChanged(info.file, true);
       })
     );
 
@@ -1369,6 +1393,11 @@ export default class TaskProPlugin extends Plugin {
 
   /** Writes a task line on a day. Resolves the note it went into, or null. */
   private async addTaskOnDay(day: string, line: string, system: CalendarSystem): Promise<string | null> {
+    // A task made on a day is planned for that day, so it is not planned for
+    // the day it was written on instead (see planNewTasks).
+    if ((this.settings.autoPlanNewTasks || this.settings.autoTrackTaskTime) && /^\d{4}-\d{2}-\d{2}$/.test(day) && !extractSchedule(line)) {
+      line = setSchedule(line, { date: day });
+    }
     try {
       if (this.settings.calendar.newTaskTarget === 'inbox') {
         const path = this.boardInboxPath();
@@ -2020,6 +2049,91 @@ export default class TaskProPlugin extends Plugin {
     const position = { line: index, ch: lines[index].length };
     view.editor.setCursor(position);
     view.editor.scrollIntoView({ from: position, to: position }, true);
+  }
+
+  /**
+   * Plans the tasks just written into a note for today, when they have no plan
+   * yet, so the calendar and the Telegram bot's weekly list show them on the
+   * day they were made. With time tracking on, the plan starts at the moment
+   * the task was written.
+   */
+  private async planNewTasks(file: TFile, keys: string[]): Promise<void> {
+    const { autoPlanNewTasks, autoTrackTaskTime } = this.settings;
+    if ((!autoPlanNewTasks && !autoTrackTaskTime) || !keys.length) return;
+    const fresh = new Set(keys);
+    const now = new Date();
+    const day = localDayKey(now);
+    const start = autoTrackTaskTime ? localClock(now) : undefined;
+    if (start) this.autoTimedPlans.add(`${file.path}|${day} ${start}`);
+    await this.editTaskLines(file, (line) => planLineIfNew(line, file.path, fresh, day, start));
+  }
+
+  /** With time tracking on, a task ticked off today ends its plan at the moment it was ticked. */
+  private async finishDoneTasks(file: TFile, keys: string[]): Promise<void> {
+    if (!this.settings.autoTrackTaskTime || !keys.length) return;
+    const done = new Set(keys);
+    const now = new Date();
+    const day = localDayKey(now);
+    const end = localClock(now);
+    await this.editTaskLines(file, (line) => finishLineIfDone(line, file.path, done, day, end));
+  }
+
+  /**
+   * Rewrites the lines of a note that `edit` changes. An open editor is changed
+   * in place, only the part of each line that differs, and the cursor is put
+   * back, so a task still being typed is not disturbed and nothing typed since
+   * the last save is lost.
+   */
+  private async editTaskLines(file: TFile, edit: (line: string) => string | null): Promise<void> {
+    try {
+      const view = this.app.workspace
+        .getLeavesOfType('markdown')
+        .map((leaf) => leaf.view)
+        .find((candidate): candidate is MarkdownView => candidate instanceof MarkdownView && candidate.file?.path === file.path);
+      if (view && view.getMode() === 'source') {
+        const editor = view.editor;
+        const selections = editor.listSelections();
+        const edits = new Map<number, { at: number; delta: number }>();
+        for (let index = 0; index < editor.lineCount(); index++) {
+          const line = editor.getLine(index);
+          const next = edit(line);
+          if (next === null) continue;
+          let head = 0;
+          while (head < line.length && head < next.length && line[head] === next[head]) head++;
+          let tail = 0;
+          while (
+            tail < line.length - head &&
+            tail < next.length - head &&
+            line[line.length - 1 - tail] === next[next.length - 1 - tail]
+          ) tail++;
+          editor.replaceRange(
+            next.slice(head, next.length - tail),
+            { line: index, ch: head },
+            { line: index, ch: line.length - tail }
+          );
+          edits.set(index, { at: head, delta: next.length - line.length });
+        }
+        if (!edits.size) return;
+        const keep = (pos: { line: number; ch: number }) => {
+          const change = edits.get(pos.line);
+          if (!change || pos.ch <= change.at) return pos;
+          return { line: pos.line, ch: Math.max(change.at, pos.ch + change.delta) };
+        };
+        editor.setSelections(selections.map((range) => ({ anchor: keep(range.anchor), head: keep(range.head) })));
+        this.refreshDecorations();
+        return;
+      }
+      let changed = false;
+      await this.app.vault.process(file, (content) => {
+        const next = editLines(content, edit);
+        if (next === null) return content;
+        changed = true;
+        return next;
+      });
+      if (changed) this.refreshDecorations();
+    } catch (error) {
+      console.error('TaskPro: could not update the task plans', error);
+    }
   }
 
   /** Appends a task line at the end of a note. Resolves false when the note is gone. */
