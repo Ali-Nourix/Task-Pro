@@ -52,7 +52,7 @@ Deno.serve(async (request) => {
     });
   } catch (error) {
     // Answered all the same: Telegram would send the same update again and again.
-    console.error('update failed', error);
+    console.error("update failed");
   }
   return new Response('ok');
 });

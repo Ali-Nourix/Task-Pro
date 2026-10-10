@@ -1207,7 +1207,7 @@ before claiming the chips adapt to it. Drop any theme's `theme.css` into
 `test/themes/` to try it.
 
 ```bash
-npm i --no-save playwright lucide-static && npx playwright install chromium
+npm i --no-save playwright@1.56.1 lucide-static && npx playwright install chromium
 
 npm run previews        # regenerate the images in this README
 npm run check:contrast  # measure every chip, board and tag colour against WCAG AA on every theme
@@ -1218,6 +1218,14 @@ These need Playwright, and the board harness needs Lucide's icon set (the icons
 Obsidian ships). Neither is a dependency — they would pull a browser and an
 icon set into every install — so `npm test` stays independent of them and
 covers the logic instead.
+
+## Privacy before sharing
+
+See [SECURITY.md](SECURITY.md) before publishing this repository, a build, a vault or diagnostics. The Windows updater now requires a locally linked Supabase project (or `SUPABASE_PROJECT_REF`); it no longer targets a personal project. Raw exceptions are not logged or persisted by sync, and the local token field is masked, but plugin `data.json` still contains your configured token and must never be shared.
+
+## Version 1.6.0
+
+New tasks are planned after three seconds of quiet typing; optional start/end tracking and matching Telegram behavior are included. Long chip rows scroll with the mouse wheel, trackpad, touch and keyboard in either writing direction. Reduced-motion layouts are stable from their first frame, and table focus rings stay visible in clipped cells. Existing board, calendar, timeline, tags, reminders and theme-adaptive checkbox behavior are retained.
 
 ## Releasing
 

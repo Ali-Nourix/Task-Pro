@@ -341,6 +341,6 @@ export function showSystemNotification(title: string, body: string): void {
       });
     }
   } catch (error) {
-    console.error('TaskPro: system notification failed', error);
+    console.error("TaskPro: system notification failed");
   }
 }

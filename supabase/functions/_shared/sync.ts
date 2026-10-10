@@ -130,7 +130,7 @@ export async function handleSync(
       await store.patchOwner({ tag_catalog: cleanTagCatalog(request.tags) });
     } catch (error) {
       // A database that has not learnt the column yet (it updates itself on first use) still syncs the tasks.
-      console.error('tag catalog not saved', error);
+      console.error("tag catalog not saved");
     }
   }
 
@@ -143,7 +143,7 @@ export async function handleSync(
       try {
         await store.patchOwner(patch);
       } catch (error) {
-        console.error('planning settings not saved', error);
+        console.error("planning settings not saved");
       }
     }
   }

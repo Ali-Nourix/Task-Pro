@@ -350,7 +350,7 @@ function createExecutor(input: ExecInput) {
           return 'unknown command';
       }
     } catch (error) {
-      console.error('assistant command failed', call.name, error);
+      console.error("assistant command failed");
       return 'failed';
     }
   };
@@ -406,7 +406,7 @@ export async function runAssistant(input: AssistantInput): Promise<AssistantResu
     } catch (error) {
       // What was already done stays done: only the first question may fail the whole run.
       if (round === 0) throw error;
-      console.error('assistant stopped early', error);
+      console.error("assistant stopped early");
       break;
     }
     say = cleanReply(reply.text) || say;

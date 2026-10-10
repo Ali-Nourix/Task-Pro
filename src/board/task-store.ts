@@ -226,7 +226,7 @@ export class TaskStore {
         const fresh = taskLinesFromCache(this.app.metadataCache.getFileCache(file)) ?? taskLines;
         this.setFile(file.path, parseBoardTasks(file.path, content, fresh));
       } catch (error) {
-        console.error(`TaskPro: failed to read "${file.path}" for the task board`, error);
+        console.error("TaskPro: failed to read \"[redacted]\" for the task board");
       }
     }
   }

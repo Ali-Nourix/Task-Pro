@@ -681,7 +681,7 @@ export function createTaskBadgePlugin(
             getWaiting
           );
         } catch (error) {
-          console.error('TaskPro: failed to build task badges for this view', error);
+          console.error("TaskPro: failed to build task badges for this view");
           return Decoration.none;
         }
       }

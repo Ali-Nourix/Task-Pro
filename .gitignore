@@ -10,3 +10,16 @@ test/themes/*.css
 # Built on demand by test/harness/build.mjs and test/plugin-edits.mjs.
 test/harness/board-preview.bundle.js
 test/harness/.plugin-under-test.mjs
+
+# Local credentials, vault state and deployment artifacts must never be published.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.log
+.obsidian/
+data.json
+supabase/.temp/
+supabase/.branches/
+supabase/.env*
