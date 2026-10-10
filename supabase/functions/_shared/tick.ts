@@ -62,7 +62,7 @@ export async function runTick(deps: TickDeps): Promise<number> {
       await deps.store.patchOwner({ notified });
       return true;
     } catch (error) {
-      console.error('what was sent is not kept, so nothing more is sent', error);
+      console.error("what was sent is not kept, so nothing more is sent");
       return false;
     }
   };
@@ -75,7 +75,7 @@ export async function runTick(deps: TickDeps): Promise<number> {
       sent++;
       return true;
     } catch (error) {
-      console.error('message not sent', error);
+      console.error("message not sent");
       return false;
     }
   };

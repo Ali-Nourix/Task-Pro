@@ -74,7 +74,7 @@ export class ReminderSoundPlayer {
       }
       return this.playPattern(PATTERNS[settings.sound], volume, settings.soundRepeat);
     } catch (error) {
-      console.error('TaskPro: reminder sound failed', error);
+      console.error("TaskPro: reminder sound failed");
       this.stop();
       return { ok: false, reason: String(error) };
     }
@@ -120,12 +120,12 @@ export class ReminderSoundPlayer {
     audio.volume = volume;
     audio.loop = settings.soundRepeat;
     audio.addEventListener('error', () => {
-      console.error(`TaskPro: could not play reminder sound "${path}"`);
+      console.error("TaskPro: could not play reminder sound \"[redacted]\"");
     });
     this.audioElement = audio;
 
     void audio.play().catch((error) => {
-      console.error('TaskPro: reminder sound playback rejected', error);
+      console.error("TaskPro: reminder sound playback rejected");
     });
 
     return { ok: true };

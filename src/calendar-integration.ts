@@ -77,7 +77,7 @@ export async function pickDateWithCalendar(
 
     return null;
   } catch (error) {
-    console.error('TaskPro: Error calling calendar API:', error);
+    console.error("TaskPro: Error calling calendar API:");
     return null;
   }
 }
@@ -115,7 +115,7 @@ export async function pickDateWithFormat(
 
     return null;
   } catch (error) {
-    console.error('TaskPro: Error calling calendar API:', error);
+    console.error("TaskPro: Error calling calendar API:");
     return null;
   }
 }
@@ -161,7 +161,7 @@ export async function pickDateObject(
 
     return null;
   } catch (error) {
-    console.error('TaskPro: Error calling calendar API:', error);
+    console.error("TaskPro: Error calling calendar API:");
     return null;
   }
 }

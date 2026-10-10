@@ -971,6 +971,8 @@ try {
   page = await open('?layout=timeline&scope=vault&lang=fa', 1500);
   const faReport = await page.locator('.taskpro-tl__row').filter({ has: page.locator('.taskpro-tl__title', { hasText: 'گزارش ماهانه' }) }).locator('.taskpro-tl__bar').boundingBox();
   await drag({ x: faReport.x + faReport.width / 2, y: faReport.y + faReport.height / 2 }, { x: faReport.x + faReport.width / 2 - 40, y: faReport.y + faReport.height / 2 });
+  // Date writes are asynchronous; wait for the resulting note, not a fixed 50 ms.
+  await page.waitForFunction((expected) => window.__notes['Planner/Focus.md'].split('\n').find((l) => l.includes('گزارش ماهانه'))?.includes(expected), `@schedule(${iso(3)} 14:00-16:00)`);
   eq((await note(page, 'Planner/Focus.md')).split('\n').find((l) => l.includes('گزارش ماهانه')).includes(`@schedule(${iso(3)} 14:00-16:00)`), true, 'RTL: dragging left is later');
   // A name out beside its bar follows it in time, to its left, whatever script the name is in.
   await page.evaluate((line) => (window.__notes['Planner/Focus.md'] += `\n${line}`), `- [ ] Pick the colors @schedule(${iso(1)})`);

@@ -178,7 +178,7 @@ export async function pickDeadline(
       });
       return selected === null ? undefined : selected || undefined;
     } catch (error) {
-      console.warn('TaskPro: Calendar plugin failed, falling back to native input:', error);
+      console.warn("TaskPro: Calendar plugin failed, falling back to native input:");
     }
   }
   return openDeadlinePanel(options);

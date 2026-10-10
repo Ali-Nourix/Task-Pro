@@ -113,7 +113,7 @@ export async function applyCommands(commands: readonly Command[], host: ApplyHos
     try {
       await applyOne(command, host, aliases, result);
     } catch (error) {
-      result.error = String((error as Error)?.message ?? error).slice(0, 200);
+      result.error = 'The change could not be applied.';
     }
     results.push(result);
   }

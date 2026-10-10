@@ -88,7 +88,7 @@ export class ReminderService {
    */
   playTimerSound(): void {
     const result = this.sound.play({ ...this.settings, soundRepeat: false });
-    if (!result.ok) console.error('TaskPro: timer sound failed', result.reason);
+    if (!result.ok) console.error("TaskPro: timer sound failed");
   }
 
   /** Call after the user edits reminder settings. */
@@ -288,7 +288,7 @@ export class ReminderService {
       this.showOverlay(tasks, failedFiles.length > 0);
       this.playSound(labels.soundUnavailable);
     } catch (error) {
-      console.error('TaskPro: reminder run failed', error);
+      console.error("TaskPro: reminder run failed");
       new Notice(labels.scanFailed);
     } finally {
       this.isFiring = false;
@@ -318,7 +318,7 @@ export class ReminderService {
         void Notification.requestPermission();
       }
     } catch (error) {
-      console.error('TaskPro: system notification failed', error);
+      console.error("TaskPro: system notification failed");
     }
   }
 

@@ -52,6 +52,9 @@ export function syncEndpoint(url: string): string | null {
   return /\/functions\/v1$/.test(trimmed) ? `${trimmed}/sync` : `${trimmed}/functions/v1/sync`;
 }
 
+/** Only local, fixed diagnostic messages may reach settings, notices or logs. */
+class SyncFailure extends Error {}
+
 /** How long the notes must be quiet before an edit is sent (the setting's default), in seconds. */
 export const DEFAULT_QUIET_SECONDS = 4;
 /** Edits that never pause are still sent this often. */
@@ -158,7 +161,7 @@ export class TelegramSync {
       }
       return this.finish({ ok: true, applied, errors });
     } catch (error) {
-      return this.finish({ ok: false, applied: 0, errors: 0, message: String((error as Error)?.message ?? error) });
+      return this.finish({ ok: false, applied: 0, errors: 0, message: error instanceof SyncFailure ? error.message : 'Sync failed. Check the connection and server configuration.' });
     } finally {
       this.running = false;
       if (this.dirty) {
@@ -175,9 +178,9 @@ export class TelegramSync {
 
   private async call(endpoint: string, token: string, body: unknown): Promise<{ commands?: Command[] }> {
     const reply = await this.host.post(endpoint, token, body);
-    if (reply.status === 401 || reply.status === 403) throw new Error('The sync token is not right.');
-    if (reply.status === 404) throw new Error('The sync function was not found: check the project address.');
-    if (reply.status < 200 || reply.status >= 300 || !reply.json) throw new Error(reply.json?.error ?? `The server answered ${reply.status}.`);
+    if (reply.status === 401 || reply.status === 403) throw new SyncFailure('The sync token is not right.');
+    if (reply.status === 404) throw new SyncFailure('The sync function was not found: check the project address.');
+    if (reply.status < 200 || reply.status >= 300 || !reply.json) throw new SyncFailure(`The server answered ${reply.status}.`);
     return reply.json;
   }
 

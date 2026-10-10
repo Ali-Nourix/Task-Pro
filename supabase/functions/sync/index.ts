@@ -22,7 +22,7 @@ Deno.serve(async (request) => {
     });
     return json(response);
   } catch (error) {
-    console.error('sync failed', error);
-    return json({ ok: false, error: String((error as Error).message ?? error) }, 500);
+    console.error("sync failed");
+    return json({ ok: false, error: 'Sync failed. Check the server configuration.' }, 500);
   }
 });

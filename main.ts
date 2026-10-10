@@ -815,8 +815,8 @@ export default class TaskProPlugin extends Plugin {
       save: () => this.saveSettings(),
       report: (outcome) => {
         if (outcome.applied) new Notice(`TaskPro: ${outcome.applied} change${outcome.applied === 1 ? '' : 's'} from Telegram made in your notes.`);
-        if (outcome.errors) console.warn(`TaskPro: ${outcome.errors} change(s) from Telegram could not be made.`);
-        if (!outcome.ok && outcome.message) console.warn(`TaskPro: Telegram sync: ${outcome.message}`);
+        if (outcome.errors) console.warn("TaskPro: [redacted] change(s) from Telegram could not be made.");
+        if (!outcome.ok && outcome.message) console.warn("TaskPro: Telegram sync: [redacted]");
       },
       registerInterval: (id) => this.registerInterval(id),
       now: () => Date.now(),
@@ -1405,7 +1405,7 @@ export default class TaskProPlugin extends Plugin {
       }
       return (await this.dailyNotes.addTask(day, system, line)).path;
     } catch (error) {
-      console.error('TaskPro: could not add the task to its day', error);
+      console.error("TaskPro: could not add the task to its day");
       return null;
     }
   }
@@ -1416,7 +1416,7 @@ export default class TaskProPlugin extends Plugin {
     try {
       file = await this.dailyNotes.ensure(day, system);
     } catch (error) {
-      console.error('TaskPro: could not create the daily note', error);
+      console.error("TaskPro: could not create the daily note");
       new Notice(getCalendarLabels(this.settings.badgeLanguage).addFailed);
       return;
     }
@@ -1947,7 +1947,7 @@ export default class TaskProPlugin extends Plugin {
       });
     } catch (error) {
       // The other note could not be written: the task goes back where it was.
-      console.error('TaskPro: could not move the task', error);
+      console.error("TaskPro: could not move the task");
       await this.putBack(source, taken);
       return false;
     }
@@ -2132,7 +2132,7 @@ export default class TaskProPlugin extends Plugin {
       });
       if (changed) this.refreshDecorations();
     } catch (error) {
-      console.error('TaskPro: could not update the task plans', error);
+      console.error("TaskPro: could not update the task plans");
     }
   }
 
@@ -2942,7 +2942,7 @@ export default class TaskProPlugin extends Plugin {
 
     if (!effectiveBlockId) {
       if (newProgress) {
-        console.warn('TaskPro: Cannot save progress without block ID');
+        console.warn("TaskPro: Cannot save progress without block ID");
       }
       return;
     }
@@ -3252,7 +3252,7 @@ export default class TaskProPlugin extends Plugin {
     progress: import('./src/types').TaskProgress | null
   ): Promise<void> {
     if (!blockId) {
-      console.warn('TaskPro: Cannot save progress without block ID');
+      console.warn("TaskPro: Cannot save progress without block ID");
       return;
     }
 

@@ -236,6 +236,7 @@ try {
   eq(await page.locator('.taskpro-list__row.is-swiping, .taskpro-list__row.is-armed').count(), 0, 'and no row is left half way');
   // The phone's back button closes what is open, sheet by sheet, before it leaves the page.
   await page.tap('.taskpro-list__row:has-text("Groceries") .taskpro-list__title');
+  await page.locator('.taskpro-menu.is-sheet').waitFor({ state: 'visible' });
   eq(await page.locator('.taskpro-menu.is-sheet').count(), 1, 'a sheet is open');
   eq(await page.evaluate(() => window.__pressBack()), true, 'the back button has something to close');
   await page.waitForTimeout(300);

@@ -79,7 +79,7 @@ export class TaskConfigModal extends Modal {
                   }
                 }
               } catch (error) {
-                console.warn('TaskPro: Calendar plugin failed:', error);
+                console.warn("TaskPro: Calendar plugin failed:");
               }
             }
           });
