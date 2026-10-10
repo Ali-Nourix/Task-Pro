@@ -1263,4 +1263,4 @@ See [CHANGELOG.md](CHANGELOG.md) for what changed in each version.
 
 ## License
 
-Released under the [MIT License](LICENSE). Developed by Ali.
+Released under the [GNU General Public License v3.0](LICENSE).
