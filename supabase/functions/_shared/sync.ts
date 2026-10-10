@@ -3,7 +3,7 @@
 
 import { addDays, isClock, isRealDate } from './time.ts';
 import { words } from './texts.ts';
-import type { CommandRow, SnapshotTask, Status, Store, TagInfo, Telegram } from './types.ts';
+import type { CommandRow, OwnerRow, SnapshotTask, Status, Store, TagInfo, Telegram } from './types.ts';
 
 const STATUSES = new Set<string>(['open', 'doing', 'done', 'failed']);
 const PRIORITIES = new Set<string>(['highest', 'high', 'medium', 'low', 'lowest']);
@@ -21,6 +21,8 @@ export interface SyncRequest {
   acks?: Ack[];
   /** The tags the notes know, with how many tasks have each. */
   tags?: unknown[];
+  /** The plugin's planning settings, for tasks made in Telegram to be planned the same way. */
+  planning?: unknown;
 }
 
 export interface SyncResponse {
@@ -129,6 +131,20 @@ export async function handleSync(
     } catch (error) {
       // A database that has not learnt the column yet (it updates itself on first use) still syncs the tasks.
       console.error('tag catalog not saved', error);
+    }
+  }
+
+  if (owner && request.planning && typeof request.planning === 'object') {
+    const p = request.planning as Record<string, unknown>;
+    const patch: Partial<OwnerRow> = {};
+    if (typeof p.autoPlan === 'boolean' && p.autoPlan !== (owner.auto_plan ?? true)) patch.auto_plan = p.autoPlan;
+    if (typeof p.trackTime === 'boolean' && p.trackTime !== (owner.track_time ?? false)) patch.track_time = p.trackTime;
+    if (Object.keys(patch).length) {
+      try {
+        await store.patchOwner(patch);
+      } catch (error) {
+        console.error('planning settings not saved', error);
+      }
     }
   }
 

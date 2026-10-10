@@ -192,13 +192,13 @@ eq(host.dayNoteTarget(DAY, 'jalali'), { path: JALALI_NOTE, exists: false, isDail
 eq(await host.addTaskOnDay(DAY, '- [ ] Plan the week', 'jalali'), JALALI_NOTE, 'adding a task makes the day’s note');
 eq(app.vault.folders.has('Journal') && app.vault.folders.has('Journal/Daily'), true, 'with its folders');
 // Names in a Jalali-named note are Persian, as its title is.
-eq(note(JALALI_NOTE), ['# 1405-07-06', '', 'دوشنبه, 2026-09-28', '', '## Plan', '', '- [ ] Plan the week', ''], 'from the template, the task a line under its heading');
+eq(note(JALALI_NOTE), ['# 1405-07-06', '', 'دوشنبه, 2026-09-28', '', '## Plan', '', '- [ ] Plan the week @schedule(2026-09-28)', ''], 'from the template, the task a line under its heading, planned for that day');
 
 // The same day with the Gregorian calendar showing still finds the Jalali-named note.
 eq(host.dayNoteTarget(DAY, 'gregorian'), { path: JALALI_NOTE, exists: true, isDailyNote: true }, 'the other calendar’s name is looked for');
 await host.addTaskOnDay(DAY, '- [ ] Book flights @schedule(2026-09-28 09:00-10:00)', 'gregorian');
 eq(app.vault.files.has('Journal/Daily/2026-09-28.md'), false, 'so a day never gets a second note');
-eq(note(JALALI_NOTE).slice(6, 8), ['- [ ] Plan the week', '- [ ] Book flights @schedule(2026-09-28 09:00-10:00)'], 'the next task goes under the first');
+eq(note(JALALI_NOTE).slice(6, 8), ['- [ ] Plan the week @schedule(2026-09-28)', '- [ ] Book flights @schedule(2026-09-28 09:00-10:00)'], 'the next task goes under the first');
 eq(host.dailyNotesFor(DAY), [JALALI_NOTE], 'the calendar finds the note for its day');
 
 plugin.settings.calendar.newTaskTarget = 'inbox';

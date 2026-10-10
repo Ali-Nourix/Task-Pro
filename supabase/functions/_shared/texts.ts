@@ -139,6 +139,19 @@ export function planText(task: TaskRow, owner: Owner, today: string): string | n
   return text;
 }
 
+/**
+ * A plan as a list line shows it: a plan for today is under today's heading already, so it
+ * shows only its hour (🕒), or nothing when it has none; another day's shows the day (📅).
+ */
+export function listPlan(task: TaskRow, owner: Owner, today: string): string | null {
+  if (!task.plan_date) return null;
+  if (task.plan_date === today) {
+    if (!task.plan_start) return null;
+    return `🕒 ${clockLabel(task.plan_start, owner.language)}${task.plan_end ? `–${clockLabel(task.plan_end, owner.language)}` : ''}`;
+  }
+  return `📅 ${planText(task, owner, today)}`;
+}
+
 export function remindText(task: TaskRow, owner: Owner, today: string): string | null {
   if (!task.remind_at) return null;
   const at = utcToLocal(owner.timezone, new Date(task.remind_at));
@@ -195,15 +208,15 @@ export function taskEntry(task: TaskRow, owner: Owner, today: string, options: E
   const language = owner.language;
   const depth = options.depth ?? 0;
   const pad = depth ? INDENT : '';
-  const glyph = task.status === 'doing' ? '🔄 ' : task.pending ? '🕓 ' : '';
+  const glyph = task.status === 'doing' ? '🔄 ' : task.pending ? '📤 ' : '';
   const priority = task.priority ? ` ${PRIORITY_MARK[task.priority]}` : '';
   const arrow = depth ? '↳ ' : '';
   const progress = task.subs_total ? ` <code>${ratio(task.subs_done ?? 0, task.subs_total, language)}</code>` : '';
   const head = `${pad}${arrow}${glyph}<b>${options.bullet ? '•' : `${digits(options.position, language)}.`}</b> ${esc(truncate(task.title, 110))}${priority}${progress}`;
   const parts: string[] = [];
   if (options.parentHint && task.parent_title) parts.push(`↳ <i>${words(language).labels.subOf} «${esc(truncate(task.parent_title, 28))}»</i>`);
-  const plan = planText(task, owner, today);
-  if (plan) parts.push(`📅 ${plan}`);
+  const plan = listPlan(task, owner, today);
+  if (plan) parts.push(plan);
   if (task.deadline) parts.push(`⏳ ${dayLabel(task.deadline, owner, today)}`);
   const remind = remindText(task, owner, today);
   if (remind) parts.push(`🔔 ${remind}`);
@@ -261,14 +274,14 @@ export function taskEntryRich(task: TaskRow, owner: Owner, today: string, option
   const depth = options.depth ?? 0;
   const pad = '  '.repeat(depth);
   const sub = `${pad}  `;
-  const glyph = task.status === 'doing' ? '🔄 ' : task.pending ? '🕓 ' : '';
+  const glyph = task.status === 'doing' ? '🔄 ' : task.pending ? '📤 ' : '';
   const priority = task.priority ? ` ${PRIORITY_MARK[task.priority]}` : '';
   const progress = task.subs_total ? ` \`${ratio(task.subs_done ?? 0, task.subs_total, language)}\` \`${progressBar(task.subs_done ?? 0, task.subs_total)}\`` : '';
   const lines = [`${pad}- [ ] ${glyph}**${digits(options.position, language)}.** ${mdEscape(truncate(task.title, 110))}${priority}${progress}`];
   const parts: string[] = [];
   if (options.parentHint && task.parent_title) parts.push(`↳ *${words(language).labels.subOf} «${mdEscape(truncate(task.parent_title, 28))}»*`);
-  const plan = planText(task, owner, today);
-  if (plan) parts.push(`📅 ${mdEscape(plan)}`);
+  const plan = listPlan(task, owner, today);
+  if (plan) parts.push(mdEscape(plan));
   if (task.deadline) parts.push(`⏳ ${mdEscape(dayLabel(task.deadline, owner, today))}`);
   const remind = remindText(task, owner, today);
   if (remind) parts.push(`🔔 ${mdEscape(remind)}`);
@@ -469,6 +482,21 @@ export interface Words {
   richNames: { on: string; off: string };
   richUnavailable: string;
   nav: { home: string; today: string; all: string; newTask: string; settings: string };
+  /** The newer touches of the screens: quick tick, the home dashboard, the week's summary. */
+  ui: {
+    quick: string;
+    quickOff: string;
+    quickHint: string;
+    greeting: (minutes: number) => string;
+    nextUp: string;
+    todayHeading: string;
+    moreToday: (n: number) => string;
+    weekSummary: (tasks: number, days: number) => string;
+    pendingNote: string;
+    countsLine: (counts: { overdue: number; today: number; open: number }) => string;
+    syncLine: (ago: string | null) => string;
+    typeHint: string;
+  };
   /** The tags the notes know: listing them, picking them, a new task that starts with one. */
   tagsUi: {
     button: string;
@@ -804,7 +832,21 @@ const fa: Words = {
   padNames: (pad) => (pad === 0 ? 'ساده' : pad <= 40 ? 'کم' : pad <= 60 ? 'متوسط' : pad <= 80 ? 'زیاد' : 'خیلی زیاد'),
   richNames: { on: 'روشن', off: 'خاموش' },
   richUnavailable: 'این گزینه بعد از به‌روزرسانی دیتابیس فعال می‌شود؛ چند ثانیه بعد دوباره امتحان کن.',
-  nav: { home: '🏠', today: '📅', all: '📋', newTask: '➕', settings: '⚙️' },
+  nav: { home: '🏠', today: '📅', all: '📋', newTask: '📝', settings: '⚙️' },
+  ui: {
+    quick: '☑️ تیک سریع',
+    quickOff: '✔️ پایان تیک سریع',
+    quickHint: '<i>☑️ روی هر تسک بزن تا تیک بخورد.</i>',
+    greeting: (m) => (m < 5 * 60 ? '🌙 شب بخیر' : m < 12 * 60 ? '☀️ صبح بخیر' : m < 17 * 60 ? '🌤 ظهر بخیر' : m < 21 * 60 ? '🌇 عصر بخیر' : '🌙 شب بخیر'),
+    nextUp: 'بعدی',
+    todayHeading: 'امروز',
+    moreToday: (n) => `<i>و ${digits(n, 'fa')} مورد دیگر</i>`,
+    weekSummary: (tasks, days) => (tasks ? `${digits(tasks, 'fa')} تسک در ${digits(days, 'fa')} روز` : 'این هفته برنامه‌ای ندارد'),
+    pendingNote: '📤 در همگام‌سازی بعدی در Obsidian نوشته می‌شود',
+    countsLine: (c) => [c.overdue ? `⚠️ **${digits(c.overdue, 'fa')}** عقب‌افتاده` : '', `📅 **${digits(c.today, 'fa')}** امروز`, `📋 **${digits(c.open, 'fa')}** باز`].filter(Boolean).join(' · '),
+    syncLine: (ago) => `همگام‌سازی: ${ago ?? 'هنوز نشده'}`,
+    typeHint: 'هر چیزی بنویسی، تسک می‌شود',
+  },
   tagsUi: {
     button: '🏷 برچسب‌ها',
     viewTitle: (count, page, pages) => `🏷 <b>برچسب‌ها</b> — <i>${digits(count, 'fa')} برچسب${pages > 1 ? ` · صفحهٔ ${digits(page, 'fa')} از ${digits(pages, 'fa')}` : ''}</i>`,
@@ -844,9 +886,9 @@ const fa: Words = {
           : 'روشن است: هر چه بنویسی یا ویس بدهی، اول به دستیار می‌رسد.'),
     heard: (text) => `🎙 <i>«${esc(text)}»</i>`,
     thinking: 'دارم فکر می‌کنم …',
-    done: '🤖 <b>انجام شد</b>',
+    done: '✅ <b>انجام شد</b>',
     nothing: '🤖 کاری انجام ندادم.',
-    groups: { added: '➕ <b>تسک تازه</b>', changed: '✏️ <b>تغییر کرد</b>', status: '☑️ <b>وضعیت</b>', remove: '🗑 <b>حذف را تأیید کن</b>' },
+    groups: { added: '✨ <b>تسک تازه</b>', changed: '✏️ <b>تغییر کرد</b>', status: '☑️ <b>وضعیت</b>', remove: '🗑 <b>حذف را تأیید کن</b>' },
     undoAll: (count) => `↩️ برگردان (${digits(count, 'fa')})`,
     undone: (count) => `↩️ ${digits(count, 'fa')} تسک برگردانده شد.`,
     warn: {
@@ -1197,7 +1239,21 @@ const en: Words = {
   padNames: (pad) => (pad === 0 ? 'none' : pad <= 40 ? 'narrow' : pad <= 60 ? 'medium' : pad <= 80 ? 'wide' : 'widest'),
   richNames: { on: 'on', off: 'off' },
   richUnavailable: 'This option works once the database is updated; try again in a few seconds.',
-  nav: { home: '🏠', today: '📅', all: '📋', newTask: '➕', settings: '⚙️' },
+  nav: { home: '🏠', today: '📅', all: '📋', newTask: '📝', settings: '⚙️' },
+  ui: {
+    quick: '☑️ Quick tick',
+    quickOff: '✔️ Done ticking',
+    quickHint: '<i>☑️ Tap a task to tick it off.</i>',
+    greeting: (m) => (m < 5 * 60 ? '🌙 Good night' : m < 12 * 60 ? '☀️ Good morning' : m < 17 * 60 ? '🌤 Good afternoon' : m < 21 * 60 ? '🌇 Good evening' : '🌙 Good night'),
+    nextUp: 'Next',
+    todayHeading: 'Today',
+    moreToday: (n) => `<i>and ${n} more</i>`,
+    weekSummary: (tasks, days) => (tasks ? `${tasks} task${tasks === 1 ? '' : 's'} on ${days} day${days === 1 ? '' : 's'}` : 'Nothing planned this week'),
+    pendingNote: '📤 Written into Obsidian at the next sync',
+    countsLine: (c) => [c.overdue ? `⚠️ **${c.overdue}** overdue` : '', `📅 **${c.today}** today`, `📋 **${c.open}** open`].filter(Boolean).join(' · '),
+    syncLine: (ago) => `Sync: ${ago ?? 'not yet'}`,
+    typeHint: 'type anything and it becomes a task',
+  },
   tagsUi: {
     button: '🏷 Tags',
     viewTitle: (count, page, pages) => `🏷 <b>Tags</b> — <i>${count} tag${count === 1 ? '' : 's'}${pages > 1 ? ` · page ${page} of ${pages}` : ''}</i>`,
@@ -1237,9 +1293,9 @@ const en: Words = {
           : 'It is on: whatever you write or say goes to the assistant first.'),
     heard: (text) => `🎙 <i>“${esc(text)}”</i>`,
     thinking: 'Thinking …',
-    done: '🤖 <b>Done</b>',
+    done: '✅ <b>Done</b>',
     nothing: '🤖 I did nothing.',
-    groups: { added: '➕ <b>New tasks</b>', changed: '✏️ <b>Changed</b>', status: '☑️ <b>Status</b>', remove: '🗑 <b>Confirm to delete</b>' },
+    groups: { added: '✨ <b>New tasks</b>', changed: '✏️ <b>Changed</b>', status: '☑️ <b>Status</b>', remove: '🗑 <b>Confirm to delete</b>' },
     undoAll: (count) => `↩️ Undo (${count})`,
     undone: (count) => `↩️ ${count} task${count === 1 ? '' : 's'} taken back.`,
     warn: {

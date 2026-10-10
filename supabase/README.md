@@ -105,13 +105,14 @@ supabase secrets set ALLOWED_USER_ID='123456789'
 
 ### «دارم فکر می‌کنم …» و جای خالی زیر پیام
 
-وقتی دستیار کار می‌کند، تلگرام خودش یک پیش‌نویس «Thinking…» نشان می‌دهد که با رسیدن جواب برداشته می‌شود.
-اگر در کلاینتت بعد از جواب جای خالی می‌ماند، شکل آن را عوض کن (بدون تغییر کد):
+وقتی دستیار کار می‌کند، یک پیش‌نویس غنی با بلوک «دارم فکر می‌کنم …» نشان داده می‌شود و جواب در همان حباب
+(با همان draft_id، با انیمیشن) جایگزین آن می‌شود؛ پس صفحه بالا نمی‌پرد و جای خالی نمی‌ماند.
+اگر کلاینتت پیش‌نویس غنی را نشان نمی‌دهد، شکل آن را عوض کن (بدون تغییر کد):
 
 ```bash
-supabase secrets set THINKING_DRAFT='rich'   # پیش‌نویس غنی با بلوک tg-thinking
+supabase secrets set THINKING_DRAFT='text'   # پیش‌نویس متنی خودِ تلگرام
 supabase secrets set THINKING_DRAFT='off'    # فقط «typing…»
-supabase secrets unset THINKING_DRAFT        # برگشت به حالت پیش‌فرض: پیش‌نویس متنی خودِ تلگرام
+supabase secrets unset THINKING_DRAFT        # برگشت به حالت پیش‌فرض: پیش‌نویس غنی
 ```
 
 ## دستیار هوشمند (اختیاری، رایگان)
@@ -243,7 +244,7 @@ supabase secrets set CF_ACCOUNT_ID='...' CF_API_TOKEN='...'
 همین. توابع خودشان دیتابیس را هم به‌روز می‌کنند (ستون و نوع تغییرِ تازه)، پس لازم نیست
 SQL اجرا کنی. فقط اگر ربات گفت «ویرایش کامل هنوز آماده نیست» و چند ثانیه بعد هم درست
 نشد، محتوای فایل‌های `supabase/migrations/20261003000000_task_settings.sql`،
-`20261004000000_subtasks.sql` و `20261005000000_rich_messages.sql` و `20261006000000_message_width.sql` و `20261007000000_tags.sql` و `20261008000000_ai_assistant.sql` و `20261009000000_digests_and_planning.sql` را به ترتیب در Supabase ← SQL Editor اجرا کن (چند بار
+`20261004000000_subtasks.sql` و `20261005000000_rich_messages.sql` و `20261006000000_message_width.sql` و `20261007000000_tags.sql` و `20261008000000_ai_assistant.sql` و `20261009000000_digests_and_planning.sql` و `20261010000000_task_timing.sql` را به ترتیب در Supabase ← SQL Editor اجرا کن (چند بار
 اجرا شدنشان ضرری ندارد).
 
 پلاگین Obsidian را هم به‌روز کن (`main.js` را جایگزین کن و یک بار پلاگین را خاموش و روشن کن)

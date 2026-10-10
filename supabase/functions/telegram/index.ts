@@ -24,10 +24,13 @@ function allowedUser(): number | undefined {
   return raw ? (/^\d{1,15}$/.test(raw) ? Number(raw) : Number.NaN) : undefined;
 }
 
-/** How «Thinking…» is shown (THINKING_DRAFT): Telegram's own placeholder, a rich draft, or only «typing…». */
+/**
+ * How «Thinking…» is shown (THINKING_DRAFT): a rich draft that the answer then grows out of (the
+ * default), Telegram's own text placeholder, or only «typing…».
+ */
 function thinkingStyle(): 'text' | 'rich' | 'off' {
   const raw = Deno.env.get('THINKING_DRAFT')?.trim().toLowerCase();
-  return raw === 'rich' || raw === 'off' ? raw : 'text';
+  return raw === 'text' || raw === 'off' ? raw : 'rich';
 }
 
 Deno.serve(async (request) => {
