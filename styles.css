@@ -8677,11 +8677,10 @@ kbd.taskpro-shortcuts__key {
   .taskpro-reminder-overlay,
   .taskpro-reminder-overlay *,
   .notice [class*="taskpro-"] {
-    animation-duration: 0.01ms !important;
-    animation-delay: 0s !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-    transition-delay: 0s !important;
+    /* Even a 0.01 ms backwards-filled animation paints its starting transform
+       before the first frame. Reduced motion must be stable immediately. */
+    animation: none !important;
+    transition: none !important;
     scroll-behavior: auto !important;
   }
 }
@@ -9260,4 +9259,12 @@ body {
   .taskpro-badge-container.taskpro-chip-scroll {
     transition: none;
   }
+}
+
+/* Table cells intentionally clip overflow. Keep their small controls' keyboard
+   rings inside the button, including compact density and RTL note columns. */
+.taskpro-board .taskpro-table :is(button.taskpro-board__note, button.taskpro-board__icon-btn):focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: -2px;
+  box-shadow: var(--taskpro-focus-ring-inset);
 }

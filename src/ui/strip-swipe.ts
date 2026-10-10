@@ -11,7 +11,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { haptic } from './haptics';
-import { fingersDown } from './touch';
+import { fingersDown, suppressGestureClick } from './touch';
 
 export interface StripSwipe {
   /** The strip that is moved. */
@@ -112,12 +112,7 @@ export function swipeStrip(swipe: StripSwipe): () => void {
       doc.removeEventListener('pointerdown', onSecond, true);
       if (mode !== 'sideways') return;
       // The tap that would follow a swipe is not one.
-      const swallow = (event: Event) => {
-        event.preventDefault();
-        event.stopPropagation();
-      };
-      doc.addEventListener('click', swallow, { capture: true, once: true });
-      win.setTimeout(() => doc.removeEventListener('click', swallow, true), 350);
+      suppressGestureClick(doc, 350);
       if (!settleNow) return restoreSnap();
       const last = samples[samples.length - 1];
       const first = samples.find((sample) => last.t - sample.t <= 100) ?? last;
