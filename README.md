@@ -1,9 +1,15 @@
+<div align="center">
+
 # TaskPro
 
 [![Version](https://img.shields.io/badge/version-1.6.0-7C3AED)](https://github.com/Ali-Nourix/Task-Pro)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 [![Obsidian Plugin](https://img.shields.io/badge/Obsidian-plugin-7C3AED)](https://obsidian.md/plugins)
 [![Mobile Support](https://img.shields.io/badge/mobile-supported-2EA44F)](https://github.com/Ali-Nourix/Task-Pro)
+
+**A powerful task management plugin for Obsidian**
+
+</div>
 
 An Obsidian plugin for task management: interactive chips on every task line,
 your own coloured tags, a task board that shows every task in the vault in one
