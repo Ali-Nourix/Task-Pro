@@ -8083,12 +8083,24 @@ body.is-mobile .taskpro-board.taskpro-board button.taskpro-tl__undated-toggle {
   position: relative;
 }
 .taskpro-board .taskpro-card > button.taskpro-board__select {
-  inset-block-start: -5px;
-  inset-inline-start: -5px;
+  /* Reuse the status-checkbox slot only during selection; never float outside a card. */
+  inset-block-start: calc(var(--taskpro-card-pad) + var(--taskpro-space-1));
+  inset-inline-start: var(--taskpro-space-6);
+  width: var(--taskpro-check-size, 16px);
+  height: var(--taskpro-check-size, 16px);
   transform: none;
+  visibility: hidden;
+  pointer-events: none;
+}
+.taskpro-board.has-selection .taskpro-card > button.taskpro-board__select {
+  visibility: visible;
+  pointer-events: auto;
+}
+.taskpro-board:not(.is-touch).has-selection .taskpro-card__top > .taskpro-board__check {
+  visibility: hidden;
+  pointer-events: none;
 }
 .taskpro-board .taskpro-table__row:hover button.taskpro-board__select,
-.taskpro-board .taskpro-card:hover > button.taskpro-board__select,
 .taskpro-board button.taskpro-board__select:focus-visible {
   opacity: 1;
 }
@@ -9288,3 +9300,10 @@ body {
 .taskpro-timer-panel__cycle { display: flex; flex-direction: column; gap: var(--taskpro-panel-gap); }
 .taskpro-timer-panel__cycle[hidden] { display: none; }
 .taskpro-panel__field.taskpro-timer-panel__toggle { flex-direction: row; align-items: center; gap: 8px; }
+
+/* Minimal embeds compose only period navigation and the active view. */
+.taskpro-embed-nav-row { display: flex; align-items: flex-start; gap: 4px; flex: 0 0 auto; min-width: 0; }
+.taskpro-embed-nav-row > .taskpro-cal-nav { flex: 1 1 auto; min-width: 0; }
+.taskpro-board .taskpro-embed-options { flex: 0 0 auto; margin: 8px; }
+.taskpro-board.is-minimal-chrome { --taskpro-head-h: 0px; }
+.taskpro-board.is-minimal-chrome:not(.is-calendar-layout):not(.is-timeline-layout) > .taskpro-embed-nav-row { justify-content: flex-end; }

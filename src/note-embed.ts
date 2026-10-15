@@ -4,7 +4,9 @@ import { BoardPreferences, DEFAULT_BOARD_PREFERENCES } from './types';
 import { TaskBoard, TaskBoardHost } from './board/task-board';
 
 /** Deliberately small, strict syntax: unknown options should not silently change a view. */
-export function parseEmbedPreferences(source: string): BoardPreferences {
+export interface EmbedConfig { prefs: BoardPreferences; chrome: 'full' | 'minimal'; }
+export function parseEmbedConfig(source: string): EmbedConfig {
+  let chrome: 'full' | 'minimal' = 'minimal';
   const prefs: BoardPreferences = JSON.parse(JSON.stringify(DEFAULT_BOARD_PREFERENCES));
   const seen = new Set<string>();
   for (const raw of source.split('\n')) {
@@ -25,14 +27,22 @@ export function parseEmbedPreferences(source: string): BoardPreferences {
       case 'calendar-system':
         if (value !== 'jalali' && value !== 'gregorian') throw new Error('calendar-system: jalali | gregorian');
         prefs.calendarSystem = value; break;
+      case 'chrome':
+        if (value !== 'minimal' && value !== 'full') throw new Error('chrome: minimal | full');
+        chrome = value; break;
+      case 'calendar-sidebar':
+        if (value !== 'show' && value !== 'hide') throw new Error('calendar-sidebar: show | hide');
+        prefs.calendarSidebar = value === 'show'; break;
       case 'scope':
         if (value !== 'all' && value !== 'target') throw new Error('scope: all | target');
         prefs.scope = value === 'all' ? 'vault' : 'target'; break;
       default: throw new Error(`Unknown TaskPro option: ${key}`);
     }
   }
-  return prefs;
+  if (!seen.has('calendar-sidebar') && chrome === 'minimal') prefs.calendarSidebar = false;
+  return { prefs, chrome };
 }
+export function parseEmbedPreferences(source: string): BoardPreferences { return parseEmbedConfig(source).prefs; }
 
 /** Keep every embedded view's filters/layout separate from workspace settings. */
 export function createEmbedHost(host: TaskBoardHost, prefs: BoardPreferences): TaskBoardHost {
@@ -55,7 +65,8 @@ export class TaskProNoteEmbed extends MarkdownRenderChild {
     this.containerEl.setAttribute('role', 'region');
     this.containerEl.setAttribute('aria-label', 'TaskPro');
     try {
-      this.board = new TaskBoard(this.containerEl, createEmbedHost(this.host, parseEmbedPreferences(this.source)));
+      const config = parseEmbedConfig(this.source);
+      this.board = new TaskBoard(this.containerEl, createEmbedHost(this.host, config.prefs), { embedded: true, chrome: config.chrome });
       void this.board.mount().catch(() => {
         if (this.disposed) return;
         this.board?.destroy();

@@ -2,6 +2,10 @@
 
 ## Unreleased — Note embeds and Pomodoro
 
+- Follow-up: minimal embedded chrome by default, recoverable full controls and optional calendar sidebar.
+- Fixed the floating kanban hover-selection square; bulk selection is preserved inside the card.
+- Cached ordered task snapshots and relation indexes, coalesced store-driven paints per animation frame, and removed redundant loaded-store mount paints. Existing motion remains in place.
+
 - Interactive `taskpro` Markdown code blocks for inline tables and calendars, using the shared task store and isolated per-embed preferences.
 - Per-task Pomodoro focus/break cycles, long-break cadence, target/completed rounds and optional auto-start, built on the existing persistent timer service.
 - Persian/English controls, bounded mobile timer settings, completion/reload tests and real-renderer browser checks.

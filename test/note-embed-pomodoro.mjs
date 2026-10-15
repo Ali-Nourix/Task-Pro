@@ -3,11 +3,11 @@ import assert from 'node:assert/strict';
 import { pathToFileURL } from 'node:url';
 const mock = pathToFileURL(new URL('./harness/obsidian-node-mock.mjs', import.meta.url).pathname).href;
 const result = await esbuild.build({
-  stdin: { contents: `export * from './src/pomodoro'; export * from './src/note-embed'; export * from './src/timer-service';`,
+  stdin: { contents: `export * from './src/pomodoro'; export * from './src/note-embed'; export * from './src/timer-service'; export { TaskStore } from './src/board/task-store';`,
     resolveDir: process.cwd(), loader: 'ts' }, bundle: true, write: false, format: 'esm', platform: 'node',
   plugins: [{ name: 'obsidian', setup(b) { b.onResolve({ filter: /^obsidian$/ }, () => ({ path: mock, external: true })); } }],
 });
-const { newPomodoro, finishPomodoroPhase, pomodoroText, parseEmbedPreferences, createEmbedHost, TaskTimerService, TaskProNoteEmbed } =
+const { newPomodoro, finishPomodoroPhase, pomodoroText, parseEmbedPreferences, createEmbedHost, TaskTimerService, TaskProNoteEmbed, parseEmbedConfig, TaskStore } =
   await import('data:text/javascript;base64,' + Buffer.from(result.outputFiles[0].text).toString('base64'));
 const { notices } = await import(mock);
 let checks = 0;
@@ -58,6 +58,42 @@ eq(a.getSettings().board.views, undefined);
 let disposed = 0;
 const child = new TaskProNoteEmbed({ empty() {} }, '', base, () => disposed++);
 child.onunload(); eq(disposed, 1);
+// Minimal/full composition is explicit and backwards compatible with board preferences.
+eq(parseEmbedConfig('view: calendar').chrome, 'minimal');
+eq(parseEmbedPreferences('view: calendar').calendarSidebar, false);
+eq(parseEmbedConfig('chrome: full').chrome, 'full');
+eq(parseEmbedPreferences('chrome: full').calendarSidebar, true);
+eq(parseEmbedPreferences('calendar-sidebar: show').calendarSidebar, true);
+eq(parseEmbedPreferences('calendar-sidebar: hide\nchrome: full').calendarSidebar, false);
+for (const bad of ['chrome: empty', 'calendar-sidebar: yes', 'chrome: full\nchrome: minimal']) throws(() => parseEmbedConfig(bad));
+// Ordered task snapshots sort once per data revision, not once per consumer/read.
+const index = new TaskStore({});
+index.setFile('Z.md', [{ id: 'Z:0', text: 'Z' }]);
+index.setFile('A.md', [{ id: 'A:0', text: 'A' }]);
+const nativeCompare = String.prototype.localeCompare;
+let comparisons = 0;
+String.prototype.localeCompare = function (...args) { comparisons++; return nativeCompare.apply(this, args); };
+try {
+  const first = index.all();
+  const sortedOnce = comparisons;
+  for (let read = 0; read < 50; read++) eq(index.all().map((t) => t.text), ['A', 'Z']);
+  eq(comparisons, sortedOnce);
+  eq(sortedOnce > 0, true);
+  first.reverse(); first.pop();
+  eq(index.all().map((t) => t.text), ['A', 'Z']);
+  const revision = index.revision;
+  index.setFile('B.md', [{ id: 'B:0', text: 'B' }]);
+  eq(index.revision > revision, true);
+  eq(index.all().map((t) => t.text), ['A', 'B', 'Z']);
+  index.loadPromise = Promise.resolve();
+  index.handleDeleted('A.md');
+  eq(index.all().map((t) => t.text), ['B', 'Z']);
+  index.handleRenamed({ path: 'C.md', basename: 'C', extension: 'md' }, 'B.md');
+  eq(index.all().map((t) => t.text), ['B', 'Z']);
+  eq(index.all()[0].filePath, 'C.md');
+  index.handleRenamed({ path: 'C.txt', basename: 'C', extension: 'txt' }, 'C.md');
+  eq(index.all().map((t) => t.text), ['Z']);
+} finally { String.prototype.localeCompare = nativeCompare; index.destroy(); }
 // Exercise the real service (including persistence, completion lock and old timers).
 let entries = [];
 let clock = 2_000_000;

@@ -177,6 +177,12 @@ export class TaskStore {
   private loadPromise: Promise<void> | null = null;
   private notifyTimer: ReturnType<typeof setTimeout> | null = null;
   private loaded = false;
+  private orderedSnapshot: BoardTask[] | null = null;
+  private generation = 0;
+
+  /** Changes only when indexed task data changes, not on a filter or layout repaint. */
+  get revision(): number { return this.generation; }
+  private invalidate(): void { this.orderedSnapshot = null; this.generation++; }
 
   /**
    * @param whenReady Resolves once Obsidian's layout (and with it the metadata
@@ -204,6 +210,7 @@ export class TaskStore {
 
   /** Forgets everything and scans again. */
   async reload(): Promise<void> {
+    this.invalidate();
     this.byFile.clear();
     this.loaded = false;
     this.loadPromise = null;
@@ -232,16 +239,20 @@ export class TaskStore {
   }
 
   private setFile(path: string, tasks: BoardTask[]): void {
+    this.invalidate();
     if (tasks.length) this.byFile.set(path, tasks);
     else this.byFile.delete(path);
   }
 
   /** Every task, in vault order (note path, then line). */
   all(): BoardTask[] {
-    const paths = Array.from(this.byFile.keys()).sort((a, b) => a.localeCompare(b));
-    const out: BoardTask[] = [];
-    for (const path of paths) out.push(...(this.byFile.get(path) ?? []));
-    return out;
+    if (this.orderedSnapshot === null) {
+      const paths = Array.from(this.byFile.keys()).sort((a, b) => a.localeCompare(b));
+      this.orderedSnapshot = [];
+      for (const path of paths) this.orderedSnapshot.push(...(this.byFile.get(path) ?? []));
+    }
+    // Keep the old mutable-array contract without letting callers reorder the shared cache.
+    return this.orderedSnapshot.slice();
   }
 
   /** Every task in one note. */
@@ -285,6 +296,7 @@ export class TaskStore {
     if (!this.tracking) return;
     const tasks = this.byFile.get(oldPath);
     this.byFile.delete(oldPath);
+    if (tasks) this.invalidate();
     if (tasks && file.extension === 'md') {
       // Re-key rather than re-read: the content did not change with the name.
       const fileName = file.basename;
@@ -304,12 +316,13 @@ export class TaskStore {
 
   handleDeleted(path: string): void {
     if (!this.tracking) return;
-    if (this.byFile.delete(path)) this.emit();
+    if (this.byFile.delete(path)) { this.invalidate(); this.emit(); }
   }
 
   destroy(): void {
     if (this.notifyTimer) clearTimeout(this.notifyTimer);
     this.listeners.clear();
     this.byFile.clear();
+    this.invalidate();
   }
 }

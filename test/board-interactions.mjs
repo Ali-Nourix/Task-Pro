@@ -741,7 +741,9 @@ try {
   // On a board the cards are picked the same way, and follow a status change to its new column.
   page = await open('?layout=board&scope=vault', 1500);
   await page.locator('.taskpro-card', { hasText: 'Groceries' }).hover();
-  await page.locator('.taskpro-card', { hasText: 'Groceries' }).locator('.taskpro-board__select').click();
+  eq(await page.locator('.taskpro-card', { hasText: 'Groceries' }).locator('.taskpro-board__select').isVisible(), false, 'hover does not reveal a stray square');
+  await page.locator('.taskpro-card', { hasText: 'Groceries' }).locator('.taskpro-card__more').last().click();
+  await page.locator('.taskpro-menu__item', { hasText: /^\s*Select\s*$/ }).click();
   await page.locator('.taskpro-card', { hasText: 'Dentist appointment' }).locator('.taskpro-board__select').click({ force: true });
   eq(await page.locator('.taskpro-card.is-selected').count(), 2, 'two cards are picked');
   await page.locator('.taskpro-selection__btn', { hasText: 'Status' }).click();

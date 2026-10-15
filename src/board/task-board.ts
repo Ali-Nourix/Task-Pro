@@ -284,6 +284,9 @@ export interface TaskBoardHost {
 }
 
 export interface TaskBoardOptions {
+  /** Embedded views can omit workspace chrome without building hidden controls. */
+  chrome?: 'full' | 'minimal';
+  embedded?: boolean;
   /** Rendered inside the floating window rather than a workspace tab. */
   floating?: boolean;
   /** Closes the floating window. Only offered when floating. */
@@ -339,6 +342,10 @@ export class TaskBoard {
   private editing = false;
   private renderQueued = false;
   private destroyed = false;
+  private renderFrame: number | null = null;
+  private chromeMode: 'full' | 'minimal';
+  private relationRevision: number | undefined;
+  private arrivalRevision: number | undefined;
   private unsubscribe: (() => void) | null = null;
   private draggedTaskId: string | null = null;
   private draggedFrom: string | null = null;
@@ -396,6 +403,7 @@ export class TaskBoard {
     private readonly host: TaskBoardHost,
     private readonly options: TaskBoardOptions = {}
   ) {
+    this.chromeMode = options.chrome ?? 'full';
     this.el = container.createDiv({ cls: 'taskpro-board' });
     setBackButtonApp(host.app);
     this.el.toggleClass('is-floating', !!options.floating);
@@ -416,12 +424,15 @@ export class TaskBoard {
     this.pendingEntrance = 'view';
     this.renderBody();
     this.unsubscribe = this.host.store.subscribe(() => this.requestRender());
-    await this.host.store.ensureLoaded();
-    if (!this.destroyed) this.renderBody();
+    if (!this.host.store.isLoaded) {
+      await this.host.store.ensureLoaded();
+      if (!this.destroyed) this.renderBody();
+    }
   }
 
   destroy(): void {
     this.destroyed = true;
+    this.cancelScheduledRender();
     this.releaseSelectionEscape?.();
     this.releaseSelectionEscape = null;
     this.unsubscribe?.();
@@ -488,13 +499,25 @@ export class TaskBoard {
     return this.settings.language;
   }
 
+  private cancelScheduledRender(): void {
+    if (this.renderFrame === null) return;
+    (this.el.ownerDocument.defaultView ?? window).cancelAnimationFrame(this.renderFrame);
+    this.renderFrame = null;
+  }
+
   private requestRender(): void {
     if (this.destroyed) return;
     if (this.editing || this.holds > 0) {
       this.renderQueued = true;
       return;
     }
-    this.renderBody();
+    if (this.renderFrame !== null) return;
+    this.renderFrame = (this.el.ownerDocument.defaultView ?? window).requestAnimationFrame(() => {
+      this.renderFrame = null;
+      if (this.destroyed) return;
+      if (this.editing || this.holds > 0) this.renderQueued = true;
+      else this.renderBody();
+    });
   }
 
   private get isCalendar(): boolean {
@@ -739,6 +762,11 @@ export class TaskBoard {
   // ── Chrome: title, toolbar, filters, quick add ──────────────────────────
 
   private renderChrome(): void {
+    this.el.toggleClass('is-minimal-chrome', this.chromeMode === 'minimal');
+    if (this.chromeMode === 'minimal') {
+      this.renderMinimalChrome();
+      return;
+    }
     if (this.compact) {
       this.renderCompactChrome();
       return;
@@ -779,6 +807,7 @@ export class TaskBoard {
         () => toggleFloating()
       ).addClass('taskpro-board__float-toggle');
     }
+    if (this.options.embedded) this.renderPresentationControl(actions);
     if (this.options.floating && this.options.onClose) {
       this.iconButton(actions, 'x', labels.close, () => this.options.onClose?.()).addClass('taskpro-board__close');
     }
@@ -830,6 +859,49 @@ export class TaskBoard {
     }
 
     this.bodyEl = this.createBody();
+  }
+
+  /** Minimal is real composition, not display:none on a fully built workspace. */
+  private renderMinimalChrome(): void {
+    this.calendarView?.destroy();
+    this.timelineView?.destroy();
+    this.el.empty();
+    this.headObserver?.disconnect();
+    this.headObserver = null;
+    this.el.removeClass('is-chrome-collapsible', 'is-chrome-hidden');
+    this.el.setAttribute('dir', this.direction);
+    this.el.setAttribute('lang', this.language);
+    this.el.toggleClass('is-board-layout', this.prefs.layout === 'board');
+    this.el.toggleClass('is-calendar-layout', this.isCalendar);
+    this.el.toggleClass('is-timeline-layout', this.isTimeline);
+    // A detached summary receives counts without creating a visible workspace header.
+    this.summaryEl = this.el.ownerDocument.createElement('span');
+    this.toolbarEl = this.el.ownerDocument.createElement('div');
+    this.filtersEl = this.el.ownerDocument.createElement('div');
+    this.headerEl = this.el.createDiv({ cls: 'taskpro-embed-nav-row' });
+    if (this.isCalendar || this.isTimeline) {
+      this.calendarNavEl = this.headerEl.createDiv({ cls: 'taskpro-cal-nav' });
+      if (this.isCalendar) this.calendar().renderNav(this.calendarNavEl);
+      else this.timeline().renderNav(this.calendarNavEl);
+    } else this.calendarNavEl = null;
+    this.renderPresentationControl(this.headerEl);
+    this.bodyEl = this.createBody();
+  }
+
+  private renderPresentationControl(parent: HTMLElement): void {
+    const fa = this.language === 'fa';
+    const button = this.iconButton(parent, 'sliders-horizontal', fa ? 'بخش‌های نمایشی' : 'Visible sections', () => {
+      this.dropdown(button, [{ entries: [
+        { label: fa ? 'فقط نمای فعلی' : 'Current view only', icon: 'focus', checked: this.chromeMode === 'minimal',
+          onSelect: () => { this.chromeMode = 'minimal'; this.refresh(); } },
+        { label: fa ? 'همهٔ کنترل‌ها' : 'All controls', icon: 'panels-top-left', checked: this.chromeMode === 'full',
+          onSelect: () => { this.chromeMode = 'full'; this.refresh(); } },
+        ...(this.isCalendar ? [{ label: fa ? 'بخش کناری تقویم' : 'Calendar sidebar', icon: 'panel-right',
+          checked: this.prefs.calendarSidebar, onSelect: () => this.updatePrefs({ calendarSidebar: !this.prefs.calendarSidebar }) }] : []),
+      ] }]);
+    });
+    button.addClass('taskpro-embed-options');
+    button.setAttribute('aria-haspopup', 'menu');
   }
 
   private iconButton(parent: HTMLElement, icon: string, label: string, onClick: (e: MouseEvent) => void): HTMLButtonElement {
@@ -994,6 +1066,7 @@ export class TaskBoard {
     const options = this.iconButton(this.toolbarEl, 'sliders-horizontal', labels.viewOptions, () => this.openViewOptions(options));
     options.addClass('taskpro-board__bar-icon-btn', 'taskpro-board__properties');
 
+    if (this.options.embedded) this.renderPresentationControl(this.toolbarEl);
     const more = this.iconButton(this.toolbarEl, 'more-horizontal', labels.more, () => this.openMoreSheet(more));
     more.addClass('taskpro-board__bar-icon-btn', 'taskpro-board__more');
     more.setAttribute('aria-haspopup', 'dialog');
@@ -1832,6 +1905,8 @@ export class TaskBoard {
   }
 
   renderBody(): void {
+    if (this.destroyed) return;
+    this.cancelScheduledRender();
     this.paintBody();
     this.settleBody();
     // The calendar keeps its own card up to date as it draws; in the other layouts it is lent.
@@ -2485,6 +2560,9 @@ export class TaskBoard {
 
   /** Compares the tasks with the last drawing, and keeps the new and the changed for a moment. */
   private noteArrivals(): void {
+    const revision = this.host.store.revision;
+    if (revision !== undefined && revision === this.arrivalRevision) return;
+    this.arrivalRevision = revision;
     const fresh = this.tracker.update(this.host.store.all());
     if (!fresh.added.size && !fresh.changed.size) return;
     const live = performance.now() <= this.arrivals.until;
@@ -2501,6 +2579,9 @@ export class TaskBoard {
   }
 
   private refreshRelations(): void {
+    const revision = this.host.store.revision;
+    if (revision !== undefined && revision === this.relationRevision && this.relationIndex) return;
+    this.relationRevision = revision;
     const all = this.host.store.all();
     this.subtasks = subtaskCounts(all);
     this.relationIndex = new RelationIndex(all);
@@ -2509,7 +2590,7 @@ export class TaskBoard {
 
   /** What every task waits on, for the calendar and the timeline as well. */
   relations(): RelationIndex {
-    if (!this.relationIndex) this.refreshRelations();
+    if (!this.relationIndex || this.relationRevision !== this.host.store.revision) this.refreshRelations();
     return this.relationIndex!;
   }
 

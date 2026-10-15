@@ -6,7 +6,7 @@
     "dev": "node esbuild.config.mjs",
     "build": "tsc -noEmit -skipLibCheck && tsc -p supabase/tsconfig.json && node esbuild.config.mjs production",
     "test": "node test/recurrence.mjs && node test/auto-plan.mjs && node test/focus-timer.mjs && node test/note-embed-pomodoro.mjs && node test/tags.mjs && node test/board.mjs && node test/quick-add.mjs && node test/gesture.mjs && node test/relations.mjs && node test/calendar.mjs && node test/plugin-edits.mjs && node test/telegram-markdown.mjs && node test/telegram-bot.mjs && node test/telegram-schedule.mjs && node test/telegram-assistant.mjs && node test/telegram-sync.mjs && node test/privacy.mjs",
-    "test:ui": "node test/note-embed-pomodoro-ui.mjs && node test/board-interactions.mjs && node test/calendar-interactions.mjs && node test/mobile-interactions.mjs && node test/mobile-a11y.mjs && node test/reading-mode.mjs && node test/clip-guard.mjs && node test/chip-scroll.mjs && node test/touch-guard.mjs && node test/mobile-chrome.mjs",
+    "test:ui": "node test/note-embed-pomodoro-ui.mjs && node test/embed-presentation-ui.mjs && node test/board-interactions.mjs && node test/calendar-interactions.mjs && node test/mobile-interactions.mjs && node test/mobile-a11y.mjs && node test/reading-mode.mjs && node test/clip-guard.mjs && node test/chip-scroll.mjs && node test/touch-guard.mjs && node test/mobile-chrome.mjs",
     "check:contrast": "node test/contrast-check.mjs",
     "previews": "node test/render-previews.mjs"
   },

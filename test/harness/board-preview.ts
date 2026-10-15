@@ -225,7 +225,9 @@ const PROGRESS: Record<string, TaskProgress> = {
 
 let tasks: BoardTask[] = [];
 const listeners = new Set<() => void>();
+let revision = 0;
 const reparse = () => {
+  revision++;
   tasks = Object.entries(NOTES).flatMap(([path, content]) => parseBoardTasks(path, content));
 };
 reparse();
@@ -241,6 +243,7 @@ const edit = async (task: BoardTask, transform: (line: string) => string) => {
 (window as unknown as { __notes: typeof NOTES }).__notes = NOTES;
 
 const store = {
+  get revision() { return revision; },
   isLoaded: true,
   ensureLoaded: async () => undefined,
   reload: async () => {
@@ -459,14 +462,17 @@ async function main(): Promise<void> {
   const root = document.getElementById('root')!;
   const view = params.get('view') ?? 'board';
 
-  if (view === 'embeds') {
+  if (view === 'embeds' || view === 'minimal-embeds') {
     root.style.padding = '16px';
     root.createEl('h2', { text: 'Note with live TaskPro views' });
     const children: TaskProNoteEmbed[] = [];
+    const paintStats = { body: 0 };
+    const paint = TaskBoard.prototype.renderBody;
+    TaskBoard.prototype.renderBody = function () { paintStats.body++; paint.call(this); };
     for (const layout of ['table', 'calendar']) {
       const container = root.createDiv();
       container.dataset.embed = layout;
-      const child = new TaskProNoteEmbed(container, `view: ${layout}\nscope: all\ncalendar-view: week`, host, () => {});
+      const child = new TaskProNoteEmbed(container, `view: ${layout}\n${view === 'embeds' ? 'chrome: full\n' : ''}scope: all\ncalendar-view: week`, host, () => {});
       child.onload();
       children.push(child);
     }
@@ -484,7 +490,8 @@ async function main(): Promise<void> {
       showTimerEditor({ language, timer, onSave: (next) => { void service.set('Inbox.md', 'demo', next); } });
     });
     (window as unknown as { embedTest: unknown }).embedTest = {
-      children, service, settings, getTimer: () => timer, listenerCount: () => listeners.size,
+      children, service, settings, paintStats, getTimer: () => timer, listenerCount: () => listeners.size,
+      burst: (n: number) => { for (let i = 0; i < n; i++) listeners.forEach((listener) => listener()); },
       destroy: () => { children.forEach((child) => child.onunload()); service.destroy(); },
     };
   } else if (view === 'board') {
