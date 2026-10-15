@@ -343,7 +343,8 @@ try {
     ['?layout=board&scope=vault', 'board selection', async (page) => {
       const cards = page.locator('.taskpro-card');
       await cards.nth(0).hover();
-      await cards.nth(0).locator('.taskpro-board__select').click();
+      await cards.nth(0).locator('.taskpro-card__more').last().click();
+      await page.locator('.taskpro-menu__item').filter({ hasText: /^\s*Select\s*$/ }).click();
       await cards.nth(6).locator('.taskpro-board__select').click({ force: true });
     }],
   ]) {
