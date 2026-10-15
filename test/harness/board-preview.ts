@@ -230,6 +230,7 @@ const reparse = () => {
   revision++;
   tasks = Object.entries(NOTES).flatMap(([path, content]) => parseBoardTasks(path, content));
 };
+if (params.has('bulk')) NOTES['Planner/Large.md'] = Array.from({ length: 1000 }, (_, i) => `- [ ] Large task ${i}`).join('\n');
 reparse();
 
 /** What the plugin does to a note, done to the in-memory notes, then the board is told. */
@@ -242,10 +243,12 @@ const edit = async (task: BoardTask, transform: (line: string) => string) => {
 };
 (window as unknown as { __notes: typeof NOTES }).__notes = NOTES;
 
+let finishLoading: (() => void) | undefined;
+const coldLoad = new Promise<void>(resolve => { finishLoading = resolve; });
 const store = {
   get revision() { return revision; },
-  isLoaded: true,
-  ensureLoaded: async () => undefined,
+  isLoaded: !params.has('cold'),
+  ensureLoaded: async () => { if (!store.isLoaded) await coldLoad; },
   reload: async () => {
     reparse();
     listeners.forEach((fn) => fn());
@@ -471,6 +474,7 @@ async function main(): Promise<void> {
     const paint = TaskBoard.prototype.renderBody;
     TaskBoard.prototype.renderBody = function () { paintStats.body++; paint.call(this); };
     for (const layout of ['table', 'calendar']) {
+      if (layout === 'calendar' && params.has('defer')) root.createDiv().style.height = '1800px';
       const container = root.createDiv();
       container.dataset.embed = layout;
       const child = new TaskProNoteEmbed(container, `view: ${layout}\n${view === 'embeds' ? 'chrome: full\n' : ''}scope: all\ncalendar-view: week`, host, () => {});
@@ -492,6 +496,7 @@ async function main(): Promise<void> {
     });
     (window as unknown as { embedTest: unknown }).embedTest = {
       children, service, settings, paintStats,
+      finishLoading: () => { store.isLoaded = true; finishLoading?.(); listeners.forEach(fn => fn()); },
       refresh: () => children.forEach(child => child.refresh()),
       reopen: () => {
         for (let i = 0; i < children.length; i++) {

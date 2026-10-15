@@ -179,6 +179,7 @@ export class TaskStore {
   private loaded = false;
   private orderedSnapshot: BoardTask[] | null = null;
   private generation = 0;
+  private disposed = false;
 
   /** Changes only when indexed task data changes, not on a filter or layout repaint. */
   get revision(): number { return this.generation; }
@@ -202,7 +203,7 @@ export class TaskStore {
   ensureLoaded(): Promise<void> {
     if (!this.loadPromise) {
       this.loadPromise = this.loadAll().then(() => {
-        this.loaded = true;
+        if (!this.disposed) this.loaded = true;
       });
     }
     return this.loadPromise;
@@ -220,8 +221,20 @@ export class TaskStore {
 
   private async loadAll(): Promise<void> {
     await this.whenReady();
+    if (this.disposed) return;
+    let sliceStarted = performance.now();
+    let processed = 0;
     const files = this.app.vault.getMarkdownFiles();
     for (const file of files) {
+      if (this.disposed) return;
+      // cachedRead may resolve synchronously from cache: a microtask alone does
+      // not allow input or a skeleton to paint. Yield real tasks in small slices.
+      if (++processed > 24 || performance.now() - sliceStarted >= 8) {
+        await new Promise<void>(resolve => setTimeout(resolve, 0));
+        if (this.disposed) return;
+        processed = 0;
+        sliceStarted = performance.now();
+      }
       const cache = this.app.metadataCache.getFileCache(file);
       const taskLines = taskLinesFromCache(cache);
       // Indexed and task-free: nothing to read.
@@ -229,6 +242,7 @@ export class TaskStore {
 
       try {
         const content = await this.app.vault.cachedRead(file);
+        if (this.disposed) return;
         // Re-read the cache after the await: it is the one that matches `content`.
         const fresh = taskLinesFromCache(this.app.metadataCache.getFileCache(file)) ?? taskLines;
         this.setFile(file.path, parseBoardTasks(file.path, content, fresh));
@@ -320,6 +334,7 @@ export class TaskStore {
   }
 
   destroy(): void {
+    this.disposed = true;
     if (this.notifyTimer) clearTimeout(this.notifyTimer);
     this.listeners.clear();
     this.byFile.clear();

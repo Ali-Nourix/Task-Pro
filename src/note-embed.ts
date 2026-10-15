@@ -2,6 +2,8 @@
 import { MarkdownRenderChild } from 'obsidian';
 import { BoardPreferences, BoardScope, EmbedScopeMode, DEFAULT_BOARD_PREFERENCES } from './types';
 import { TaskBoard, TaskBoardHost } from './board/task-board';
+import { renderBoardSkeleton } from './board/loading-state';
+import { scheduleEmbed } from './embed-scheduler';
 
 /** Deliberately small, strict syntax: unknown options should not silently change a view. */
 export interface EmbedConfig { prefs: BoardPreferences; chrome: 'full' | 'minimal'; }
@@ -64,6 +66,9 @@ export class TaskProNoteEmbed extends MarkdownRenderChild {
   private disposed = false;
   private config: EmbedConfig | null = null;
   private scopePolicy = '';
+  private observer: IntersectionObserver | null = null;
+  private cancelMount: (() => void) | null = null;
+  private nearViewport = false;
   private applyScopePolicy(): void {
     if (!this.config) return;
     const settings = this.host.getSettings();
@@ -85,14 +90,45 @@ export class TaskProNoteEmbed extends MarkdownRenderChild {
     try {
       const config = this.config = parseEmbedConfig(this.source);
       this.applyScopePolicy();
-      this.board = new TaskBoard(this.containerEl, createEmbedHost(this.host, config.prefs), { embedded: true, chrome: config.chrome });
-      void this.board.mount().catch(() => {
+      const placeholder = this.containerEl.createDiv({ cls: 'taskpro-board taskpro-embed-placeholder is-suspended' });
+      placeholder.setAttribute('dir', this.host.getSettings().language === 'fa' ? 'rtl' : 'ltr');
+      this.containerEl.setAttribute('aria-busy', 'true');
+      renderBoardSkeleton(placeholder, config.prefs.layout, this.host.getSettings().language === 'fa' ? 'در حال بارگذاری…' : 'Loading tasks…', config.prefs.calendarView);
+      const view = this.containerEl.ownerDocument.defaultView ?? window;
+      const fail = () => {
         if (this.disposed) return;
         this.board?.destroy();
         this.board = null;
+        this.containerEl.setAttribute('aria-busy', 'false');
         this.containerEl.empty();
         this.containerEl.createEl('p', { text: 'TaskPro: Could not load tasks. / بارگذاری تسک‌ها ناموفق بود.' });
-      });
+      };
+      const mount = () => {
+        this.cancelMount = null;
+        if (this.disposed || !this.nearViewport) return;
+        try {
+          this.applyScopePolicy();
+          placeholder.remove();
+          this.board = new TaskBoard(this.containerEl, createEmbedHost(this.host, config.prefs), { embedded: true, chrome: config.chrome });
+          void this.board.mount().then(() => {
+            if (!this.disposed) this.containerEl.setAttribute('aria-busy', 'false');
+          }).catch(fail);
+        } catch { fail(); }
+      };
+      const activate = (active: boolean) => {
+        if (this.disposed) return;
+        this.nearViewport = active;
+        placeholder.toggleClass('is-suspended', !active);
+        if (this.board) this.board.setViewportActive(active);
+        else if (active && !this.cancelMount) this.cancelMount = scheduleEmbed(view, mount);
+        else if (!active) { this.cancelMount?.(); this.cancelMount = null; }
+      };
+      if (typeof view.IntersectionObserver === 'function') {
+        this.observer = new view.IntersectionObserver(entries => {
+          for (const entry of entries) activate(entry.isIntersecting);
+        }, { rootMargin: '160px 0px' });
+        this.observer.observe(this.containerEl);
+      } else activate(true);
     } catch (error) {
       this.containerEl.createEl('p', { text: `TaskPro: ${error instanceof Error ? error.message : 'Invalid options'}` });
     }
@@ -101,6 +137,10 @@ export class TaskProNoteEmbed extends MarkdownRenderChild {
   onunload(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.observer?.disconnect();
+    this.observer = null;
+    this.cancelMount?.();
+    this.cancelMount = null;
     this.board?.destroy();
     this.board = null;
     this.containerEl.empty();

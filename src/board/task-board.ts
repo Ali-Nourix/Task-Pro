@@ -8,6 +8,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { App, Menu, Platform, setIcon } from 'obsidian';
+import { renderBoardSkeleton } from './loading-state';
 import {
   BoardDensity,
   BoardGroupBy,
@@ -344,6 +345,19 @@ export class TaskBoard {
   private renderQueued = false;
   private destroyed = false;
   private renderFrame: number | null = null;
+  private viewportActive = true;
+
+  /** Offscreen note blocks keep their DOM, but coalesce data updates until visible. */
+  setViewportActive(active: boolean): void {
+    this.viewportActive = active;
+    this.el.toggleClass('is-suspended', !active);
+    if (!active) {
+      if (this.renderFrame !== null) this.renderQueued = true;
+      this.cancelScheduledRender();
+    } else if (this.renderQueued) this.requestRender();
+  }
+
+  private get pageSize(): number { return this.options.embedded ? 40 : ROWS_PER_PAGE; }
   private chromeMode: 'full' | 'minimal';
   private relationRevision: number | undefined;
   private arrivalRevision: number | undefined;
@@ -427,7 +441,7 @@ export class TaskBoard {
     this.unsubscribe = this.host.store.subscribe(() => this.requestRender());
     if (!this.host.store.isLoaded) {
       await this.host.store.ensureLoaded();
-      if (!this.destroyed) this.renderBody();
+      if (!this.destroyed) this.requestRender();
     }
   }
 
@@ -508,7 +522,7 @@ export class TaskBoard {
 
   private requestRender(): void {
     if (this.destroyed) return;
-    if (this.editing || this.holds > 0) {
+    if (!this.viewportActive || this.editing || this.holds > 0) {
       this.renderQueued = true;
       return;
     }
@@ -1907,6 +1921,7 @@ export class TaskBoard {
 
   renderBody(): void {
     if (this.destroyed) return;
+    if (!this.viewportActive) { this.renderQueued = true; return; }
     this.cancelScheduledRender();
     this.paintBody();
     this.settleBody();
@@ -2449,7 +2464,8 @@ export class TaskBoard {
   private settleBody(): void {
     if (!this.bodyEl) return;
     if (this.pendingEntrance) {
-      enter(this.bodyEl, this.pendingEntrance);
+      // Avoid expensive whole-table entrance transforms in note blocks.
+      if (!this.options.embedded) enter(this.bodyEl, this.pendingEntrance);
       this.pendingEntrance = null;
     }
     this.expanding = null;
@@ -2479,6 +2495,7 @@ export class TaskBoard {
     // Read before emptying: a removed element can no longer be the focused one.
     const hadFocus = this.bodyEl.contains(this.el.ownerDocument.activeElement);
     this.bodyEl.empty();
+    this.bodyEl.setAttribute('aria-busy', String(!this.host.store.isLoaded));
 
     if (!this.host.store.isLoaded) {
       this.summaryEl.setText('');
@@ -2627,17 +2644,7 @@ export class TaskBoard {
    * for anyone who cannot see the rows.
    */
   private loadingState(text: string): void {
-    const loading = this.bodyEl.createDiv({ cls: 'taskpro-board__skeleton' });
-    loading.setAttribute('role', 'status');
-    loading.setAttribute('aria-label', text);
-    for (let row = 0; row < 7; row++) {
-      const line = loading.createDiv({ cls: 'taskpro-board__skeleton-row' });
-      line.createSpan({ cls: 'taskpro-board__skeleton-dot' });
-      // Titles of a few different lengths, then a chip or two: a table's rhythm.
-      line.createSpan({ cls: 'taskpro-board__skeleton-bar' }).style.setProperty('--w', `${[34, 46, 28, 40, 52, 30, 38][row]}%`);
-      line.createSpan({ cls: 'taskpro-board__skeleton-bar is-chip' });
-      if (row % 3 !== 1) line.createSpan({ cls: 'taskpro-board__skeleton-bar is-chip' });
-    }
+    renderBoardSkeleton(this.bodyEl, this.prefs.layout, text, this.prefs.calendarView);
   }
 
   // ── Table ────────────────────────────────────────────────────────────────
@@ -2700,7 +2707,7 @@ export class TaskBoard {
         this.renderGroupRow(body, group, groupBy, span);
         if (this.prefs.collapsedGroups.includes(group.id)) continue;
       }
-      const limit = this.rowLimits.get(group.id) ?? ROWS_PER_PAGE;
+      const limit = this.rowLimits.get(group.id) ?? this.pageSize;
       const nesting = nested ? nestTasks(group.tasks, (id) => this.taskIndex.get(id)) : null;
       if (nesting) for (const [id, entry] of nesting) this.nestings.set(id, entry);
       const isFolded = (id: string) => folded.has(foldKey(this.taskIndex.get(id)!));
@@ -2717,9 +2724,9 @@ export class TaskBoard {
       if (rows.length > limit) {
         const more = body.createEl('tr', { cls: 'taskpro-table__more-row' });
         const cell = more.createEl('td', { attr: { colspan: span } });
-        const button = cell.createEl('button', { text: labels.showMore(Math.min(ROWS_PER_PAGE, rows.length - limit)) });
+        const button = cell.createEl('button', { text: labels.showMore(Math.min(this.pageSize, rows.length - limit)) });
         button.addEventListener('click', () => {
-          this.rowLimits.set(group.id, limit + ROWS_PER_PAGE);
+          this.rowLimits.set(group.id, limit + this.pageSize);
           this.renderBody();
         });
       }
@@ -3326,7 +3333,7 @@ export class TaskBoard {
         });
         if (collapsed) continue;
       }
-      const limit = this.rowLimits.get(group.id) ?? ROWS_PER_PAGE;
+      const limit = this.rowLimits.get(group.id) ?? this.pageSize;
       group.tasks.slice(0, limit).forEach((task, index) => {
         const row = this.renderListRow(list, task, columns);
         if (this.expanding === group.id) {
@@ -3337,10 +3344,10 @@ export class TaskBoard {
       if (group.tasks.length > limit) {
         const more = list.createEl('button', {
           cls: 'taskpro-kanban__more taskpro-list__more',
-          text: labels.showMore(Math.min(ROWS_PER_PAGE, group.tasks.length - limit)),
+          text: labels.showMore(Math.min(this.pageSize, group.tasks.length - limit)),
         });
         more.addEventListener('click', () => {
-          this.rowLimits.set(group.id, limit + ROWS_PER_PAGE);
+          this.rowLimits.set(group.id, limit + this.pageSize);
           this.renderBody();
         });
       }
@@ -4070,15 +4077,15 @@ export class TaskBoard {
       this.kanbanResize(handle, board, column);
 
       const cards = column.createDiv({ cls: 'taskpro-kanban__cards' });
-      const limit = this.rowLimits.get(group.id) ?? ROWS_PER_PAGE;
+      const limit = this.rowLimits.get(group.id) ?? this.pageSize;
       for (const task of group.tasks.slice(0, limit)) this.renderCard(cards, task, group.value, droppable);
       if (group.tasks.length > limit) {
         const more = cards.createEl('button', {
           cls: 'taskpro-kanban__more',
-          text: labels.showMore(Math.min(ROWS_PER_PAGE, group.tasks.length - limit)),
+          text: labels.showMore(Math.min(this.pageSize, group.tasks.length - limit)),
         });
         more.addEventListener('click', () => {
-          this.rowLimits.set(group.id, limit + ROWS_PER_PAGE);
+          this.rowLimits.set(group.id, limit + this.pageSize);
           this.renderBody();
         });
       }

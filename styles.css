@@ -2284,63 +2284,53 @@ button.taskpro-chip:focus-visible {
   box-shadow: var(--taskpro-focus-ring);
 }
 
-/* Loading: rows in the shape of the ones that are coming. The light that
-   passes over them is one gradient moved sideways, so it costs a transform and
-   nothing else. */
+/* Loading: one clipped, transform-only gradient per layout, never one layer per cell. */
 .taskpro-board .taskpro-board__skeleton {
-  display: flex;
-  flex-direction: column;
-  padding-top: 14px;
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  min-height: 360px;
+  padding-block: 8px;
+}
+.taskpro-board .taskpro-skeleton__shape { opacity: .8; }
+.taskpro-board .taskpro-skeleton__nav {
+  display: flex; align-items: center; justify-content: space-between;
+  min-height: 42px; padding-inline: 12px;
+  border-bottom: 1px solid var(--taskpro-board-row-line);
 }
 .taskpro-board .taskpro-board__skeleton-row {
-  display: flex;
-  align-items: center;
-  gap: var(--taskpro-space-6);
-  height: 41px;
-  padding-inline: var(--taskpro-space-4);
+  display: flex; align-items: center; gap: 16px;
+  height: 36px; padding-inline: 8px;
   border-bottom: 1px solid var(--taskpro-board-row-line);
 }
 .taskpro-board .taskpro-board__skeleton-dot,
 .taskpro-board .taskpro-board__skeleton-bar {
-  position: relative;
-  flex: 0 0 auto;
-  overflow: hidden;
-  border-radius: var(--taskpro-radius-chip);
-  background: color-mix(in srgb, var(--text-normal) 6.5%, transparent);
+  display: block; flex: 0 1 auto;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--text-normal) 7%, transparent);
 }
-.taskpro-board .taskpro-board__skeleton-dot {
-  width: 16px;
-  height: 16px;
-  border-radius: var(--taskpro-check-radius);
+.taskpro-board .taskpro-board__skeleton-dot { width: 16px; height: 16px; flex-shrink: 0; }
+.taskpro-board .taskpro-board__skeleton-bar { width: var(--w, 34%); height: 10px; }
+.taskpro-board .taskpro-board__skeleton-bar.is-chip { width: var(--w, 68px); height: 18px; border-radius: 6px; }
+.taskpro-board .taskpro-board__skeleton-row > .taskpro-board__skeleton-bar:nth-child(2) { margin-inline-end: auto; }
+.taskpro-board .taskpro-skeleton__calendar { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.taskpro-board .taskpro-skeleton__calendar > div {
+  display: flex; flex-direction: column; gap: 18px; min-height: 104px; padding: 8px;
+  border-inline-end: 1px solid var(--taskpro-board-row-line);
+  border-block-end: 1px solid var(--taskpro-board-row-line);
 }
-.taskpro-board .taskpro-board__skeleton-bar {
-  width: var(--w, 34%);
-  height: 12px;
-}
-.taskpro-board .taskpro-board__skeleton-bar.is-chip {
-  width: 68px;
-  height: 20px;
-}
-.taskpro-board .taskpro-board__skeleton-row > .taskpro-board__skeleton-bar:nth-child(2) {
-  margin-inline-end: auto;
-}
-.taskpro-board .taskpro-board__skeleton-dot::after,
-.taskpro-board .taskpro-board__skeleton-bar::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--text-normal) 7%, transparent), transparent);
+.taskpro-board .taskpro-board__skeleton::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(100deg, transparent 20%, color-mix(in srgb, var(--text-normal) 4%, transparent) 48%, transparent 76%);
   transform: translateX(-100%);
-  animation: taskpro-shimmer 1.5s var(--taskpro-ease) infinite;
+  animation: taskpro-shimmer 2.2s linear infinite;
 }
-.taskpro-board[dir="rtl"] .taskpro-board__skeleton-dot::after,
-.taskpro-board[dir="rtl"] .taskpro-board__skeleton-bar::after {
-  animation-direction: reverse;
-}
-@keyframes taskpro-shimmer {
-  to {
-    transform: translateX(100%);
-  }
+.taskpro-board[dir="rtl"] .taskpro-board__skeleton::after { animation-direction: reverse; }
+.taskpro-board.is-suspended .taskpro-board__skeleton::after { animation-play-state: paused; }
+.taskpro-note-embed .taskpro-embed-placeholder { min-height: 400px; padding: 8px; }
+@keyframes taskpro-shimmer { to { transform: translateX(100%); } }
+@media (prefers-reduced-motion: reduce) {
+  .taskpro-board .taskpro-board__skeleton::after { animation: none; display: none; }
 }
 
 .taskpro-board button.taskpro-board__icon-btn {
@@ -9358,3 +9348,34 @@ body {
 }
 .taskpro-note-embed > .taskpro-board.is-compact.is-calendar-layout .taskpro-cal-nav__top { padding-inline-end: 48px; }
 .taskpro-note-embed > .taskpro-board .taskpro-embed-nav-row > .taskpro-cal-nav.is-phone { align-items: stretch; }
+
+/* Embedded Markdown themes may set borders on ALL four cell edges. Reset those
+   edges explicitly, then let just the bottom/end cell own each one-pixel rule.
+   Separate borders are retained for sticky columns; collapsed borders tear on scroll. */
+.taskpro-board.taskpro-board table.taskpro-table {
+  border: 0; outline: 0; box-shadow: none;
+  border-collapse: separate; border-spacing: 0;
+}
+.taskpro-board.taskpro-board table.taskpro-table tr { border: 0; box-shadow: none; }
+.taskpro-board.taskpro-board table.taskpro-table :is(th, td) {
+  border: 0;
+  border-block-end: 1px solid var(--taskpro-board-row-line);
+}
+.taskpro-board.taskpro-board table.taskpro-table th:not(.taskpro-table__check):not(.taskpro-table__more),
+.taskpro-board.taskpro-board table.taskpro-table .taskpro-table__row td:not(.taskpro-table__check):not(.taskpro-table__more) {
+  border-inline-end: 1px solid var(--taskpro-board-row-line);
+}
+/* Fast in-note view changes do not replay hundreds of progress/arrival effects. */
+.taskpro-note-embed .taskpro-board .taskpro-board__body.is-entering-view .taskpro-board__progress-fill,
+.taskpro-note-embed .taskpro-board .is-arriving,
+.taskpro-note-embed .taskpro-board .taskpro-table__row.is-arriving td,
+.taskpro-note-embed .taskpro-board .taskpro-list__row.is-arriving > .taskpro-list__content,
+.taskpro-note-embed .taskpro-board .is-expanding,
+.taskpro-note-embed .taskpro-board .taskpro-table__row.is-expanding td { animation: none; }
+
+.taskpro-board .taskpro-board__skeleton[data-calendar-view="day"] .taskpro-skeleton__calendar { grid-template-columns: minmax(0, 1fr); }
+.taskpro-board .taskpro-board__skeleton[data-calendar-view="month"] .taskpro-skeleton__calendar > div { min-height: 52px; }
+@media (max-width: 640px) {
+  .taskpro-board .taskpro-board__skeleton[data-calendar-view="week"] .taskpro-skeleton__calendar { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .taskpro-board .taskpro-board__skeleton[data-calendar-view="week"] .taskpro-skeleton__calendar > div:nth-child(n+10) { display: none; }
+}

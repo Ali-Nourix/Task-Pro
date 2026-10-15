@@ -15,6 +15,7 @@ try {
     const table = page.locator('[data-embed="table"]');
     await table.locator(rowSelector).first().waitFor();
     const checkTarget = async () => {
+      await table.locator(rowSelector).first().waitFor();
       const ids = await table.locator(rowSelector).evaluateAll(rows => rows.map(row => row.dataset.taskId));
       eq(ids.length > 0 && ids.every(id => id.startsWith('Planner/')), true, 'configured folder, not legacy scope:all');
     };
@@ -41,6 +42,7 @@ try {
     await page.evaluate(() => { window.embedTest.settings.embedDefaultScope = 'vault'; window.embedTest.refresh(); });
     eq(await table.locator(rowSelector).count() > 8, true, 'whole-vault startup setting works');
     await page.evaluate(() => window.embedTest.reopen());
+    await table.locator(rowSelector).first().waitFor();
     eq(await table.locator(rowSelector).count() > 8, true, 'whole-vault setting survives reopen');
     await page.evaluate(() => { window.embedTest.settings.embedDefaultScope = 'block'; window.embedTest.refresh(); });
     eq(await table.locator(rowSelector).count() > 8, true, 'explicit block-policy opt-in respects legacy all');
