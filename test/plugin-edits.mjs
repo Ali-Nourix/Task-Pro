@@ -104,6 +104,18 @@ eq(plugin.settings.board.activeView, undefined, 'and a view in use that is gone 
 eq(!!app.views['taskpro-task-board'], true, 'board view registered');
 eq(['open-task-board', 'set-task-tags', 'manage-task-tags'].every((id) => app.commands.some((c) => c.id === id)), true, 'new commands registered');
 
+// The default startup scope is configurable and survives reloading plugin settings.
+eq(plugin.settings.embedDefaultScope, 'target', 'note views default to target scope');
+const scopeSettingsBackup = JSON.parse(JSON.stringify(app.data));
+for (const [saved, expected] of [['vault', 'vault'], ['block', 'block'], ['broken', 'target']]) {
+  app.data = { ...scopeSettingsBackup, embedDefaultScope: saved };
+  await plugin.loadSettings();
+  eq(plugin.settings.embedDefaultScope, expected, 'saved note scope validated: ' + saved);
+  eq(plugin.createBoardHost().getSettings().embedDefaultScope, expected, 'note scope is exposed to the renderer');
+}
+app.data = scopeSettingsBackup;
+await plugin.loadSettings();
+
 // ── the board's index ──────────────────────────────────────────────────────
 await plugin.taskStore.ensureLoaded();
 eq(plugin.taskStore.all().length, 7, 'every task in the vault is indexed');

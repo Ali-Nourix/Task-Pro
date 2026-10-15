@@ -327,6 +327,23 @@ export class TaskProSettingTab extends PluginSettingTab {
           new Notice(value.trim() ? `Plugin restricted to: ${value.trim()}` : 'Plugin active in entire vault');
         }));
 
+    const fa = this.plugin.settings.badgeLanguage === 'fa';
+    new Setting(containerEl)
+      .setName(fa ? 'محدودهٔ پیش‌فرض نماهای داخل نوت' : 'Default scope for note views')
+      .setDesc(fa
+        ? 'هر بار نوت باز می‌شود از این محدوده شروع کن. اگر پوشهٔ هدف تعیین نشده باشد، کل والت نمایش داده می‌شود. حالت کدبلاک از scope نوشته‌شده پیروی می‌کند.'
+        : 'Start each note view in this scope. Target folder falls back to the whole vault only when no folder is configured. Code block mode follows its explicit scope option.')
+      .addDropdown(dropdown => dropdown
+        .addOption('target', fa ? 'پوشهٔ هدف، در صورت تعیین‌شدن' : 'Target folder, when configured')
+        .addOption('vault', fa ? 'کل والت' : 'Whole vault')
+        .addOption('block', fa ? 'پیروی از کدبلاک' : 'Follow code block')
+        .setValue(this.plugin.settings.embedDefaultScope)
+        .onChange(async value => {
+          this.plugin.settings.embedDefaultScope = value === 'vault' || value === 'block' ? value : 'target';
+          await this.plugin.saveSettings();
+          this.plugin.refreshBoards();
+        }));
+
   }
 
   private renderAppearanceTab(containerEl: HTMLElement): void {

@@ -1,3 +1,4 @@
+import { newPomodoro, pomodoroDuration, pomodoroLabels, pomodoroText } from './pomodoro';
 // ── timer-popover.ts ──────────────────────────────────────────────────────
 // Menu for the focus-timer chip, matching the progress popover's shape.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -40,7 +41,7 @@ export class TaskTimerPopover {
     const labels = getTimerLabels(this.options.language ?? 'en');
     const state = timerState(timer);
 
-    const headline = `${labels.timerLabel}: ${formatTimerClock(timerRemainingSeconds(timer))}`;
+    const headline = `${pomodoroText(timer, this.options.language ?? 'en')} ${labels.timerLabel}: ${formatTimerClock(timerRemainingSeconds(timer))}`.trim();
     this.infoMenuTitles.push(headline);
     this.menu.addItem((item) => item.setTitle(headline).setIcon('timer').setDisabled(true));
 
@@ -127,36 +128,80 @@ export function showTimerEditor(options: {
   onSave: (timer: TaskTimer) => void;
 }): void {
   const labels = getTimerLabels(options.language);
-  const { body, footer, close } = openTaskProPanel(labels.timerSettings);
+  const { panel, body, footer, close } = openTaskProPanel(labels.timerSettings);
+  panel.addClass('taskpro-timer-panel');
+  panel.setAttribute('dir', options.language === 'fa' ? 'rtl' : 'ltr');
 
   const minutesInput = addPanelField(body, labels.minutes, 'number');
   minutesInput.min = '1';
   minutesInput.value = String(
     options.timer
-      ? Math.max(1, Math.round(options.timer.durationSeconds / 60))
+      ? Math.max(1, options.timer.pomodoro?.focusMinutes ?? Math.round(options.timer.durationSeconds / 60))
       : (options.defaultMinutes ?? 25)
   );
+
+  const pLabels = pomodoroLabels(options.language);
+  const defaults = options.timer?.pomodoro ?? newPomodoro();
+  const checkbox = (text: string, checked: boolean): HTMLInputElement => {
+    const label = body.createEl('label', { cls: 'taskpro-panel__field taskpro-timer-panel__toggle' });
+    const input = label.createEl('input', { type: 'checkbox' });
+    input.checked = checked;
+    label.createSpan({ text });
+    return input;
+  };
+  const enabled = checkbox(pLabels.enabled, !!options.timer?.pomodoro);
+  const cycleFields = body.createDiv({ cls: 'taskpro-timer-panel__cycle' });
+  const numberField = (text: string, value: number) => {
+    const input = addPanelField(cycleFields, text, 'number');
+    input.min = '1'; input.max = '1440'; input.step = '1'; input.value = String(value);
+    return input;
+  };
+  const short = numberField(pLabels.short, defaults.shortBreakMinutes);
+  const long = numberField(pLabels.long, defaults.longBreakMinutes);
+  const every = numberField(pLabels.every, defaults.longBreakEvery);
+  const target = numberField(pLabels.target, defaults.targetRounds);
+  const autoLabel = cycleFields.createEl('label', { cls: 'taskpro-panel__field taskpro-timer-panel__toggle' });
+  const auto = autoLabel.createEl('input', { type: 'checkbox' });
+  auto.checked = defaults.autoStart;
+  autoLabel.createSpan({ text: pLabels.auto });
+  cycleFields.hidden = !enabled.checked;
+  enabled.addEventListener('change', () => { cycleFields.hidden = !enabled.checked; });
+  minutesInput.max = '1440'; minutesInput.step = '1';
 
   addPanelButtonRow(footer, {
     cancelLabel: labels.cancel,
     saveLabel: labels.save,
     onCancel: close,
     onSave: () => {
-      const minutes = parseInt(minutesInput.value, 10);
-      if (!Number.isFinite(minutes) || minutes <= 0) {
+      const minutes = Number(minutesInput.value);
+      if (!Number.isInteger(minutes) || minutes <= 0 || minutes > 1440) {
         new Notice(labels.invalidMinutes);
         return;
       }
       const existing = options.timer;
+      const values = [short, long, every, target].map((input) => Number(input.value));
+      if (enabled.checked && values.some((n) => !Number.isInteger(n) || n < 1 || n > 1440)) {
+        new Notice(pLabels.invalid);
+        return;
+      }
+      const pomodoro = enabled.checked ? {
+        ...defaults, focusMinutes: minutes, shortBreakMinutes: values[0],
+        longBreakMinutes: values[1], longBreakEvery: values[2], targetRounds: values[3], autoStart: auto.checked,
+      } : undefined;
+      // A changed cycle starts fresh; saving unchanged settings preserves a running phase.
+      const cycleChanged = JSON.stringify(existing?.pomodoro) !== JSON.stringify(pomodoro);
+      if (pomodoro && cycleChanged) {
+        pomodoro.phase = 'focus'; pomodoro.completedRounds = 0;
+      }
       options.onSave({
+        ...existing,
         enabled: true,
-        durationSeconds: minutes * 60,
-        // Changing the duration keeps time already spent, so extending a timer
-        // mid-session does not reset progress toward it.
-        elapsedSeconds: existing?.elapsedSeconds ?? 0,
-        runningSince: existing?.runningSince ?? 0,
-        completedAt: undefined,
-        notifiedAt: undefined,
+        pomodoro,
+        durationSeconds: pomodoro ? (cycleChanged ? pomodoroDuration(pomodoro) : existing!.durationSeconds) : minutes * 60,
+        elapsedSeconds: cycleChanged ? 0 : existing?.elapsedSeconds ?? 0,
+        runningSince: cycleChanged ? 0 : existing?.runningSince ?? 0,
+        completedAt: cycleChanged || !pomodoro ? undefined : existing?.completedAt,
+        notifiedAt: cycleChanged || !pomodoro ? undefined : existing?.notifiedAt,
       });
       close();
     },

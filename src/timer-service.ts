@@ -1,3 +1,4 @@
+import { finishPomodoroPhase, pomodoroDuration, pomodoroLabels, pomodoroText } from './pomodoro';
 // ── timer-service.ts ──────────────────────────────────────────────────────
 // Per-task focus timers: one ticker, live chip labels, a status-bar readout,
 // and a desktop notification when a timer runs out.
@@ -146,6 +147,10 @@ export class TaskTimerService {
 
   async start(filePath: string, blockId: string, timer: TaskTimer): Promise<void> {
     if (timer.runningSince > 0) return;
+    if (timer.pomodoro && timer.completedAt) {
+      const p = { ...timer.pomodoro, phase: 'focus' as const, completedRounds: 0 };
+      timer = { ...timer, pomodoro: p, durationSeconds: pomodoroDuration(p), elapsedSeconds: 0 };
+    }
     await this.set(filePath, blockId, {
       ...timer,
       runningSince: Date.now(),
@@ -165,6 +170,10 @@ export class TaskTimerService {
   }
 
   async reset(filePath: string, blockId: string, timer: TaskTimer): Promise<void> {
+    if (timer.pomodoro) {
+      const p = { ...timer.pomodoro, phase: 'focus' as const, completedRounds: 0 };
+      timer = { ...timer, pomodoro: p, durationSeconds: pomodoroDuration(p) };
+    }
     await this.set(filePath, blockId, {
       ...timer,
       elapsedSeconds: 0,
@@ -223,7 +232,7 @@ export class TaskTimerService {
     const key = timerKey(filePath, blockId);
     this.completing.add(key);
     try {
-      await this.set(filePath, blockId, {
+      await this.set(filePath, blockId, timer.pomodoro ? finishPomodoroPhase(timer, now) : {
         ...timer,
         elapsedSeconds: timer.durationSeconds,
         runningSince: 0,
@@ -240,10 +249,16 @@ export class TaskTimerService {
       (filePath.split('/').pop() ?? filePath).replace(/\.md$/, '');
     const settings = this.host.getSettings();
 
-    new Notice(labels.finishedNotice(taskName), 8000);
+    const next = this.get(filePath, blockId);
+    const pLabels = pomodoroLabels(this.host.getLanguage());
+    const message = timer.pomodoro && next
+      ? `${taskName}: ${next.completedAt ? pLabels.finished
+        : `${pLabels.phaseDone} ${pomodoroText(next, this.host.getLanguage())} — ${next.runningSince ? pLabels.running : pLabels.ready}`}`
+      : labels.finishedNotice(taskName);
+    new Notice(message, 8000);
     if (settings.timerSound) this.host.playSound?.();
     if (settings.timerSystemNotification) {
-      showSystemNotification(labels.finishedTitle, labels.finishedBody(taskName));
+      showSystemNotification(labels.finishedTitle, timer.pomodoro ? message : labels.finishedBody(taskName));
     }
   }
 
@@ -269,9 +284,10 @@ export class TaskTimerService {
       }
       const state = timerState(timer, now);
       const remaining = timerRemainingSeconds(timer, now);
-      if (label) label.textContent = state === 'done' ? labels.doneChip : formatTimerClock(remaining);
+      const phase = pomodoroText(timer, this.host.getLanguage());
+      if (label) label.textContent = [phase, state === 'done' ? labels.doneChip : formatTimerClock(remaining)].filter(Boolean).join(' · ');
       badge.dataset.state = state;
-      badge.setAttribute('aria-label', labels.chipAria(formatTimerClock(remaining), state));
+      badge.setAttribute('aria-label', `${phase} ${labels.chipAria(formatTimerClock(remaining), state)}`.trim());
     });
 
     this.renderStatusBar(now, labels);
@@ -321,7 +337,7 @@ export class TaskTimerService {
 
     const remaining = timerRemainingSeconds(active.timer, now);
     const note = active.filePath.split('/').pop()?.replace(/\.md$/, '') ?? active.filePath;
-    this.statusTextEl.textContent = `${formatTimerClock(remaining)} · ${note}`;
+    this.statusTextEl.textContent = `${pomodoroText(active.timer, this.host.getLanguage())} ${formatTimerClock(remaining)} · ${note}`.trim();
     host.setAttribute('aria-label', labels.statusBarAria(note));
   }
 }

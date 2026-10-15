@@ -13,6 +13,8 @@
 
 </div>
 
+New: [Live table/calendar embeds and per-task Pomodoro](docs/note-embeds-pomodoro.md).
+
 An Obsidian plugin for task management: interactive chips on every task line,
 your own coloured tags, a task board that shows every task in the vault in one
 place (on a phone too), a calendar and a timeline to plan your days on in the

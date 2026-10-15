@@ -1,3 +1,4 @@
+import { TaskProNoteEmbed } from './src/note-embed';
 // ── main.ts ───────────────────────────────────────────────────────────────
 // TaskPro - Main plugin entry point
 // ─────────────────────────────────────────────────────────────────────────────
@@ -143,6 +144,7 @@ export default class TaskProPlugin extends Plugin {
   /** One note per day, for the calendar: found, or made from the template. */
   dailyNotes!: DailyNoteService;
   /** The board's floating window, while it is open. */
+  private readonly noteEmbeds = new Set<TaskProNoteEmbed>();
   private floatingBoard: TaskBoardModal | null = null;
   private isProcessingSync = false;
   private syncDebounceTimers = new Map<string, NodeJS.Timeout>(); // Debounce timers per file
@@ -210,6 +212,16 @@ export default class TaskProPlugin extends Plugin {
       void this.taskStore.ensureLoaded().then(() => this.onTasksChanged());
     });
     this.dailyNotes = new DailyNoteService(this.app, () => this.settings.calendar);
+    this.registerMarkdownCodeBlockProcessor('taskpro', (source, el, ctx) => {
+      const embed = new TaskProNoteEmbed(el, source, this.createBoardHost(), () => this.noteEmbeds.delete(embed));
+      this.noteEmbeds.add(embed);
+      ctx.addChild(embed);
+    });
+    this.register(() => {
+      for (const embed of this.noteEmbeds) embed.unload();
+      this.noteEmbeds.clear();
+    });
+
     this.registerView(VIEW_TYPE_TASK_BOARD, (leaf) => new TaskBoardView(leaf, this.createBoardHost()));
     this.addRibbonIcon('list-checks', getBoardLabels(this.settings.badgeLanguage).open, () => {
       void this.activateBoard();
@@ -901,6 +913,8 @@ export default class TaskProPlugin extends Plugin {
     // Same for the board's remembered layout, and the tag list is cleaned so a
     // hand-edited data.json cannot break chip rendering.
     this.settings.board = Object.assign({}, DEFAULT_BOARD_PREFERENCES, saved?.board);
+    this.settings.embedDefaultScope = saved?.embedDefaultScope === 'vault' || saved?.embedDefaultScope === 'block'
+      ? saved.embedDefaultScope : 'target';
     this.settings.calendar = Object.assign({}, DEFAULT_CALENDAR_SETTINGS, saved?.calendar);
     this.settings.tags = sanitizeTags(saved?.tags);
     this.settings.telegram = Object.assign({}, DEFAULT_TELEGRAM_SETTINGS, saved?.telegram);
@@ -1433,6 +1447,7 @@ export default class TaskProPlugin extends Plugin {
 
   /** Repaints open boards after a setting they depend on changed. */
   refreshBoards(): void {
+    for (const embed of this.noteEmbeds) embed.refresh();
     for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_TASK_BOARD)) {
       if (leaf.view instanceof TaskBoardView) leaf.view.refresh();
     }
@@ -1494,6 +1509,7 @@ export default class TaskProPlugin extends Plugin {
         language: this.settings.badgeLanguage,
         calendarSystem: this.settings.calendarSystem,
         targetFolder: this.settings.targetFolder,
+        embedDefaultScope: this.settings.embedDefaultScope,
         tags: this.settings.tags,
         board: this.settings.board,
         referenceNotePath: this.settings.referenceNotePath,

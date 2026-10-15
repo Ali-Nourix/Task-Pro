@@ -177,6 +177,13 @@ export class TaskStore {
   private loadPromise: Promise<void> | null = null;
   private notifyTimer: ReturnType<typeof setTimeout> | null = null;
   private loaded = false;
+  private orderedSnapshot: BoardTask[] | null = null;
+  private generation = 0;
+  private disposed = false;
+
+  /** Changes only when indexed task data changes, not on a filter or layout repaint. */
+  get revision(): number { return this.generation; }
+  private invalidate(): void { this.orderedSnapshot = null; this.generation++; }
 
   /**
    * @param whenReady Resolves once Obsidian's layout (and with it the metadata
@@ -196,7 +203,7 @@ export class TaskStore {
   ensureLoaded(): Promise<void> {
     if (!this.loadPromise) {
       this.loadPromise = this.loadAll().then(() => {
-        this.loaded = true;
+        if (!this.disposed) this.loaded = true;
       });
     }
     return this.loadPromise;
@@ -204,6 +211,7 @@ export class TaskStore {
 
   /** Forgets everything and scans again. */
   async reload(): Promise<void> {
+    this.invalidate();
     this.byFile.clear();
     this.loaded = false;
     this.loadPromise = null;
@@ -213,8 +221,20 @@ export class TaskStore {
 
   private async loadAll(): Promise<void> {
     await this.whenReady();
+    if (this.disposed) return;
+    let sliceStarted = performance.now();
+    let processed = 0;
     const files = this.app.vault.getMarkdownFiles();
     for (const file of files) {
+      if (this.disposed) return;
+      // cachedRead may resolve synchronously from cache: a microtask alone does
+      // not allow input or a skeleton to paint. Yield real tasks in small slices.
+      if (++processed > 24 || performance.now() - sliceStarted >= 8) {
+        await new Promise<void>(resolve => setTimeout(resolve, 0));
+        if (this.disposed) return;
+        processed = 0;
+        sliceStarted = performance.now();
+      }
       const cache = this.app.metadataCache.getFileCache(file);
       const taskLines = taskLinesFromCache(cache);
       // Indexed and task-free: nothing to read.
@@ -222,6 +242,7 @@ export class TaskStore {
 
       try {
         const content = await this.app.vault.cachedRead(file);
+        if (this.disposed) return;
         // Re-read the cache after the await: it is the one that matches `content`.
         const fresh = taskLinesFromCache(this.app.metadataCache.getFileCache(file)) ?? taskLines;
         this.setFile(file.path, parseBoardTasks(file.path, content, fresh));
@@ -232,16 +253,20 @@ export class TaskStore {
   }
 
   private setFile(path: string, tasks: BoardTask[]): void {
+    this.invalidate();
     if (tasks.length) this.byFile.set(path, tasks);
     else this.byFile.delete(path);
   }
 
   /** Every task, in vault order (note path, then line). */
   all(): BoardTask[] {
-    const paths = Array.from(this.byFile.keys()).sort((a, b) => a.localeCompare(b));
-    const out: BoardTask[] = [];
-    for (const path of paths) out.push(...(this.byFile.get(path) ?? []));
-    return out;
+    if (this.orderedSnapshot === null) {
+      const paths = Array.from(this.byFile.keys()).sort((a, b) => a.localeCompare(b));
+      this.orderedSnapshot = [];
+      for (const path of paths) this.orderedSnapshot.push(...(this.byFile.get(path) ?? []));
+    }
+    // Keep the old mutable-array contract without letting callers reorder the shared cache.
+    return this.orderedSnapshot.slice();
   }
 
   /** Every task in one note. */
@@ -285,6 +310,7 @@ export class TaskStore {
     if (!this.tracking) return;
     const tasks = this.byFile.get(oldPath);
     this.byFile.delete(oldPath);
+    if (tasks) this.invalidate();
     if (tasks && file.extension === 'md') {
       // Re-key rather than re-read: the content did not change with the name.
       const fileName = file.basename;
@@ -304,12 +330,14 @@ export class TaskStore {
 
   handleDeleted(path: string): void {
     if (!this.tracking) return;
-    if (this.byFile.delete(path)) this.emit();
+    if (this.byFile.delete(path)) { this.invalidate(); this.emit(); }
   }
 
   destroy(): void {
+    this.disposed = true;
     if (this.notifyTimer) clearTimeout(this.notifyTimer);
     this.listeners.clear();
     this.byFile.clear();
+    this.invalidate();
   }
 }

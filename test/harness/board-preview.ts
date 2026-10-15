@@ -1,3 +1,9 @@
+import { TaskProNoteEmbed } from '../../src/note-embed';
+import { showTimerEditor } from '../../src/timer-popover';
+import { createTimerChip } from '../../src/ui/chips';
+import { newPomodoro } from '../../src/pomodoro';
+import { TaskTimerService } from '../../src/timer-service';
+import { TaskTimer, TaskTimerEntry } from '../../src/types';
 /**
  * Renders the real task board, tag picker, tag manager and tag chips against a
  * stub host, for test/board-preview.html. Nothing here is a mock-up of the UI:
@@ -219,9 +225,12 @@ const PROGRESS: Record<string, TaskProgress> = {
 
 let tasks: BoardTask[] = [];
 const listeners = new Set<() => void>();
+let revision = 0;
 const reparse = () => {
+  revision++;
   tasks = Object.entries(NOTES).flatMap(([path, content]) => parseBoardTasks(path, content));
 };
+if (params.has('bulk')) NOTES['Planner/Large.md'] = Array.from({ length: 1000 }, (_, i) => `- [ ] Large task ${i}`).join('\n');
 reparse();
 
 /** What the plugin does to a note, done to the in-memory notes, then the board is told. */
@@ -234,9 +243,12 @@ const edit = async (task: BoardTask, transform: (line: string) => string) => {
 };
 (window as unknown as { __notes: typeof NOTES }).__notes = NOTES;
 
+let finishLoading: (() => void) | undefined;
+const coldLoad = new Promise<void>(resolve => { finishLoading = resolve; });
 const store = {
-  isLoaded: true,
-  ensureLoaded: async () => undefined,
+  get revision() { return revision; },
+  isLoaded: !params.has('cold'),
+  ensureLoaded: async () => { if (!store.isLoaded) await coldLoad; },
   reload: async () => {
     reparse();
     listeners.forEach((fn) => fn());
@@ -258,6 +270,7 @@ const settings = {
   language,
   calendarSystem,
   targetFolder: params.get('scope') === 'vault' ? '' : 'Planner',
+  embedDefaultScope: (params.get('embed-scope') ?? 'block') as 'target' | 'vault' | 'block',
   tags: TAGS,
   board: {
     ...DEFAULT_BOARD_PREFERENCES,
@@ -453,7 +466,52 @@ async function main(): Promise<void> {
   const root = document.getElementById('root')!;
   const view = params.get('view') ?? 'board';
 
-  if (view === 'board') {
+  if (view === 'embeds' || view === 'minimal-embeds') {
+    root.style.padding = '16px';
+    root.createEl('h2', { text: 'Note with live TaskPro views' });
+    const children: TaskProNoteEmbed[] = [];
+    const paintStats = { body: 0 };
+    const paint = TaskBoard.prototype.renderBody;
+    TaskBoard.prototype.renderBody = function () { paintStats.body++; paint.call(this); };
+    for (const layout of ['table', 'calendar']) {
+      if (layout === 'calendar' && params.has('defer')) root.createDiv().style.height = '1800px';
+      const container = root.createDiv();
+      container.dataset.embed = layout;
+      const child = new TaskProNoteEmbed(container, `view: ${layout}\n${view === 'embeds' ? 'chrome: full\n' : ''}scope: all\ncalendar-view: week`, host, () => {});
+      child.onload();
+      children.push(child);
+    }
+    let timer: TaskTimer = { enabled: true, durationSeconds: 1500, elapsedSeconds: 0, runningSince: 0, label: 'Write', pomodoro: newPomodoro() };
+    let entries: TaskTimerEntry[] = [{ filePath: 'Inbox.md', blockId: 'demo', timer }];
+    const service = new TaskTimerService({
+      getEntries: () => entries, setEntries: (next) => { entries = next; timer = next[0]?.timer; },
+      save: async () => {}, getLanguage: () => language,
+      getSettings: () => ({ showTimerBadges: true, timerSystemNotification: false, timerSound: false, timerInStatusBar: false }),
+      registerInterval: () => {},
+    });
+    const chip = root.createDiv();
+    chip.appendChild(createTimerChip({ timer, filePath: 'Inbox.md', lineContent: '- [ ] Write', blockId: 'demo', language }));
+    root.createEl('button', { text: 'Configure timer', attr: { id: 'configure-timer' } }).addEventListener('click', () => {
+      showTimerEditor({ language, timer, onSave: (next) => { void service.set('Inbox.md', 'demo', next); } });
+    });
+    (window as unknown as { embedTest: unknown }).embedTest = {
+      children, service, settings, paintStats,
+      finishLoading: () => { store.isLoaded = true; finishLoading?.(); listeners.forEach(fn => fn()); },
+      refresh: () => children.forEach(child => child.refresh()),
+      reopen: () => {
+        for (let i = 0; i < children.length; i++) {
+          const old = children[i] as unknown as { source: string; containerEl: HTMLElement };
+          const source = old.source, container = old.containerEl;
+          children[i].onunload();
+          children[i] = new TaskProNoteEmbed(container, source, host, () => {});
+          children[i].onload();
+        }
+      },
+      getTimer: () => timer, listenerCount: () => listeners.size,
+      burst: (n: number) => { for (let i = 0; i < n; i++) listeners.forEach((listener) => listener()); },
+      destroy: () => { children.forEach((child) => child.onunload()); service.destroy(); },
+    };
+  } else if (view === 'board') {
     // `?float=1` puts the board where the floating window puts it: in an Obsidian modal.
     if (params.get('float') === '1') root.addClass('modal-container', 'taskpro-board-float');
     root.addClass('workspace-leaf-content');

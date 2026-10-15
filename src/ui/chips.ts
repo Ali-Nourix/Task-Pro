@@ -1,3 +1,4 @@
+import { pomodoroText } from '../pomodoro';
 // ── ui/chips.ts ───────────────────────────────────────────────────────────
 // Shared DOM helpers for status / progress / deadline chips
 // ─────────────────────────────────────────────────────────────────────────────
@@ -219,11 +220,11 @@ export function createTimerChip(options: {
   const badge = buildChip(
     'taskpro-timer-badge',
     icon,
-    state === 'done' ? labels.doneChip : formatTimerClock(remaining)
+    [pomodoroText(options.timer, options.language), state === 'done' ? labels.doneChip : formatTimerClock(remaining)].filter(Boolean).join(' · ')
   );
   badge.dataset.state = state;
   if (options.blockId) badge.dataset.timerKey = `${options.filePath}:${options.blockId}`;
-  badge.setAttribute('aria-label', labels.chipAria(formatTimerClock(remaining), state));
+  badge.setAttribute('aria-label', `${pomodoroText(options.timer, options.language)} ${labels.chipAria(formatTimerClock(remaining), state)}`.trim());
   badge.setAttribute('role', 'button');
   badge.tabIndex = 0;
 
