@@ -2,6 +2,10 @@
 
 ## Unreleased — Note embeds and Pomodoro
 
+- Align embedded-view settings actions with their neighboring controls; share an 8px side gutter across minimal/full content without doubling calendar navigation padding.
+- Default note views to the configured target folder on every reopen. Add a General setting for target-folder, whole-vault, or explicit code-block scope policy; refresh existing embeds when the policy changes.
+- Keep narrow-calendar view switches at full width rather than reserving the options-button column for every row.
+
 - Follow-up: minimal embedded chrome by default, recoverable full controls and optional calendar sidebar.
 - Fixed the floating kanban hover-selection square; bulk selection is preserved inside the card.
 - Cached ordered task snapshots and relation indexes, coalesced store-driven paints per animation frame, and removed redundant loaded-store mount paints. Existing motion remains in place.

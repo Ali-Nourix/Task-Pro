@@ -913,6 +913,8 @@ export default class TaskProPlugin extends Plugin {
     // Same for the board's remembered layout, and the tag list is cleaned so a
     // hand-edited data.json cannot break chip rendering.
     this.settings.board = Object.assign({}, DEFAULT_BOARD_PREFERENCES, saved?.board);
+    this.settings.embedDefaultScope = saved?.embedDefaultScope === 'vault' || saved?.embedDefaultScope === 'block'
+      ? saved.embedDefaultScope : 'target';
     this.settings.calendar = Object.assign({}, DEFAULT_CALENDAR_SETTINGS, saved?.calendar);
     this.settings.tags = sanitizeTags(saved?.tags);
     this.settings.telegram = Object.assign({}, DEFAULT_TELEGRAM_SETTINGS, saved?.telegram);
@@ -1507,6 +1509,7 @@ export default class TaskProPlugin extends Plugin {
         language: this.settings.badgeLanguage,
         calendarSystem: this.settings.calendarSystem,
         targetFolder: this.settings.targetFolder,
+        embedDefaultScope: this.settings.embedDefaultScope,
         tags: this.settings.tags,
         board: this.settings.board,
         referenceNotePath: this.settings.referenceNotePath,

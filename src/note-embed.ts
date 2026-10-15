@@ -1,6 +1,6 @@
 // Real board/calendar views inside Markdown, backed by the shared task store.
 import { MarkdownRenderChild } from 'obsidian';
-import { BoardPreferences, DEFAULT_BOARD_PREFERENCES } from './types';
+import { BoardPreferences, BoardScope, EmbedScopeMode, DEFAULT_BOARD_PREFERENCES } from './types';
 import { TaskBoard, TaskBoardHost } from './board/task-board';
 
 /** Deliberately small, strict syntax: unknown options should not silently change a view. */
@@ -44,6 +44,12 @@ export function parseEmbedConfig(source: string): EmbedConfig {
 }
 export function parseEmbedPreferences(source: string): BoardPreferences { return parseEmbedConfig(source).prefs; }
 
+/** Global startup policy intentionally wins over old scope: all examples unless block mode is selected. */
+export function resolveEmbedScope(blockScope: BoardScope, mode: EmbedScopeMode = 'target', folder = ''): BoardScope {
+  const scope = mode === 'block' ? blockScope : mode;
+  return scope === 'target' && !folder.trim() ? 'vault' : scope;
+}
+
 /** Keep every embedded view's filters/layout separate from workspace settings. */
 export function createEmbedHost(host: TaskBoardHost, prefs: BoardPreferences): TaskBoardHost {
   return {
@@ -56,6 +62,18 @@ export function createEmbedHost(host: TaskBoardHost, prefs: BoardPreferences): T
 export class TaskProNoteEmbed extends MarkdownRenderChild {
   private board: TaskBoard | null = null;
   private disposed = false;
+  private config: EmbedConfig | null = null;
+  private scopePolicy = '';
+  private applyScopePolicy(): void {
+    if (!this.config) return;
+    const settings = this.host.getSettings();
+    const mode = settings.embedDefaultScope ?? 'target';
+    const folder = settings.targetFolder ?? '';
+    const policy = JSON.stringify([mode, folder]);
+    if (policy === this.scopePolicy) return;
+    this.scopePolicy = policy;
+    this.config.prefs.scope = resolveEmbedScope(parseEmbedPreferences(this.source).scope, mode, folder);
+  }
   constructor(container: HTMLElement, private readonly source: string,
     private readonly host: TaskBoardHost, private readonly detached: () => void) {
     super(container);
@@ -65,7 +83,8 @@ export class TaskProNoteEmbed extends MarkdownRenderChild {
     this.containerEl.setAttribute('role', 'region');
     this.containerEl.setAttribute('aria-label', 'TaskPro');
     try {
-      const config = parseEmbedConfig(this.source);
+      const config = this.config = parseEmbedConfig(this.source);
+      this.applyScopePolicy();
       this.board = new TaskBoard(this.containerEl, createEmbedHost(this.host, config.prefs), { embedded: true, chrome: config.chrome });
       void this.board.mount().catch(() => {
         if (this.disposed) return;
@@ -78,7 +97,7 @@ export class TaskProNoteEmbed extends MarkdownRenderChild {
       this.containerEl.createEl('p', { text: `TaskPro: ${error instanceof Error ? error.message : 'Invalid options'}` });
     }
   }
-  refresh(): void { this.board?.refresh(); }
+  refresh(): void { this.applyScopePolicy(); this.board?.refresh(); }
   onunload(): void {
     if (this.disposed) return;
     this.disposed = true;

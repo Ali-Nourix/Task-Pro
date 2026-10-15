@@ -9304,6 +9304,39 @@ body {
 /* Minimal embeds compose only period navigation and the active view. */
 .taskpro-embed-nav-row { display: flex; align-items: flex-start; gap: 4px; flex: 0 0 auto; min-width: 0; }
 .taskpro-embed-nav-row > .taskpro-cal-nav { flex: 1 1 auto; min-width: 0; }
-.taskpro-board .taskpro-embed-options { flex: 0 0 auto; margin: 8px; }
+.taskpro-board .taskpro-embed-options { flex: 0 0 auto; margin: 0; align-self: center; }
 .taskpro-board.is-minimal-chrome { --taskpro-head-h: 0px; }
 .taskpro-board.is-minimal-chrome:not(.is-calendar-layout):not(.is-timeline-layout) > .taskpro-embed-nav-row { justify-content: flex-end; }
+
+/* One small gutter for embedded content, independent of workspace tab padding. */
+.taskpro-note-embed {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  margin-inline: 0;
+  padding: 0;
+}
+.taskpro-note-embed > .taskpro-board { --taskpro-board-gutter: 8px; }
+.taskpro-note-embed .taskpro-board__heading-actions { align-items: center; }
+.taskpro-note-embed .taskpro-board__header { padding-block: 8px; }
+.taskpro-note-embed .taskpro-embed-nav-row {
+  padding: 4px var(--taskpro-board-gutter) 0;
+  gap: 8px;
+  align-items: flex-start;
+}
+.taskpro-note-embed .taskpro-embed-nav-row > .taskpro-embed-options { align-self: flex-start; }
+.taskpro-note-embed > .taskpro-board .taskpro-embed-nav-row > .taskpro-cal-nav { padding-inline: 0; padding-block-end: 8px; align-items: flex-start; }
+.taskpro-note-embed .taskpro-board__body { padding-inline: var(--taskpro-board-gutter); }
+.taskpro-note-embed > .taskpro-board:not(.is-compact):not(.has-selection) > .taskpro-board__body { padding-block-end: 8px; }
+.taskpro-note-embed .is-calendar-layout .taskpro-embed-nav-row > .taskpro-embed-options { width: 28px; height: 28px; }
+.taskpro-note-embed > .taskpro-board.is-compact .taskpro-embed-options { width: 40px; height: 40px; min-width: 40px; min-height: 40px; }
+/* On narrow calendars the options button reserves space in the first row only,
+   so the month/week/day switches still get the full second row. */
+.taskpro-note-embed > .taskpro-board.is-compact.is-calendar-layout .taskpro-embed-nav-row { display: block; position: relative; }
+.taskpro-note-embed > .taskpro-board.is-compact.is-calendar-layout .taskpro-embed-nav-row > .taskpro-embed-options {
+  position: absolute;
+  inset-block-start: 4px;
+  inset-inline-end: var(--taskpro-board-gutter);
+}
+.taskpro-note-embed > .taskpro-board.is-compact.is-calendar-layout .taskpro-cal-nav__top { padding-inline-end: 48px; }
+.taskpro-note-embed > .taskpro-board .taskpro-embed-nav-row > .taskpro-cal-nav.is-phone { align-items: stretch; }

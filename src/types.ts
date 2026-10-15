@@ -388,6 +388,7 @@ export const DEFAULT_CALENDAR_SETTINGS: CalendarSettings = {
 // The all-tasks view. Its preferences are remembered between sessions, so the
 // board reopens exactly as it was left.
 export type BoardScope = 'target' | 'vault';
+export type EmbedScopeMode = 'target' | 'vault' | 'block';
 export type BoardLayout = 'table' | 'board' | 'calendar' | 'timeline';
 export type BoardGroupBy = 'none' | 'status' | 'tag' | 'priority' | 'deadline' | 'plan' | 'note';
 
@@ -550,6 +551,8 @@ export interface TaskProSettings {
   badgeSize: number;
   calendarSystem: CalendarSystem; // Calendar system for date display
   targetFolder: string; // Folder restriction for plugin activity
+  /** Startup scope for note embeds; block explicitly opts in to each fence's scope. */
+  embedDefaultScope: EmbedScopeMode;
   globalInternalTasks: GlobalInternalTask[];
   showBadgesInEmbeds: boolean; // Toggle badge visibility in embeds
   taskMappings: TaskMapping[];
@@ -612,6 +615,7 @@ export const DEFAULT_SETTINGS: TaskProSettings = {
   showBadgesInEmbeds: true,
   calendarSystem: 'gregorian',
   targetFolder: '', // Empty means entire vault
+  embedDefaultScope: 'target',
   globalInternalTasks: [],
   taskMappings: [],
   taskProgress: [],

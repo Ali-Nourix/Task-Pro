@@ -7,7 +7,7 @@ const result = await esbuild.build({
     resolveDir: process.cwd(), loader: 'ts' }, bundle: true, write: false, format: 'esm', platform: 'node',
   plugins: [{ name: 'obsidian', setup(b) { b.onResolve({ filter: /^obsidian$/ }, () => ({ path: mock, external: true })); } }],
 });
-const { newPomodoro, finishPomodoroPhase, pomodoroText, parseEmbedPreferences, createEmbedHost, TaskTimerService, TaskProNoteEmbed, parseEmbedConfig, TaskStore } =
+const { newPomodoro, finishPomodoroPhase, pomodoroText, parseEmbedPreferences, createEmbedHost, TaskTimerService, TaskProNoteEmbed, parseEmbedConfig, TaskStore, resolveEmbedScope } =
   await import('data:text/javascript;base64,' + Buffer.from(result.outputFiles[0].text).toString('base64'));
 const { notices } = await import(mock);
 let checks = 0;
@@ -66,6 +66,13 @@ eq(parseEmbedPreferences('chrome: full').calendarSidebar, true);
 eq(parseEmbedPreferences('calendar-sidebar: show').calendarSidebar, true);
 eq(parseEmbedPreferences('calendar-sidebar: hide\nchrome: full').calendarSidebar, false);
 for (const bad of ['chrome: empty', 'calendar-sidebar: yes', 'chrome: full\nchrome: minimal']) throws(() => parseEmbedConfig(bad));
+// Startup scope policy: configured target wins over legacy all-vault fences by default.
+eq(resolveEmbedScope('vault', undefined, 'Planner'), 'target');
+eq(resolveEmbedScope('target', 'vault', 'Planner'), 'vault');
+eq(resolveEmbedScope('vault', 'block', 'Planner'), 'vault');
+eq(resolveEmbedScope('target', 'block', 'Planner'), 'target');
+eq(resolveEmbedScope('vault', 'target', ''), 'vault');
+eq(resolveEmbedScope('target', 'target', '  '), 'vault');
 // Ordered task snapshots sort once per data revision, not once per consumer/read.
 const index = new TaskStore({});
 index.setFile('Z.md', [{ id: 'Z:0', text: 'Z' }]);

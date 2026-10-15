@@ -267,6 +267,7 @@ const settings = {
   language,
   calendarSystem,
   targetFolder: params.get('scope') === 'vault' ? '' : 'Planner',
+  embedDefaultScope: (params.get('embed-scope') ?? 'block') as 'target' | 'vault' | 'block',
   tags: TAGS,
   board: {
     ...DEFAULT_BOARD_PREFERENCES,
@@ -490,7 +491,18 @@ async function main(): Promise<void> {
       showTimerEditor({ language, timer, onSave: (next) => { void service.set('Inbox.md', 'demo', next); } });
     });
     (window as unknown as { embedTest: unknown }).embedTest = {
-      children, service, settings, paintStats, getTimer: () => timer, listenerCount: () => listeners.size,
+      children, service, settings, paintStats,
+      refresh: () => children.forEach(child => child.refresh()),
+      reopen: () => {
+        for (let i = 0; i < children.length; i++) {
+          const old = children[i] as unknown as { source: string; containerEl: HTMLElement };
+          const source = old.source, container = old.containerEl;
+          children[i].onunload();
+          children[i] = new TaskProNoteEmbed(container, source, host, () => {});
+          children[i].onload();
+        }
+      },
+      getTimer: () => timer, listenerCount: () => listeners.size,
       burst: (n: number) => { for (let i = 0; i < n; i++) listeners.forEach((listener) => listener()); },
       destroy: () => { children.forEach((child) => child.onunload()); service.destroy(); },
     };

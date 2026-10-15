@@ -171,6 +171,7 @@ const CHECK_COLUMN = 34;
 const END_COLUMN = 40;
 
 export interface BoardSettingsView {
+  embedDefaultScope?: import('../types').EmbedScopeMode;
   language: Language;
   calendarSystem: CalendarSystem;
   targetFolder: string;
