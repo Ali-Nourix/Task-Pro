@@ -1,0 +1,79 @@
+// Real board/calendar views inside Markdown, backed by the shared task store.
+import { MarkdownRenderChild } from 'obsidian';
+import { BoardPreferences, DEFAULT_BOARD_PREFERENCES } from './types';
+import { TaskBoard, TaskBoardHost } from './board/task-board';
+
+/** Deliberately small, strict syntax: unknown options should not silently change a view. */
+export function parseEmbedPreferences(source: string): BoardPreferences {
+  const prefs: BoardPreferences = JSON.parse(JSON.stringify(DEFAULT_BOARD_PREFERENCES));
+  const seen = new Set<string>();
+  for (const raw of source.split('\n')) {
+    const line = raw.trim();
+    if (!line || line.startsWith('#')) continue;
+    const match = /^([a-z-]+)\s*:\s*([a-z]+)\s*$/.exec(line);
+    if (!match) throw new Error(`Invalid TaskPro option: ${line}`);
+    const [, key, value] = match;
+    if (seen.has(key)) throw new Error(`Duplicate TaskPro option: ${key}`);
+    seen.add(key);
+    switch (key) {
+      case 'view':
+        if (value !== 'table' && value !== 'calendar') throw new Error('view: table | calendar');
+        prefs.layout = value; break;
+      case 'calendar-view':
+        if (!['month', 'week', 'day', 'agenda'].includes(value)) throw new Error('calendar-view: month | week | day | agenda');
+        prefs.calendarView = value as BoardPreferences['calendarView']; break;
+      case 'calendar-system':
+        if (value !== 'jalali' && value !== 'gregorian') throw new Error('calendar-system: jalali | gregorian');
+        prefs.calendarSystem = value; break;
+      case 'scope':
+        if (value !== 'all' && value !== 'target') throw new Error('scope: all | target');
+        prefs.scope = value === 'all' ? 'vault' : 'target'; break;
+      default: throw new Error(`Unknown TaskPro option: ${key}`);
+    }
+  }
+  return prefs;
+}
+
+/** Keep every embedded view's filters/layout separate from workspace settings. */
+export function createEmbedHost(host: TaskBoardHost, prefs: BoardPreferences): TaskBoardHost {
+  return {
+    ...host,
+    getSettings: () => ({ ...host.getSettings(), board: prefs }),
+    savePreferences: async () => { /* Local to this rendering; never overwrite global preferences. */ },
+  };
+}
+
+export class TaskProNoteEmbed extends MarkdownRenderChild {
+  private board: TaskBoard | null = null;
+  private disposed = false;
+  constructor(container: HTMLElement, private readonly source: string,
+    private readonly host: TaskBoardHost, private readonly detached: () => void) {
+    super(container);
+  }
+  onload(): void {
+    this.containerEl.addClass('taskpro-note-embed');
+    this.containerEl.setAttribute('role', 'region');
+    this.containerEl.setAttribute('aria-label', 'TaskPro');
+    try {
+      this.board = new TaskBoard(this.containerEl, createEmbedHost(this.host, parseEmbedPreferences(this.source)));
+      void this.board.mount().catch(() => {
+        if (this.disposed) return;
+        this.board?.destroy();
+        this.board = null;
+        this.containerEl.empty();
+        this.containerEl.createEl('p', { text: 'TaskPro: Could not load tasks. / بارگذاری تسک‌ها ناموفق بود.' });
+      });
+    } catch (error) {
+      this.containerEl.createEl('p', { text: `TaskPro: ${error instanceof Error ? error.message : 'Invalid options'}` });
+    }
+  }
+  refresh(): void { this.board?.refresh(); }
+  onunload(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    this.board?.destroy();
+    this.board = null;
+    this.containerEl.empty();
+    this.detached();
+  }
+}

@@ -1,3 +1,9 @@
+import { TaskProNoteEmbed } from '../../src/note-embed';
+import { showTimerEditor } from '../../src/timer-popover';
+import { createTimerChip } from '../../src/ui/chips';
+import { newPomodoro } from '../../src/pomodoro';
+import { TaskTimerService } from '../../src/timer-service';
+import { TaskTimer, TaskTimerEntry } from '../../src/types';
 /**
  * Renders the real task board, tag picker, tag manager and tag chips against a
  * stub host, for test/board-preview.html. Nothing here is a mock-up of the UI:
@@ -453,7 +459,35 @@ async function main(): Promise<void> {
   const root = document.getElementById('root')!;
   const view = params.get('view') ?? 'board';
 
-  if (view === 'board') {
+  if (view === 'embeds') {
+    root.style.padding = '16px';
+    root.createEl('h2', { text: 'Note with live TaskPro views' });
+    const children: TaskProNoteEmbed[] = [];
+    for (const layout of ['table', 'calendar']) {
+      const container = root.createDiv();
+      container.dataset.embed = layout;
+      const child = new TaskProNoteEmbed(container, `view: ${layout}\nscope: all\ncalendar-view: week`, host, () => {});
+      child.onload();
+      children.push(child);
+    }
+    let timer: TaskTimer = { enabled: true, durationSeconds: 1500, elapsedSeconds: 0, runningSince: 0, label: 'Write', pomodoro: newPomodoro() };
+    let entries: TaskTimerEntry[] = [{ filePath: 'Inbox.md', blockId: 'demo', timer }];
+    const service = new TaskTimerService({
+      getEntries: () => entries, setEntries: (next) => { entries = next; timer = next[0]?.timer; },
+      save: async () => {}, getLanguage: () => language,
+      getSettings: () => ({ showTimerBadges: true, timerSystemNotification: false, timerSound: false, timerInStatusBar: false }),
+      registerInterval: () => {},
+    });
+    const chip = root.createDiv();
+    chip.appendChild(createTimerChip({ timer, filePath: 'Inbox.md', lineContent: '- [ ] Write', blockId: 'demo', language }));
+    root.createEl('button', { text: 'Configure timer', attr: { id: 'configure-timer' } }).addEventListener('click', () => {
+      showTimerEditor({ language, timer, onSave: (next) => { void service.set('Inbox.md', 'demo', next); } });
+    });
+    (window as unknown as { embedTest: unknown }).embedTest = {
+      children, service, settings, getTimer: () => timer, listenerCount: () => listeners.size,
+      destroy: () => { children.forEach((child) => child.onunload()); service.destroy(); },
+    };
+  } else if (view === 'board') {
     // `?float=1` puts the board where the floating window puts it: in an Obsidian modal.
     if (params.get('float') === '1') root.addClass('modal-container', 'taskpro-board-float');
     root.addClass('workspace-leaf-content');

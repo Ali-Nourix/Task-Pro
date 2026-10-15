@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — Note embeds and Pomodoro
+
+- Interactive `taskpro` Markdown code blocks for inline tables and calendars, using the shared task store and isolated per-embed preferences.
+- Per-task Pomodoro focus/break cycles, long-break cadence, target/completed rounds and optional auto-start, built on the existing persistent timer service.
+- Persian/English controls, bounded mobile timer settings, completion/reload tests and real-renderer browser checks.
+- See [usage and behavior](docs/note-embeds-pomodoro.md). No Google Calendar changes.
+
 ## 1.6.0 - Automatic planning, time tracking, scrolling chips and private diagnostics
 
 ### Auto-plan that never misses

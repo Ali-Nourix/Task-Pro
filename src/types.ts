@@ -241,6 +241,8 @@ export interface TaskProgress {
 export type TaskTimerState = 'idle' | 'running' | 'paused' | 'done';
 
 export interface TaskTimer {
+  /** Optional: old countdowns keep their original behavior. */
+  pomodoro?: import('./pomodoro').PomodoroConfig;
   enabled: boolean;
   /** Planned length of the timer, in seconds. */
   durationSeconds: number;

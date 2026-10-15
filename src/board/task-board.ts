@@ -338,6 +338,7 @@ export class TaskBoard {
   /** True while an inline editor is open; store updates wait until it closes. */
   private editing = false;
   private renderQueued = false;
+  private destroyed = false;
   private unsubscribe: (() => void) | null = null;
   private draggedTaskId: string | null = null;
   private draggedFrom: string | null = null;
@@ -416,10 +417,13 @@ export class TaskBoard {
     this.renderBody();
     this.unsubscribe = this.host.store.subscribe(() => this.requestRender());
     await this.host.store.ensureLoaded();
-    this.renderBody();
+    if (!this.destroyed) this.renderBody();
   }
 
   destroy(): void {
+    this.destroyed = true;
+    this.releaseSelectionEscape?.();
+    this.releaseSelectionEscape = null;
     this.unsubscribe?.();
     this.unsubscribe = null;
     if (this.searchTimer) clearTimeout(this.searchTimer);
@@ -458,6 +462,7 @@ export class TaskBoard {
 
   /** Settings changed (language, tags, target folder): rebuild everything. */
   refresh(): void {
+    if (this.destroyed) return;
     this.renderChrome();
     this.renderBody();
   }
@@ -484,6 +489,7 @@ export class TaskBoard {
   }
 
   private requestRender(): void {
+    if (this.destroyed) return;
     if (this.editing || this.holds > 0) {
       this.renderQueued = true;
       return;

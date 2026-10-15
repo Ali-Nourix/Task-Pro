@@ -218,6 +218,11 @@ export class Component {
   }
 }
 
+export class MarkdownRenderChild extends Component {
+  constructor(containerEl) { super(); this.containerEl = containerEl; }
+  unload() { this.onunload?.(); }
+}
+
 export class Plugin extends Component {
   constructor(app, manifest) {
     super();
@@ -246,6 +251,10 @@ export class Plugin extends Component {
   }
   registerEditorExtension() {}
   registerMarkdownPostProcessor() {}
+  registerMarkdownCodeBlockProcessor(language, processor) {
+    this.app.codeBlockProcessors ??= {};
+    this.app.codeBlockProcessors[language] = processor;
+  }
   registerEditorSuggest(suggest) {
     this.app.suggests = [...(this.app.suggests ?? []), suggest];
   }

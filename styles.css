@@ -9268,3 +9268,23 @@ body {
   outline-offset: -2px;
   box-shadow: var(--taskpro-focus-ring-inset);
 }
+
+/* A note owns its scrolling; the interactive embedded board gets a bounded region. */
+.taskpro-note-embed {
+  display: flex;
+  flex-direction: column;
+  height: 640px;
+  max-height: 80vh;
+  min-height: 280px;
+  min-width: 0;
+  margin-block: 1em;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  overflow: hidden;
+  isolation: isolate;
+}
+.taskpro-note-embed > .taskpro-board { width: 100%; min-width: 0; }
+.taskpro-timer-panel { max-height: 90vh; max-height: 90dvh; overflow-y: auto; }
+.taskpro-timer-panel__cycle { display: flex; flex-direction: column; gap: var(--taskpro-panel-gap); }
+.taskpro-timer-panel__cycle[hidden] { display: none; }
+.taskpro-panel__field.taskpro-timer-panel__toggle { flex-direction: row; align-items: center; gap: 8px; }

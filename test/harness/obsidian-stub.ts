@@ -232,3 +232,9 @@ export class Modal {
   return true;
 };
 export class EditorSuggest {}
+
+/** Markdown code-block child lifecycle used by the embed preview. */
+export class MarkdownRenderChild {
+  constructor(public containerEl: HTMLElement) {}
+  unload(): void { (this as unknown as { onunload?: () => void }).onunload?.(); }
+}
