@@ -8057,18 +8057,18 @@ body.is-mobile .taskpro-board.taskpro-board button.taskpro-tl__undated-toggle {
   position: absolute;
   z-index: 3;
   inset-block-start: 50%;
-  inset-inline-start: calc(-1 * min(var(--taskpro-board-gutter), 24px) + 2px);
+  inset-inline-start: 50%;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   box-sizing: border-box;
-  width: 15px;
+  width: var(--taskpro-check-size, 16px);
   min-width: 0;
-  height: 15px;
+  height: var(--taskpro-check-size, 16px);
   min-height: 0;
   margin: 0;
   padding: 0;
-  transform: translateY(-50%);
+  transform: translate(-50%, -50%);
   border: 1.5px solid var(--text-faint);
   border-radius: 4px;
   background: var(--background-primary);
@@ -8078,6 +8078,22 @@ body.is-mobile .taskpro-board.taskpro-board button.taskpro-tl__undated-toggle {
   opacity: 0;
   transition: opacity var(--taskpro-fast) var(--taskpro-ease), background-color var(--taskpro-fast) var(--taskpro-ease),
     border-color var(--taskpro-fast) var(--taskpro-ease);
+}
+/* Keep the existing check column stable; never paint a second checkbox in its gutter. */
+.taskpro-board .taskpro-table__check > button.taskpro-board__select {
+  visibility: hidden;
+  pointer-events: none;
+}
+.taskpro-board[dir="rtl"] .taskpro-table__check > button.taskpro-board__select {
+  transform: translate(50%, -50%);
+}
+.taskpro-board.has-selection .taskpro-table__check > button.taskpro-board__select {
+  visibility: visible;
+  pointer-events: auto;
+}
+.taskpro-board.has-selection .taskpro-table__check > .taskpro-board__check {
+  visibility: hidden;
+  pointer-events: none;
 }
 .taskpro-board .taskpro-card {
   position: relative;
@@ -8100,7 +8116,6 @@ body.is-mobile .taskpro-board.taskpro-board button.taskpro-tl__undated-toggle {
   visibility: hidden;
   pointer-events: none;
 }
-.taskpro-board .taskpro-table__row:hover button.taskpro-board__select,
 .taskpro-board button.taskpro-board__select:focus-visible {
   opacity: 1;
 }
@@ -8112,18 +8127,21 @@ body.is-mobile .taskpro-board.taskpro-board button.taskpro-tl__undated-toggle {
   opacity: 1;
 }
 .taskpro-board button.taskpro-board__select:focus-visible {
-  box-shadow: var(--taskpro-focus-ring);
+  outline: 2px solid var(--text-normal);
+  outline-offset: -3px;
+  box-shadow: var(--taskpro-focus-ring-inset);
 }
 .taskpro-board button.taskpro-board__select .taskpro-board__select-tick {
-  display: inline-flex;
+  display: block;
+  width: 11px;
+  height: 11px;
+  background-color: currentColor;
+  --taskpro-select-glyph: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>');
+  -webkit-mask: var(--taskpro-select-glyph) center / contain no-repeat;
+  mask: var(--taskpro-select-glyph) center / contain no-repeat;
   opacity: 0;
   transform: scale(0.6);
   transition: opacity var(--taskpro-fast) var(--taskpro-ease), transform var(--taskpro-fast) var(--taskpro-ease-pop);
-}
-.taskpro-board button.taskpro-board__select .svg-icon {
-  width: 11px;
-  height: 11px;
-  stroke-width: 3.5;
 }
 .taskpro-board .is-selected button.taskpro-board__select,
 .taskpro-board button.taskpro-board__select[aria-checked="true"] {

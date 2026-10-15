@@ -25,10 +25,11 @@ import { buildHarness } from './harness/build.mjs';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const outDir = path.resolve(here, '..', 'docs', 'images');
 
-/** Puts three rows of the table in a selection: a click on a square, a Ctrl click and another square. */
+/** Puts three rows of the table in a selection: the Select action, a Ctrl click and another square. */
 const pickRows = async (page) => {
   const rows = page.locator('.taskpro-table__row');
-  await rows.nth(1).locator('.taskpro-board__select').click({ force: true });
+  await rows.nth(1).click({ button: 'right', position: { x: 150, y: 10 } });
+  await page.locator('.taskpro-menu__item').filter({ hasText: /^\s*Select\s*$/ }).click();
   await rows.nth(3).locator('td.taskpro-table__task').click({ position: { x: 190, y: 8 }, modifiers: ['Control'] });
   await rows.nth(4).locator('.taskpro-board__select').click({ force: true });
   await page.mouse.move(640, 6);

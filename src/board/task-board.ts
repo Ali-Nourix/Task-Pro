@@ -2089,7 +2089,7 @@ export class TaskBoard {
 
   // ── Selecting several ────────────────────────────────────────────────────
 
-  /** A square in the margin of a row or a card that picks it for a bulk change. */
+  /** A checkbox in the status slot of a row or card during bulk selection. */
   private selectButton(parent: HTMLElement, task: BoardTask): void {
     const box = parent.createEl('button', { cls: 'taskpro-board__select' });
     box.type = 'button';
@@ -2097,7 +2097,8 @@ export class TaskBoard {
     box.setAttribute('aria-label', this.labels.selectTask);
     box.setAttribute('aria-checked', String(this.selected.has(task.id)));
     box.tabIndex = -1;
-    setIcon(box.createSpan({ cls: 'taskpro-board__select-tick' }), 'check');
+    // Icon-free: host themes must not apply enlarged button-with-SVG styles.
+    box.createSpan({ cls: 'taskpro-board__select-tick', attr: { 'aria-hidden': 'true' } });
     box.addEventListener('click', (event) => {
       event.stopPropagation();
       this.toggleSelected(task, event.shiftKey);

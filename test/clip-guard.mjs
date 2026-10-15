@@ -327,18 +327,18 @@ try {
     await page.close();
   }
 
-  // Tasks picked: the squares in the margin, the tint, the rings on cards, the bar and its menus.
+  // Tasks picked: the controls inside the check column, the tint, the rings on cards, the bar and its menus.
   for (const [query, tag, pick] of [
     ['?scope=vault&group=none', 'table selection', async (page) => {
       const rows = page.locator('.taskpro-table__row');
-      await rows.nth(1).hover({ position: { x: 150, y: 10 } });
-      await rows.nth(1).locator('.taskpro-board__select').click();
+      await rows.nth(1).click({ button: 'right', position: { x: 150, y: 10 } });
+      await page.locator('.taskpro-menu__item').filter({ hasText: /^\s*Select\s*$/ }).click();
       await rows.nth(2).locator('.taskpro-board__select').click({ force: true });
     }],
     ['?scope=vault&group=none&lang=fa', 'table selection fa', async (page) => {
       const rows = page.locator('.taskpro-table__row');
-      await rows.nth(1).hover({ position: { x: 1500, y: 10 } });
-      await rows.nth(1).locator('.taskpro-board__select').click();
+      await rows.nth(1).click({ button: 'right', position: { x: 150, y: 10 } });
+      await page.locator('.taskpro-menu__item').filter({ hasText: /^\s*انتخاب\s*$/ }).click();
     }],
     ['?layout=board&scope=vault', 'board selection', async (page) => {
       const cards = page.locator('.taskpro-card');

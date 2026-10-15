@@ -639,12 +639,16 @@ try {
   const bar = () => page.locator('.taskpro-selection');
   const picked = () => page.locator('.taskpro-table__row.is-selected .taskpro-board__title').allTextContents();
   const squareOf = (title) => row(page, title).locator('.taskpro-board__select');
-  eq(await page.locator('.taskpro-board__select').count(), 12, 'every row has a square in its margin');
+  eq(await page.locator('.taskpro-board__select').count(), 12, 'every row has a selection control in its check cell');
   eq(await bar().count(), 0, 'and no bar until something is picked');
   await row(page, 'Dentist appointment').hover({ position: { x: 150, y: 10 } });
   await page.waitForTimeout(250);
-  eq(await squareOf('Dentist appointment').evaluate((el) => getComputedStyle(el).opacity), '1', 'the square shows under the pointer');
-  await squareOf('Dentist appointment').click();
+  eq(await squareOf('Dentist appointment').isVisible(), false, 'hover never adds a second checkbox');
+  const startSelection = async (target, fa = false) => {
+    await target.click({ button: 'right', position: { x: 150, y: 10 } });
+    await page.locator('.taskpro-menu__item').filter({ hasText: fa ? /^\s*انتخاب\s*$/ : /^\s*Select\s*$/ }).click();
+  };
+  await startSelection(row(page, 'Dentist appointment'));
   eq(await picked(), ['Dentist appointment'], 'a click on it picks the row');
   eq((await bar().locator('.taskpro-selection__count').textContent()).trim(), '1 selected', 'and a bar counts what is picked');
   await page
@@ -685,7 +689,7 @@ try {
   await page.keyboard.press('Escape');
 
   // Changes to all of them at once, each written into its own note.
-  await squareOf('Groceries').click({ force: true });
+  await startSelection(row(page, 'Groceries'));
   await squareOf('Dentist appointment').click({ force: true });
   await bar().locator('.taskpro-selection__btn', { hasText: 'Status' }).click();
   eq(await page.locator('.taskpro-menu__header').textContent(), '2 selected', 'a menu from the bar says what it is for');
@@ -717,7 +721,7 @@ try {
 
   // Moving takes the parent's subtasks along once, though they are picked too.
   await page.locator('.taskpro-selection__btn.is-clear').click();
-  await squareOf('Design the new home page').click({ force: true });
+  await startSelection(row(page, 'Design the new home page'));
   await squareOf('Pick the display typeface').click({ force: true });
   await bar().locator('.taskpro-selection__btn', { hasText: 'Move to note' }).click();
   await page.locator('.taskpro-menu__search').fill('some');
@@ -729,7 +733,7 @@ try {
 
   // Deleting them all at once.
   const remaining = (await titles(page)).length;
-  await squareOf('Groceries').click({ force: true });
+  await startSelection(row(page, 'Groceries'));
   await squareOf('Accessibility pass').click({ force: true });
   await bar().locator('.taskpro-selection__btn', { hasText: 'Delete' }).click();
   await page.waitForTimeout(150);
@@ -754,7 +758,7 @@ try {
   await page.close();
 
   page = await open('?scope=vault&group=none&lang=fa', 1700);
-  await page.locator('.taskpro-table__row').nth(1).locator('.taskpro-board__select').click({ force: true });
+  await startSelection(page.locator('.taskpro-table__row').nth(1), true);
   eq((await page.locator('.taskpro-selection__count').textContent()).trim(), '1 انتخاب شده', 'in Persian');
   eq(await page.locator('.taskpro-selection__btn.is-warning').getAttribute('aria-label'), 'حذف', 'and the delete button');
   await page.close();
