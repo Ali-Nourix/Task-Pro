@@ -78,6 +78,19 @@ jobs:
           console.log(`version=${expected}`);
           NODE
 
+      # Fail early instead of spending a full build trying to recreate a
+      # published version. Never replace old release assets on a retry.
+      - name: Reject an already published version
+        if: github.ref_type == 'tag' || inputs.publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::Release $VERSION already exists. Update manifest.json, package.json, package-lock.json and versions.json, commit to main, and start a NEW workflow run from that commit. Re-running an old run uses its original commit."
+            exit 1
+          fi
+
       - name: Install dependencies
         run: npm ci
 
