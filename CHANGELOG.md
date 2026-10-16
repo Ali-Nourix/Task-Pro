@@ -1,8 +1,12 @@
 # Changelog
 
-## Unreleased — Note embeds and Pomodoro
+## 1.7.1 — Inline embed state persistence
 
 - Remember each inline block’s layout, filters, calendar mode/system, and visited date across Markdown rerenders and Obsidian restarts, without changing the main board or other embeds.
+- Advance release metadata from the already-published 1.7.0 to 1.7.1 so the release workflow can publish this fix without replacing previous assets.
+
+## Unreleased — Note embeds and Pomodoro
+
 
 - Align embedded-view settings actions with their neighboring controls; share an 8px side gutter across minimal/full content without doubling calendar navigation padding.
 - Default note views to the configured target folder on every reopen. Add a General setting for target-folder, whole-vault, or explicit code-block scope policy; refresh existing embeds when the policy changes.
