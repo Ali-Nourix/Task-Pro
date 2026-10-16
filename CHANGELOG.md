@@ -2,6 +2,8 @@
 
 ## Unreleased — Note embeds and Pomodoro
 
+- Remember each inline block’s layout, filters, calendar mode/system, and visited date across Markdown rerenders and Obsidian restarts, without changing the main board or other embeds.
+
 - Align embedded-view settings actions with their neighboring controls; share an 8px side gutter across minimal/full content without doubling calendar navigation padding.
 - Default note views to the configured target folder on every reopen. Add a General setting for target-folder, whole-vault, or explicit code-block scope policy; refresh existing embeds when the policy changes.
 - Keep narrow-calendar view switches at full width rather than reserving the options-button column for every row.

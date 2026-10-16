@@ -31,9 +31,11 @@ Options (one `key: value` per line, blank lines and `#` comments allowed):
 These are the existing interactive views, not copied tasks or a second index.
 Editing a task changes its source note and updates the other views. Each embed
 has its own layout/filters and shares the plugin's language, tags, calendars and
-task store. Changes to an embed's toolbar are local to that rendering; **edit the
-code block to make supported initial options persistent**. They do not overwrite
-the workspace board preferences. Multiple blocks may be used in one note.
+task store. Toolbar changes and the last visited calendar date are saved separately
+for each note block in TaskPro's plugin data. They survive Markdown rerenders and
+reopening Obsidian without overwriting the workspace board preferences or another
+embed. Editing the code block's options resets that block to the new initial
+configuration. Multiple blocks may be used in one note.
 Unknown, duplicate or invalid options show an error rather than silently falling
 back. The view releases subscriptions and resize observers when unloaded.
 
@@ -77,8 +79,10 @@ Reading و Live Preview است؛ در حالت Source، متن کد دیده م�
 `calendar-system: jalali` تقویم شمسی را انتخاب می‌کند.
 
 تسک‌ها کپی نمی‌شوند؛ ویرایش از داخل نمایش، همان تسک را در نوت اصلی تغییر می‌دهد.
-چند نمایش هم‌زمان می‌توانند باز باشند. تغییر فیلترها از نوار ابزار موقتی و مختص
-همان نمایش است؛ برای نگه‌داشتن گزینه‌های پشتیبانی‌شده، خود کدبلاک را ویرایش کن.
+چند نمایش هم‌زمان می‌توانند باز باشند. نمای انتخاب‌شده، فیلترها و آخرین تاریخ
+تقویم برای هر بلاک جداگانه ذخیره می‌شوند و پس از بازسازی نوت یا بستن و بازکردن
+Obsidian برمی‌گردند؛ تنظیمات نمای اصلی یا بلاک‌های دیگر تغییر نمی‌کنند. ویرایش
+گزینه‌های خود کدبلاک، وضعیت آن بلاک را به تنظیمات اولیهٔ جدید بازمی‌گرداند.
 
 برای پومودورو، از تنظیمات تایمر هر تسک «فعال‌سازی پومودورو» را انتخاب کن.
 مدت تمرکز، استراحت کوتاه/بلند، فاصلهٔ استراحت بلند، تعداد دور هدف و شروع خودکار

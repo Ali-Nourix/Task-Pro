@@ -194,6 +194,9 @@ export interface TaskBoardHost {
   store: TaskStore;
   getSettings(): BoardSettingsView;
   savePreferences(): Promise<void>;
+  /** Note embeds remember navigation independently of the main board. */
+  getCalendarDate?(): string | undefined;
+  saveCalendarDate?(day: string): Promise<void>;
   getProgress(task: BoardTask): TaskProgress | undefined;
   setStatus(task: BoardTask, status: TaskStatus): Promise<void>;
   setPriority(task: BoardTask, priority: TaskPriority | null): Promise<void>;

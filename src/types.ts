@@ -423,6 +423,8 @@ export interface BoardPreferences {
   collapsedGroups: string[];
   /** Note that the quick-add row writes new tasks into. */
   inboxPath: string;
+  /** Last calendar day visited in a note embed (ISO Gregorian day key). */
+  calendarDate?: string;
   calendarView: CalendarView;
   /** The calendar the calendar layout shows. Unset follows TaskPro's calendar setting. */
   calendarSystem?: CalendarSystem;
@@ -545,6 +547,8 @@ export const DEFAULT_TELEGRAM_SETTINGS: TelegramSettings = {
 };
 
 export interface TaskProSettings {
+  /** Per-note-block state, kept separate from the main board preferences. */
+  embedStates?: Record<string, { source: string; prefs: BoardPreferences }>;
   referenceNotePath: string;
   enableBadges: boolean;
   badgeLanguage: Language;
