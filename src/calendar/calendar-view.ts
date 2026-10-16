@@ -288,7 +288,14 @@ export class TaskCalendar {
   /** The small + a click on an empty slot shows, and what closes it. */
   private quickAdd: { el: HTMLElement; release: () => void } | null = null;
 
-  constructor(private readonly ctx: CalendarContext) {}
+  constructor(private readonly ctx: CalendarContext) {
+    const saved = ctx.host.getCalendarDate?.();
+    if (saved && isDayKey(saved)) { this.anchor = saved; this.selectedDay = saved; }
+  }
+
+  private rememberDate(): void {
+    void this.ctx.host.saveCalendarDate?.(this.anchor);
+  }
 
   // ── Settings ──────────────────────────────────────────────────────────────
 
@@ -374,6 +381,7 @@ export class TaskCalendar {
   goToday(): void {
     this.ctx.enter('view');
     this.anchor = todayKey();
+    this.rememberDate();
     this.savedScroll = null;
     this.savedScrollX = null;
     this.ctx.refresh();
@@ -394,11 +402,13 @@ export class TaskCalendar {
       default:
         this.anchor = addDays(this.anchor, AGENDA_DAYS * delta);
     }
+    this.rememberDate();
     this.ctx.refresh();
   }
 
   openDay(day: DayKey): void {
     this.anchor = day;
+    this.rememberDate();
     if (this.view === 'day') this.ctx.refresh();
     else void this.ctx.updatePrefs({ calendarView: 'day' });
   }
@@ -896,7 +906,8 @@ export class TaskCalendar {
       if (dayItems.length > 3) dots.createSpan({ cls: 'taskpro-cal__dots-more', text: `+${dayItems.length - 3}` });
       cell.addEventListener('click', () => {
         this.selectedDay = day;
-        if (!inMonth(day)) this.anchor = day;
+        this.anchor = day;
+        this.rememberDate();
         this.ctx.refresh();
       });
     }

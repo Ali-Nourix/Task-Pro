@@ -470,6 +470,10 @@ async function main(): Promise<void> {
     root.style.padding = '16px';
     root.createEl('h2', { text: 'Note with live TaskPro views' });
     const children: TaskProNoteEmbed[] = [];
+    const persistence = (id: string) => ({
+      load: () => JSON.parse(localStorage.getItem(`taskpro-embed-test:${id}`) ?? "null") ?? undefined,
+      save: async (state: unknown) => { localStorage.setItem(`taskpro-embed-test:${id}`, JSON.stringify(state)); },
+    });
     const paintStats = { body: 0 };
     const paint = TaskBoard.prototype.renderBody;
     TaskBoard.prototype.renderBody = function () { paintStats.body++; paint.call(this); };
@@ -477,7 +481,7 @@ async function main(): Promise<void> {
       if (layout === 'calendar' && params.has('defer')) root.createDiv().style.height = '1800px';
       const container = root.createDiv();
       container.dataset.embed = layout;
-      const child = new TaskProNoteEmbed(container, `view: ${layout}\n${view === 'embeds' ? 'chrome: full\n' : ''}scope: all\ncalendar-view: week`, host, () => {});
+      const child = new TaskProNoteEmbed(container, `view: ${layout}\n${view === 'embeds' ? 'chrome: full\n' : ''}scope: all\ncalendar-view: week`, host, () => {}, persistence(layout));
       child.onload();
       children.push(child);
     }
@@ -503,7 +507,7 @@ async function main(): Promise<void> {
           const old = children[i] as unknown as { source: string; containerEl: HTMLElement };
           const source = old.source, container = old.containerEl;
           children[i].onunload();
-          children[i] = new TaskProNoteEmbed(container, source, host, () => {});
+          children[i] = new TaskProNoteEmbed(container, source, host, () => {}, persistence(container.dataset.embed!));
           children[i].onload();
         }
       },

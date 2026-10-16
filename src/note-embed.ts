@@ -52,12 +52,47 @@ export function resolveEmbedScope(blockScope: BoardScope, mode: EmbedScopeMode =
   return scope === 'target' && !folder.trim() ? 'vault' : scope;
 }
 
+/** Durable state supplied by the plugin, separate for each note block. */
+export interface EmbedPersistence {
+  load(): { source: string; prefs: BoardPreferences } | undefined;
+  save(state: { source: string; prefs: BoardPreferences }): Promise<void>;
+}
+
+/** Fence ordinal survives edits above a block; source guards changed block options. */
+export function embedStateKey(path: string, section: { text: string; lineStart: number }): string {
+  let ordinal = 0;
+  let fence: { char: string; length: number } | null = null;
+  for (const line of section.text.split('\n').slice(0, section.lineStart)) {
+    const match = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+    if (!match) continue;
+    const [, marks, info] = match;
+    if (fence) {
+      if (marks[0] === fence.char && marks.length >= fence.length && !info.trim()) fence = null;
+    } else {
+      fence = { char: marks[0], length: marks.length };
+      if (/^taskpro(?:\s|$)/.test(info.trim())) ordinal++;
+    }
+  }
+  return JSON.stringify([path, ordinal]);
+}
+
+export function restoreEmbedPreferences(source: string, persistence?: EmbedPersistence): EmbedConfig {
+  const config = parseEmbedConfig(source);
+  const saved = persistence?.load();
+  if (saved?.source === source && saved.prefs && typeof saved.prefs === 'object') {
+    Object.assign(config.prefs, JSON.parse(JSON.stringify(saved.prefs)));
+  }
+  return config;
+}
+
 /** Keep every embedded view's filters/layout separate from workspace settings. */
-export function createEmbedHost(host: TaskBoardHost, prefs: BoardPreferences): TaskBoardHost {
+export function createEmbedHost(host: TaskBoardHost, prefs: BoardPreferences, save: () => Promise<void> = async () => {}): TaskBoardHost {
   return {
     ...host,
     getSettings: () => ({ ...host.getSettings(), board: prefs }),
-    savePreferences: async () => { /* Local to this rendering; never overwrite global preferences. */ },
+    savePreferences: save,
+    getCalendarDate: () => prefs.calendarDate,
+    saveCalendarDate: async (day) => { prefs.calendarDate = day; await save(); },
   };
 }
 
@@ -80,7 +115,8 @@ export class TaskProNoteEmbed extends MarkdownRenderChild {
     this.config.prefs.scope = resolveEmbedScope(parseEmbedPreferences(this.source).scope, mode, folder);
   }
   constructor(container: HTMLElement, private readonly source: string,
-    private readonly host: TaskBoardHost, private readonly detached: () => void) {
+    private readonly host: TaskBoardHost, private readonly detached: () => void,
+    private readonly persistence?: EmbedPersistence) {
     super(container);
   }
   onload(): void {
@@ -88,7 +124,7 @@ export class TaskProNoteEmbed extends MarkdownRenderChild {
     this.containerEl.setAttribute('role', 'region');
     this.containerEl.setAttribute('aria-label', 'TaskPro');
     try {
-      const config = this.config = parseEmbedConfig(this.source);
+      const config = this.config = restoreEmbedPreferences(this.source, this.persistence);
       this.applyScopePolicy();
       const placeholder = this.containerEl.createDiv({ cls: 'taskpro-board taskpro-embed-placeholder is-suspended' });
       placeholder.setAttribute('dir', this.host.getSettings().language === 'fa' ? 'rtl' : 'ltr');
@@ -109,7 +145,9 @@ export class TaskProNoteEmbed extends MarkdownRenderChild {
         try {
           this.applyScopePolicy();
           placeholder.remove();
-          this.board = new TaskBoard(this.containerEl, createEmbedHost(this.host, config.prefs), { embedded: true, chrome: config.chrome });
+          this.board = new TaskBoard(this.containerEl, createEmbedHost(this.host, config.prefs, async () => {
+            await this.persistence?.save({ source: this.source, prefs: JSON.parse(JSON.stringify(config.prefs)) });
+          }), { embedded: true, chrome: config.chrome });
           void this.board.mount().then(() => {
             if (!this.disposed) this.containerEl.setAttribute('aria-busy', 'false');
           }).catch(fail);

@@ -1,4 +1,4 @@
-import { TaskProNoteEmbed } from './src/note-embed';
+import { TaskProNoteEmbed, embedStateKey } from './src/note-embed';
 // ── main.ts ───────────────────────────────────────────────────────────────
 // TaskPro - Main plugin entry point
 // ─────────────────────────────────────────────────────────────────────────────
@@ -213,7 +213,15 @@ export default class TaskProPlugin extends Plugin {
     });
     this.dailyNotes = new DailyNoteService(this.app, () => this.settings.calendar);
     this.registerMarkdownCodeBlockProcessor('taskpro', (source, el, ctx) => {
-      const embed = new TaskProNoteEmbed(el, source, this.createBoardHost(), () => this.noteEmbeds.delete(embed));
+      const section = ctx.getSectionInfo(el);
+      const key = section ? embedStateKey(ctx.sourcePath, section) : null;
+      const embed = new TaskProNoteEmbed(el, source, this.createBoardHost(), () => this.noteEmbeds.delete(embed), key ? {
+        load: () => this.settings.embedStates?.[key],
+        save: async (state) => {
+          this.settings.embedStates = { ...this.settings.embedStates, [key]: state };
+          await this.saveSettings();
+        },
+      } : undefined);
       this.noteEmbeds.add(embed);
       ctx.addChild(embed);
     });
