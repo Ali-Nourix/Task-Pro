@@ -1,3 +1,5 @@
+import { chatInput, miniAppChat } from './miniapp-chat.ts';
+import type { Ai } from './ai.ts';
 import { validateMiniAppData } from './miniapp-auth.ts';
 import { miniAppEffects } from './bot.ts';
 import { cleanTitle, parseTags } from './taskfields.ts';
@@ -6,7 +8,7 @@ import type { Store, Telegram, Status, TaskRow, EditPayload } from './types.ts';
 import type { NewTask } from './assistant.ts';
 import type { Moment, Plan, Priority } from './quickadd.ts';
 
-interface Deps { store: Store; token: string; now: () => Date; origin: string; allowedUserId?: number; }
+interface Deps { ai?: Ai; store: Store; token: string; now: () => Date; origin: string; allowedUserId?: number; }
 class InputError extends Error {}
 const bad = (): never => { throw new InputError(); };
 const object = (x: unknown): Record<string, unknown> => x && typeof x === 'object' && !Array.isArray(x) ? x as Record<string, unknown> : bad();
@@ -62,7 +64,14 @@ export async function handleMiniApp(request: Request, deps: Deps): Promise<Respo
       const utc=localToUtc(owner.timezone,result.date,result.time);
       if(!Number.isFinite(utc.getTime()) || utc.getTime() <= now.getTime())bad();return result;
     };
-    if(data.action==='list') return reply({ok:true,owner:meta,tasks:(await deps.store.openTasks()).map(publicTask)});
+    const snapshot=async()=>({owner:meta,tasks:(await deps.store.openTasks()).map(publicTask)});
+    if(data.action==='list') return reply({ok:true,...await snapshot()});
+    if(data.action==='chat') {
+      const input=chatInput(data);if(!input)bad();
+      if(!deps.ai)return reply({error:'ai_unavailable'},503);
+      try{return reply({ok:true,text:await miniAppChat(deps.ai,owner,await deps.store.openTasks(),now,input!)});}
+      catch{return reply({error:'ai_busy'},503);}
+    }
     if(data.action==='create') {
       const spec: NewTask={title:title(data.title),tags:data.tags===undefined?[]:tags(data.tags)};
       if(data.plan)spec.plan=plan(data.plan)??undefined;
@@ -71,7 +80,7 @@ export async function handleMiniApp(request: Request, deps: Deps): Promise<Respo
       if(data.repeat)spec.repeat=repeat(data.repeat)??undefined;
       if(data.remind){const r=moment(data.remind);if(typeof r!=='string')spec.remind=r;else bad();}
       if(data.parent!==undefined){if(!Number.isSafeInteger(data.parent)||Number(data.parent)<1)bad();const parent=await deps.store.taskByN(Number(data.parent));if(!parent)return reply({error:'not_found'},404);spec.parent=parent;}
-      const result=await effects.create(spec);return reply({ok:true,task:publicTask(result.row),warning:result.warning??null});
+      const result=await effects.create(spec);return reply({ok:true,task:publicTask(result.row),warning:result.warning??null,...(data.snapshot===true?await snapshot():{})});
     }
     if(!Number.isSafeInteger(data.n)||Number(data.n)<1)return reply({error:'invalid_input'},400);
     const task=await deps.store.taskByN(Number(data.n));if(!task)return reply({error:'not_found'},404);
@@ -91,9 +100,9 @@ export async function handleMiniApp(request: Request, deps: Deps): Promise<Respo
     } else if(data.action==='plan') await effects.setPlan(task,plan(data.plan));
     else if(data.action==='remind') await effects.setRemind(task,moment(data.moment));
     else if(data.action==='delete') {
-      if(data.confirm!==true)bad();await effects.remove(task);return reply({ok:true});
+      if(data.confirm!==true)bad();await effects.remove(task);return reply({ok:true,...(data.snapshot===true?await snapshot():{})});
     } else return reply({error:'unknown_action'},400);
-    return reply({ok:true,task:publicTask((await deps.store.taskByN(task.n))??task)});
+    return reply(data.snapshot===true?{ok:true,...await snapshot()}:{ok:true,task:publicTask((await deps.store.taskByN(task.n))??task)});
   } catch(error) {
     if(error instanceof InputError)return reply({error:'invalid_input'},400);
     console.error('miniapp request failed');return reply({error:'server_error'},500);

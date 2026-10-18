@@ -33,7 +33,7 @@ merely because it appears in the connected account.
 
 The confirmed production bot project is **Obsidian Reminder**. Its schema was
 inspected; no migration was applied. `telegram` is ACTIVE at version 20 and
-`miniapp` at version 2. Both use the real frontend URL. `sync`, `tick`, webhook
+`miniapp` at version 3. Both use the real frontend URL. `sync`, `tick`, webhook
 configuration and existing secrets were not changed.
 
 Frontend: https://taskpro-miniapp.alinorizadeh1384.workers.dev
@@ -65,3 +65,11 @@ end-to-end testing is not claimed yet.
 
 Local visual previews are layout approximations of recorded bot responses, not
 screenshots of a real Telegram client. Production smoke testing remains necessary.
+
+## Follow-up UI and conversation update
+
+Monthly Jalali/Gregorian calendar with daily task counts and agenda; explicit subtask toggle and shared custom parent/status/priority pickers; corrected composite search focus; instant pending state and one HTTP snapshot response per mutation. Added authenticated read-only AI conversation in the Mini App using the existing bot provider configuration. No bot token or service key reaches the frontend, and no new schema/migration is required. The bot’s existing AI action workflow is unchanged.
+
+The owner reported a successful connection. Native Main Mini App setup via BotFather remains a manual owner step using the frontend URL; it is not equivalent to setting a per-chat menu button.
+
+Follow-up deployed: miniapp v3 ACTIVE and Worker deployment fbe175d9f6e14fa5af58c70e8eb51e4d. Public frontend exactly matches the tested build; health 200 ready:true, preflight 204, unsigned AI POST 401, foreign origin 403. Full build and 22 backend/plugin suites passed, plus 140 UI/calendar checks. Production AI completion was not simulated with owner credentials.

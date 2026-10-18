@@ -9,11 +9,13 @@ There is no second task database.
 - Persian/English, RTL/LTR, bundled Vazirmatn font, light/dark Telegram themes.
 - Home: interactive week strip, upcoming scheduled task, compact daily list.
 - Tasks: all open tasks, Today/Overdue filters and title/tag search.
-- Calendar: select a date and see its agenda in start-time order.
-- Create tasks/subtasks, complete with quick Undo, change status/title/priority,
+- Calendar: a complete month in the owner’s Jalali/Gregorian calendar, task counts on dates, month navigation and a selected-day agenda in start-time order. Home keeps its compact week strip.
+- Create normal tasks by default; an explicit subtask toggle reveals the custom parent picker. Complete with quick Undo, change status/title/priority,
   deadline, recurrence and tags; set/remove a plan or reminder; confirmed delete.
 - Owner timezone governs plan/reminder entry. List dates follow the owner's
   calendar; browser date-entry fields use Gregorian ISO dates, explained inline.
+- Shared custom comboboxes (keyboard arrows, Home/End, Enter, Escape), composite search focus, immediate saving feedback and a single HTTP snapshot response per mutation.
+- Assistant tab: task-aware AI conversation using the bot’s existing Cloudflare AI secrets. Chat is explicitly read-only: advice does not silently change tasks; existing bot AI commands remain available. No new credentials are needed if bot AI is already configured. Missing credentials yield a clear unavailable message. Chat history is memory-only, limited to eight lines, with a 2,000-character user message limit; task summaries (up to 60 open tasks) and history go to the existing provider. No tool calls execute, and both user and model text render via textContent.
 - Collapsible editing sections, keyboard focus, accessible names, 44px controls,
   reduced motion, offline/session-expiry messages and safe text-only titles.
 
@@ -62,11 +64,12 @@ multi-tenant SaaS or a public bot for arbitrary Telegram users.
 Current deployment: https://taskpro-miniapp.alinorizadeh1384.workers.dev
 
 `MINI_APP_URL` is set to this public frontend, and API health reports `ready:true`.
-The owner still needs to send `/app` or `/start` once to configure the Telegram
-menu, then perform the real authenticated launch check. For a fresh deployment,
+The owner reported a successful connection. Automated tests still use signed local fixtures, not a fabricated production session. Send `/app` or `/start` if the owner-specific menu needs configuring. For a fresh deployment,
 do not copy an unrelated installation's URL. Clearing `MINI_APP_URL` intentionally
 denies browser API origins and makes health report `ready:false`; it does not
 revoke an already configured Telegram menu button.
+
+For a native profile **Launch app** button, select this bot in @BotFather and configure its **Main Mini App** with the public frontend URL above (not the Supabase API URL). This is an owner action, separate from our owner-scoped chat menu. It enables the native profile launcher and `https://t.me/<botusername>?startapp`; signed initData/owner checks remain unchanged. No BotFather setting was changed automatically.
 
 Official Telegram specification: https://core.telegram.org/bots/webapps
 
@@ -90,6 +93,9 @@ Restyled from the user's organizer/calendar references using the `minimalist-ui`
 and `redesign-existing-projects` guides from `Leonxlnx/taste-skill`: warm neutral
 canvas, quiet date navigation, soft semantic surfaces, compact task cards and a
 bottom dock. Reference avatars, chat messages, notes and alarms are not invented
-as features or fake user data. Calendar here is a day agenda, not a full drag-and-
-drop weekly scheduler. Vazirmatn is distributed under the SIL Open Font License;
+as features or fake user data. Calendar includes a month grid and day agenda, not a drag-and-drop weekly scheduler. Vazirmatn is distributed under the SIL Open Font License;
 see `assets/OFL.txt` and the notice embedded in `assets/font.css`.
+
+## Latest UI audit
+
+Used 0design/unslop-skill’s local detector and requirement-fidelity protocol; see `plans/003-miniapp-controls-calendar.md`. Remote UNSLOP canon was not connected, so no canon-based pass or full project audit is claimed. Token declarations were distinguished from real token bypasses; screenshot fixes live in the shared controls, not generated output. Behavioral checks cover monthly calendar boundaries including Jalali leap years, parent controls, keyboard selection, AI failure/unsafe text, and one-request mutation snapshots.
