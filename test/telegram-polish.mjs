@@ -1,0 +1,40 @@
+/** Progressive disclosure changes navigation only; no database or live Telegram calls. */
+import * as esbuild from 'esbuild';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import { validateV2 } from './md2-validator.mjs';
+const built=await esbuild.build({stdin:{contents:'export {handleUpdate} from "./supabase/functions/_shared/bot.ts";export {handleSync} from "./supabase/functions/_shared/sync.ts";export {MemoryStore} from "./supabase/functions/_shared/memory-store.ts";export {htmlToMarkdownV2} from "./supabase/functions/_shared/markdownv2.ts";',resolveDir:process.cwd(),loader:'ts'},bundle:true,write:false,platform:'node',format:'esm',logLevel:'error'});
+const {handleUpdate,handleSync,MemoryStore,htmlToMarkdownV2}=await import('data:text/javascript;base64,'+Buffer.from(built.outputFiles[0].text).toString('base64'));
+let checks=0; const eq=(a,b,m)=>{assert.deepEqual(a,b,m);checks++;};
+const previews=[];
+for(const lang of ['fa','en']) for(const ai of [false,true]) {
+ const store=new MemoryStore(),sent=[],edits=[];
+ const vet=(text,buttons)=>{assert.equal(validateV2(htmlToMarkdownV2(text)),null);for(const b of (buttons??[]).flat()){assert.ok(b.text&&Array.from(b.text).length<=64&&Buffer.byteLength(b.data)<=64);}};
+ const tg={send:async(chat,text,buttons)=>{vet(text,buttons);sent.push({text,buttons});},edit:async(chat,id,text,buttons)=>{vet(text,buttons);edits.push({text,buttons});},answer:async()=>{},setCommands:async()=>{}};
+ const deps={store,tg,pairingCode:'demo-pairing',now:()=>new Date('2026-10-16T06:00:00Z'),...(ai?{ai:{}}:{})};
+ const say=text=>handleUpdate({message:{chat:{id:7,type:'private'},from:{id:7},message_id:10,text}},deps);
+ const press=(data,chat=7)=>handleUpdate({callback_query:{id:'demo',data,from:{id:chat},message:{chat:{id:chat,type:'private'},message_id:99}}},deps);
+ const data=view=>(view.buttons??[]).flat().map(b=>b.data);
+ await say('/start demo-pairing');await store.patchOwner({language:lang});
+ await handleSync({snapshot:[{key:'Demo.md|^demo|0',title:lang==='fa'?'گزارش امروز را آماده کن':'Prepare the daily report',status:'open',tags:['work'],priority:'high',deadline:'2026-10-16',plan_date:'2026-10-16',plan_start:'10:00',plan_end:'11:00',repeat:'1w'}]}, {store,tg,now:deps.now});
+ await say('/start');const home=sent.at(-1);
+ eq(home.buttons.every(r=>r.length<=2),true,'home never packs three long buttons');
+ eq(data(home).includes('tools'),true,'one clear secondary destination');eq(data(home).includes('set'),false,'settings no longer crowd home');
+ eq(data(home).includes('ai'),ai,'assistant shortcut retained when available');
+ await press('tools');const tools=edits.at(-1);eq(data(tools),['tg:0','st','set','help','home'],'all secondary destinations retained');
+ await press('set');eq(data(edits.at(-1)).includes('nf'),true,'notification settings retained');
+ await press('t:1@a0');const compact=edits.at(-1);
+ eq(data(compact),['done:1@a0','pl:1@a0','rm:1@a0','cfg:1@a0','ls:a:0'],'compact card keeps primary actions and list context');
+ eq(compact.buttons.length,3,'simple task has just three action rows');eq(data(compact).some(x=>x.startsWith('del:')),false,'delete out of the primary row');
+ await press('cfg:1@a0');const more=edits.at(-1);
+ for(const action of ['done','del','ed','sm','pm','dm','pl','rm','tm','qm','sb']) eq(data(more).some(x=>x.startsWith(action+':')),true,action+' remains reachable');
+ eq(data(more).at(-1),'t:1@a0','More returns to card, not away to list');
+ await press('t:1@a0');eq(data(edits.at(-1)),data(compact),'More round trip');
+ const before=store.tasks.length;await press('del:1@a0');eq(store.tasks.length,before,'delete still asks first');eq(data(edits.at(-1))[0],'delok:1@a0','confirmed delete retained');
+ const count=edits.length;await press('tools',8);eq(edits.length,count,'other users cannot navigate owner screens');
+ await say('/plan 1 tomorrow 9');eq(store.tasks[0].plan_date,'2026-10-17','old command still works');
+ await store.patchOwner({ai:false});await say(lang==='fa'?'خرید نان':'Buy bread');const added=sent.at(-1);eq(data(added).some(x=>x.startsWith('undo:')),true,'quick undo retained after new task');
+ previews.push({lang,ai,home,tools,compact,more});
+}
+fs.writeFileSync('/data/taskpro-bot-polish-previews.json',JSON.stringify(previews));
+console.log(`TELEGRAM_POLISH_OK (${checks} checks)`);

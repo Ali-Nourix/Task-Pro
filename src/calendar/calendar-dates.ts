@@ -7,6 +7,7 @@
 
 import { CalendarSystem, Language, TimeFormat, WeekStart } from '../types';
 import { gregorianToJalali, jalaliToGregorian } from '../date-utils';
+import { taskClockParts } from '../task-clock';
 import { isolateLtr } from '../bidi';
 
 /** A day as `YYYY-MM-DD`, Gregorian. */
@@ -29,8 +30,8 @@ export function toDayKey(date: Date): DayKey {
   return dayKey(date.getFullYear(), date.getMonth() + 1, date.getDate());
 }
 
-export function todayKey(now: Date = new Date()): DayKey {
-  return toDayKey(now);
+export function todayKey(now?: Date): DayKey {
+  return now ? toDayKey(now) : taskClockParts().date;
 }
 
 /** The key's parts, or null when it is not a real day. */

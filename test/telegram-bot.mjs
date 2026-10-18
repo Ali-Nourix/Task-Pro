@@ -172,7 +172,7 @@ async function paired() {
   eq([w.store.owner.language, w.store.owner.timezone, w.store.owner.calendar], ['fa', 'Asia/Tehran', 'jalali'], 'in Persian, Tehran time and the Jalali calendar to begin with');
   eq(w.sent.slice(-2).map((m) => m.text.startsWith('👋 <b>') ? 'greeting' : m.text.startsWith('✨ <b>') ? 'menu' : '?'), ['greeting', 'menu'], 'it greets, then shows the main menu');
   eq(w.commands[0], ['start', 'today', 'list', 'overview', 'tags', 'ai', 'planday', 'status', 'settings', 'help'], 'and puts its commands in the chat’s menu');
-  eq(w.data(w.last()), ['ls:t:0', 'ls:a:0', 'new', 'ov', 'tg:0', 'st', 'set', 'help'], 'the menu: today, all, new, the overview, tags, status, settings, help');
+  eq(w.data(w.last()), ['ls:t:0', 'ls:a:0', 'new', 'ov', 'tools'], 'the menu: today, all, new, the overview, tags, status, settings, help');
   eq(w.last().buttons[0][0].style, 'primary', 'the first button is blue');
   w.sent.length = 0;
   await w.say('hello', 99);
@@ -201,7 +201,7 @@ async function paired() {
   await w.press('t:1');
   eq([w.lastEdit().text.includes('<tg-time unix="' + planUnix + '">'), w.lastEdit().text.includes('format="r"')], [true, false], 'a finished task keeps its date but has no countdown');
   w.store.tasks[0].status = 'open';
-  eq(w.data(w.last()), ['done:1', 'undo:1', 'ed:1', 'sm:1', 'pm:1', 'dm:1', 'pl:1', 'rm:1', 'tm:1', 'qm:1', 'sb:1', 'home'], 'with done, undo, a button for every setting, one to add a subtask, and the menu');
+  eq(w.data(w.last()), ['done:1', 'pl:1', 'undo:1', 'rm:1', 'cfg:1', 'home'], 'with done, undo, a button for every setting, one to add a subtask, and the menu');
   eq(w.last().buttons.flat().filter((b) => b.style).map((b) => [b.data, b.style]), [['done:1', 'success'], ['undo:1', 'danger']], 'done is green and undo red');
 
   await w.say('remind in 30 minutes call mom');
@@ -243,7 +243,7 @@ async function paired() {
   await w.press('t:2@t0');
   eq([w.edits.length, w.lastEdit().id], [1, 555], 'opening a task edits the list message in place');
   eq(w.lastEdit().text.includes('Today') && w.lastEdit().text.includes('<blockquote>'), true, 'into the task’s card');
-  eq(w.data(w.lastEdit()), ['done:2@t0', 'del:2@t0', 'ed:2', 'sm:2@t0', 'pm:2@t0', 'dm:2@t0', 'pl:2@t0', 'rm:2@t0', 'tm:2@t0', 'qm:2@t0', 'sb:2@t0', 'ls:t:0'], 'whose buttons remember the list they came from');
+  eq(w.data(w.lastEdit()), ['done:2@t0', 'pl:2@t0', 'rm:2@t0', 'cfg:2@t0', 'ls:t:0'], 'whose buttons remember the list they came from');
   await w.press('done:2@t0');
   eq([w.store.tasks[1].status, w.store.commands.at(-1).kind, w.store.commands.at(-1).payload], ['done', 'status', { key: 'Work.md|^b|0', status: 'done' }], 'done closes it and queues the change');
   eq([w.toasts.at(-1), w.lastEdit().text.includes('Today'), w.lastEdit().text.includes('Late')], ['✅ انجام شد', false, true], 'then the list is back, without it, and a note over the chat says so');
@@ -402,7 +402,7 @@ async function paired() {
   await w.say('/start');
   const home = w.last();
   eq([home.text.includes('<b>۱</b> عقب‌افتاده'), home.text.includes('<b>۲</b> تسک باز'), home.text.includes('🟢')], [true, true, true], 'the menu counts what is late, due today and open, and shows the sync');
-  eq(w.data(home), ['ls:t:0', 'ls:a:0', 'new', 'ov', 'ls:o:0', 'tg:0', 'st', 'set', 'help'], 'with a button for what is overdue when something is');
+  eq(w.data(home), ['ls:t:0', 'ls:a:0', 'new', 'ov', 'ls:o:0', 'tools'], 'with a button for what is overdue when something is');
   eq(home.buttons.flat().find((b) => b.data === 'ls:o:0').style, 'danger', 'in red');
   eq(home.buttons.flat().find((b) => b.data === 'ls:o:0').text, '⚠️ عقب‌افتاده (۱)', 'with its count in brackets');
   await w.press('st');
@@ -535,7 +535,7 @@ async function paired() {
   await w.press('t:1@a0');
   eq(w.lastEdit().text.includes('🔁') && w.lastEdit().text.includes('هر هفته'), true, 'the card says the task repeats');
   await w.press('cfg:1@a0');
-  eq(w.data(w.lastEdit()), ['done:1@a0', 'del:1@a0', 'ed:1', 'sm:1@a0', 'pm:1@a0', 'dm:1@a0', 'pl:1@a0', 'rm:1@a0', 'tm:1@a0', 'qm:1@a0', 'sb:1@a0', 'ls:a:0'], 'a task’s screen holds a button for every setting, in one tap from the list');
+  eq(w.data(w.lastEdit()), ['done:1@a0', 'del:1@a0', 'ed:1', 'sm:1@a0', 'pm:1@a0', 'dm:1@a0', 'pl:1@a0', 'rm:1@a0', 'tm:1@a0', 'qm:1@a0', 'sb:1@a0', 't:1@a0'], 'a task’s screen holds a button for every setting, in one tap from the list');
   const labels = w.lastEdit().buttons.flat().map((b) => b.text);
   eq([labels[4].includes('بالا'), labels[5].includes('جمعه'), labels[9].includes('هر هفته'), labels[8].includes('۱')], [true, true, true, true], 'each button shows what the setting is now');
 

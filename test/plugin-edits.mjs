@@ -405,6 +405,28 @@ eq([note('Move/Bulk1.md'), note('Move/Bulk2.md')], bulkBefore, 'and its Undo put
 eq(await host.deleteTasks([]), 0, 'nothing to delete, nothing said');
 eq(notices.length, noticesBefore + 1, 'no notice for it');
 
+// Pomodoro final completion writes the real task once and suppresses recurrence rollover.
+const pomoPath = 'Pomodoro.md';
+await app.vault.create(pomoPath, '- [ ] Deep focus @repeat(1d) ^pomo-test');
+const pomo = { enabled: true, durationSeconds: 60, elapsedSeconds: 0, runningSince: 0,
+  pomodoro: { phase: 'focus', focusMinutes: 1, shortBreakMinutes: 1, longBreakMinutes: 1,
+    longBreakEvery: 4, targetRounds: 1, completedRounds: 0, autoStart: false } };
+await plugin.handleTimerUpdate(pomoPath, note(pomoPath)[0], 'pomo-test', pomo);
+await plugin.timerService.set(pomoPath, 'pomo-test', { ...pomo, runningSince: Date.now() - 60000 });
+plugin.timerService.tick();
+await wait(100);
+eq(note(pomoPath)[0].startsWith('- [x]'), true, 'last focus round checks the real task');
+await plugin.rollCompletedRecurringTasks(app.vault.getFileByPath(pomoPath));
+eq(note(pomoPath)[0].startsWith('- [x]'), true, 'a completed Pomodoro stays checked even with a repeat rule');
+await plugin.setTaskStatusFor({ filePath: pomoPath, blockId: 'pomo-test', lineContent: note(pomoPath)[0] }, '[ ]');
+await plugin.timerService.reconcileCompletions();
+plugin.timerService.tick();
+await wait(50);
+eq(note(pomoPath)[0].startsWith('- [ ]'), true, 'manual unchecking is never undone by completed-timer reconciliation');
+await plugin.setTaskStatusFor({ filePath: pomoPath, blockId: 'pomo-test', lineContent: note(pomoPath)[0] }, '[x]');
+await plugin.timerService.reset(pomoPath, 'pomo-test', plugin.timerService.get(pomoPath, 'pomo-test'));
+eq(note(pomoPath)[0].startsWith('- [ ]'), true, 'an explicitly fresh Pomodoro cycle reopens the task');
+
 // ── floating board ─────────────────────────────────────────────────────────
 const floatCommand = app.commands.find((c) => c.id === 'toggle-floating-task-board');
 eq(floatCommand?.hotkeys, [{ modifiers: ['Mod', 'Shift'], key: 'b' }], 'the float has a default shortcut');

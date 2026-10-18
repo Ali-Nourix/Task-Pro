@@ -11,13 +11,13 @@ const browser = await chromium.launch({ executablePath: process.env.PW_CHROMIUM 
 try {
   for (const direction of ['ltr', 'rtl']) for (const theme of ['light', 'dark']) for (const reducedMotion of ['reduce', 'no-preference']) {
     console.log(`chip matrix: ${direction}/${theme}/${reducedMotion}`);
-    const page = await browser.newPage({ viewport: { width: 390, height: 844 }, reducedMotion });
+    const page = await browser.newPage({ viewport: { width: 1100, height: 844 }, reducedMotion });
     await page.setContent(`<style>${css}\n.row { display:flex; width:260px; max-width:260px !important; direction:${direction}; flex-direction:row; } .chip { width:100px; min-width:100px; height:32px; flex-shrink:0; }</style><body class="theme-${theme}"><div class="taskpro-badge-container row">${Array.from({length:8},(_,i)=>`<button class="chip">Chip ${i}</button>`).join('')}</div></body>`);
     await page.addScriptTag({ content: js });
     await page.evaluate(() => window.chipScroll.makeChipRowScrollable(document.querySelector('.row')));
     const row = page.locator('.row');
     await page.waitForFunction(() => document.querySelector('.row').classList.contains('is-overflowing'));
-    ok(await row.evaluate(e=>e.scrollWidth>e.clientWidth), 'mobile chip row really overflows');
+    ok(await row.evaluate(e=>e.scrollWidth>e.clientWidth), 'desktop chip row really overflows');
     const before = await row.evaluate(e=>e.scrollLeft);
     const box = await row.boundingBox();
     await page.mouse.move(box.x+box.width/2,box.y+box.height/2);
@@ -26,8 +26,8 @@ try {
     await page.mouse.wheel(0,120);
     await page.waitForFunction((before)=>Math.abs(document.querySelector('.row').scrollLeft-before)>1,before,{ timeout:3000 });
     ok(Math.abs(await row.evaluate(e=>e.scrollLeft)-before)>1, `${direction}: downward wheel reaches trailing chips`);
-    await row.locator('button').last().focus();
-    await page.waitForFunction(() => { const row=document.querySelector('.row').getBoundingClientRect(); const last=document.querySelector('.row button:last-child').getBoundingClientRect(); return last.left>=row.left-1 && last.right<=row.right+1; },undefined,{timeout:3000});
+    await row.locator('button.chip').last().focus();
+    await page.waitForFunction(() => { const row=document.querySelector('.row').getBoundingClientRect(); const last=document.querySelector('.row button.chip:last-child').getBoundingClientRect(); return last.left>=row.left-1 && last.right<=row.right+1; },undefined,{timeout:3000});
     ok(true, `${direction}: keyboard focus brings the last chip into view`);
     await page.evaluate(()=>window.chipScroll.releaseChipRow(document.querySelector('.row')));
     const clean = await row.evaluate(e=>e.scrollLeft);

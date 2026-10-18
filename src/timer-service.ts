@@ -30,6 +30,9 @@ export interface TimerServiceHost {
   };
   /** Called once per second so the host can refresh anything it owns. */
   onTick?: () => void;
+  /** Acknowledges the final focus round once; false keeps delivery pending. */
+  onPomodoroComplete?: (filePath: string, blockId: string) => Promise<boolean>;
+  onPomodoroRestart?: (filePath: string, blockId: string) => Promise<void>;
   /** Plays the configured reminder sound. */
   playSound?: () => void;
   /** Opens the note a timer belongs to. */
@@ -53,6 +56,29 @@ export class TaskTimerService {
    */
   private readonly completing = new Set<string>();
   private ticker: number | null = null;
+  private readonly listeners = new Set<() => void>();
+  subscribe(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  /** Retry interrupted completion deliveries after the vault is ready. */
+  async reconcileCompletions(): Promise<void> {
+    for (const entry of [...this.host.getEntries()]) {
+      if (entry.timer.completionPending) await this.deliverCompletion(entry.filePath, entry.blockId);
+    }
+  }
+
+  private async deliverCompletion(filePath: string, blockId: string): Promise<void> {
+    const timer = this.get(filePath, blockId);
+    if (!timer?.completionPending || !timer.pomodoro || !timer.completedAt || !this.host.onPomodoroComplete) return;
+    try {
+      if (await this.host.onPomodoroComplete(filePath, blockId)) {
+        const current = this.get(filePath, blockId);
+        if (current === timer) await this.set(filePath, blockId, { ...timer, completionPending: undefined });
+      }
+    } catch { console.error("TaskPro: could not complete the Pomodoro task; delivery will retry after reload"); }
+  }
   private statusIconEl: HTMLElement | null = null;
   private statusTextEl: HTMLElement | null = null;
 
@@ -94,6 +120,9 @@ export class TaskTimerService {
 
   destroy(): void {
     this.stopTicker();
+    this.cache.clear();
+    for (const listener of this.listeners) listener();
+    this.listeners.clear();
     this.statusIconEl = null;
     this.statusTextEl = null;
   }
@@ -108,6 +137,9 @@ export class TaskTimerService {
   async set(filePath: string, blockId: string | undefined, timer: TaskTimer | null): Promise<void> {
     if (!blockId) return;
     const key = timerKey(filePath, blockId);
+    const previous = this.cache.get(key);
+    const restart = !!timer?.pomodoro && !timer.completedAt && timer.pomodoro.completedRounds === 0 && (!previous?.pomodoro || !!previous.completedAt);
+    if (restart) await this.host.onPomodoroRestart?.(filePath, blockId);
     const entries = (this.host.getEntries() ?? []).filter(
       (entry) => !(entry.filePath === filePath && entry.blockId === blockId)
     );
@@ -154,6 +186,7 @@ export class TaskTimerService {
     await this.set(filePath, blockId, {
       ...timer,
       runningSince: Date.now(),
+      completionPending: undefined,
       completedAt: undefined,
       notifiedAt: undefined,
     });
@@ -178,6 +211,7 @@ export class TaskTimerService {
       ...timer,
       elapsedSeconds: 0,
       runningSince: 0,
+      completionPending: undefined,
       completedAt: undefined,
       notifiedAt: undefined,
     });
@@ -188,6 +222,7 @@ export class TaskTimerService {
     await this.set(filePath, blockId, {
       ...timer,
       durationSeconds: Math.max(60, timer.durationSeconds + minutes * 60),
+      completionPending: undefined,
       completedAt: undefined,
       notifiedAt: undefined,
     });
@@ -239,6 +274,7 @@ export class TaskTimerService {
         completedAt: now,
         notifiedAt: now,
       });
+      await this.deliverCompletion(filePath, blockId);
     } finally {
       this.completing.delete(key);
     }
@@ -291,6 +327,7 @@ export class TaskTimerService {
     });
 
     this.renderStatusBar(now, labels);
+    for (const listener of this.listeners) listener();
   }
 
   private buildStatusBar(): void {

@@ -1,3 +1,4 @@
+import { mobileChipMenu } from './mobile-chip-menu';
 // ── ui/chip-scroll.ts ─────────────────────────────────────────────────────
 // A task's chip row scrolls sideways once it has more chips than room.
 //
@@ -5,7 +6,7 @@
 // chips beyond it fades out softly instead of cutting a chip in half, so a
 // long row reads as "there is more this way" rather than as clutter. The
 // mouse wheel scrolls it too, so a desktop without a trackpad can reach the
-// chips at the end; on a touch screen it is an ordinary swipe.
+// chips at the end. Mobile notes instead keep one status capsule opening the usual task menu.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const SCROLLER_CLASS = 'taskpro-chip-scroll';
@@ -41,15 +42,17 @@ function updateFades(row: HTMLElement): void {
  * that is not in the document yet: the fades are worked out once it is laid
  * out. Call {@link releaseChipRow} when the row is thrown away.
  */
-export function makeChipRowScrollable(row: HTMLElement): void {
+export function makeChipRowScrollable(row: HTMLElement, language: 'fa' | 'en' = 'en'): void {
   if (cleanups.has(row)) return;
   row.classList.add(SCROLLER_CLASS);
 
+  const mobileMenu = mobileChipMenu(row, language);
   let frame = 0;
   const schedule = () => {
     if (frame) return;
     frame = requestAnimationFrame(() => {
       frame = 0;
+      mobileMenu.sync();
       updateFades(row);
     });
   };
@@ -127,6 +130,48 @@ export function makeChipRowScrollable(row: HTMLElement): void {
     schedule();
   };
 
+  // Mouse drag mirrors a phone's native horizontal swipe, without activating a chip.
+  let drag: { id: number; x: number; y: number; left: number; active: boolean } | null = null;
+  let suppressClickUntil = 0;
+  const onPointerDown = (event: PointerEvent) => {
+    if (event.pointerType !== 'mouse' || event.button !== 0 || row.scrollWidth <= row.clientWidth + 1) return;
+    target = null;
+    if (glide) cancelAnimationFrame(glide);
+    glide = 0;
+    drag = { id: event.pointerId, x: event.clientX, y: event.clientY, left: row.scrollLeft, active: false };
+  };
+  const onPointerMove = (event: PointerEvent) => {
+    if (!drag || drag.id !== event.pointerId) return;
+    const dx = event.clientX - drag.x, dy = event.clientY - drag.y;
+    if (!drag.active) {
+      if (Math.abs(dy) > 6 && Math.abs(dy) > Math.abs(dx)) { drag = null; return; }
+      if (Math.abs(dx) < 6) return;
+      drag.active = true;
+      row.setPointerCapture(event.pointerId);
+      row.classList.add('is-drag-scrolling');
+    }
+    event.preventDefault();
+    row.scrollLeft = drag.left - dx;
+    schedule();
+  };
+  const onPointerEnd = (event: PointerEvent) => {
+    if (!drag || drag.id !== event.pointerId) return;
+    if (drag.active) {
+      suppressClickUntil = performance.now() + 250;
+      if (row.hasPointerCapture(event.pointerId)) row.releasePointerCapture(event.pointerId);
+    }
+    drag = null;
+    row.classList.remove('is-drag-scrolling');
+  };
+  const onClick = (event: MouseEvent) => {
+    if (performance.now() < suppressClickUntil) { event.preventDefault(); event.stopImmediatePropagation(); }
+  };
+  row.addEventListener('pointerdown', onPointerDown);
+  row.addEventListener('pointermove', onPointerMove);
+  row.addEventListener('pointerup', onPointerEnd);
+  row.addEventListener('pointercancel', onPointerEnd);
+  row.addEventListener('click', onClick, true);
+
   row.addEventListener('scroll', schedule, { passive: true });
   row.addEventListener('wheel', onWheel, { passive: false });
   row.addEventListener('focusin', onFocus);
@@ -137,11 +182,17 @@ export function makeChipRowScrollable(row: HTMLElement): void {
   mutations?.observe(row, { childList: true });
 
   cleanups.set(row, () => {
+    mobileMenu.destroy();
     if (frame) cancelAnimationFrame(frame);
     if (glide) cancelAnimationFrame(glide);
     row.removeEventListener('scroll', schedule);
     row.removeEventListener('wheel', onWheel);
     row.removeEventListener('focusin', onFocus);
+    row.removeEventListener('pointerdown', onPointerDown);
+    row.removeEventListener('pointermove', onPointerMove);
+    row.removeEventListener('pointerup', onPointerEnd);
+    row.removeEventListener('pointercancel', onPointerEnd);
+    row.removeEventListener('click', onClick, true);
     resize?.disconnect();
     mutations?.disconnect();
   });

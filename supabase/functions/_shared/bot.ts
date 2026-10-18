@@ -356,16 +356,9 @@ async function homeView(ctx: Ctx): Promise<View> {
     ],
     [{ text: w.buttons.newTask, data: 'new', style: 'success' }, { text: w.digest.buttons.overview, data: 'ov' }],
   ];
-  if (counts.overdue) rows[1].push({ text: counted(w.buttons.overdue, counts.overdue, owner.language), data: 'ls:o:0', style: 'danger' });
-  rows.push([
-    { text: w.tagsUi.button, data: 'tg:0' },
-    { text: w.buttons.status, data: 'st' },
-  ]);
+  if (counts.overdue) rows.push([{ text: counted(w.buttons.overdue, counts.overdue, owner.language), data: 'ls:o:0', style: 'danger' }]);
   if (ctx.deps.ai) rows.push([{ text: `🤖 ${w.ai.name}`, data: 'ai' }]);
-  rows.push([
-    { text: w.buttons.settings, data: 'set' },
-    { text: w.buttons.help, data: 'help' },
-  ]);
+  rows.push([{ text: w.buttons.tools, data: 'tools' }]);
   // Under the name, before the counts.
   const summary = w.home(counts, sync.text, sync.health);
   const cut = summary.indexOf('\n');
@@ -379,6 +372,19 @@ async function homeView(ctx: Ctx): Promise<View> {
   md.push(w.ui.countsLine(counts));
   md.push(footer(`${sync.health === 'ok' ? '🟢' : sync.health === 'stale' ? '🟡' : '⚪'} ${w.ui.syncLine(sync.text)} · ${w.ui.typeHint}`));
   return { text: `${summary.slice(0, cut)}\n${board}\n${summary.slice(cut + 1)}`, rich: md.join('\n\n'), buttons: rows };
+}
+
+/** Secondary destinations stay one tap away without crowding the dashboard. */
+function toolsView(ctx: Ctx): View {
+  const { w } = ctx;
+  return {
+    text: `<b>${esc(w.buttons.tools)}</b>\n\n${ctx.owner.language === 'fa' ? 'برچسب‌ها، همگام‌سازی و تنظیمات را از اینجا باز کن. قابلیت‌ها سر جایشان هستند.' : 'Tags, sync health and preferences, together in one place. All commands still work.'}`,
+    buttons: [
+      [{ text: w.tagsUi.button, data: 'tg:0' }, { text: w.buttons.status, data: 'st' }],
+      [{ text: w.buttons.settings, data: 'set' }, { text: w.buttons.help, data: 'help' }],
+      [{ text: w.buttons.menu, data: 'home' }],
+    ],
+  };
 }
 
 function helpView(ctx: Ctx): View {
@@ -714,7 +720,7 @@ async function relativesOf(ctx: Ctx, task: TaskRow): Promise<{ parent: TaskRow |
  * (each showing its value), its family, and the way back. Tapping a task in a
  * list opens this, so its settings are one tap away.
  */
-async function taskView(ctx: Ctx, task: TaskRow, back: string, header?: string, footer?: string): Promise<View> {
+async function taskView(ctx: Ctx, task: TaskRow, back: string, header?: string, footer?: string, expanded = false): Promise<View> {
   const { w, owner } = ctx;
   const today = localNow(owner.timezone, ctx.deps.now()).date;
   const at = back ? `@${back}` : '';
@@ -762,10 +768,18 @@ async function taskView(ctx: Ctx, task: TaskRow, back: string, header?: string, 
     ...family,
     [back ? { text: w.buttons.back, data: listData(listOf(back)) } : { text: w.buttons.menu, data: 'home' }],
   ];
+  // The common actions are always visible. Every existing property, family action
+  // and confirmed delete remains available through More (including old cfg links).
+  const compact: Button[][] = [
+    [{ text: w.buttons.done, data: `done:${task.n}${at}`, style: 'success' }, { text: w.buttons.plan, data: `pl:${task.n}${at}` }],
+    [{ text: w.buttons.remind, data: `rm:${task.n}${at}` }, { text: w.buttons.more, data: `cfg:${task.n}${at}` }],
+    ...(parent || children.length ? family : []),
+    buttons[buttons.length - 1],
+  ];
   return {
     text: [header, taskCard(task, owner, today, relatives), footer].filter(Boolean).join('\n\n'),
     rich: taskCardRich(task, owner, today, relatives, header, footer),
-    buttons,
+    buttons: expanded ? [...buttons.slice(0, -1), [{ text: w.buttons.back, data: `t:${task.n}${at}` }]] : compact,
   };
 }
 
@@ -1055,8 +1069,7 @@ async function addTask(text: string, ctx: Ctx, forcedDay?: string): Promise<void
 
   const view = await taskView(ctx, row, '', w.added, [warning, w.waitingForNotes].filter(Boolean).join('\n'));
   // A task just typed can be taken back with one tap.
-  const undo = view.buttons.flat().find((button) => button.data.startsWith('del:'));
-  if (undo) Object.assign(undo, { text: w.buttons.undo, data: `undo:${row.n}` });
+  view.buttons.splice(1, 0, [{ text: w.buttons.undo, data: `undo:${row.n}`, style: 'danger' }]);
   await sendView(ctx, view);
 }
 
@@ -1900,6 +1913,8 @@ async function route(data: string, ctx: Ctx): Promise<void> {
       return;
     case 'home':
       return present(ctx, await homeView(ctx));
+    case 'tools':
+      return present(ctx, toolsView(ctx));
     case 'help':
       return present(ctx, helpView(ctx));
     case 'new':
@@ -2033,8 +2048,7 @@ async function route(data: string, ctx: Ctx): Promise<void> {
 
     // The task's own settings.
     case 'cfg':
-      // The settings were once a screen of their own; old messages still point here.
-      return present(ctx, await taskView(ctx, task, back));
+      return present(ctx, await taskView(ctx, task, back, undefined, undefined, true));
     case 'sm':
       return present(ctx, statusMenuView(ctx, task, back));
     case 'pm':

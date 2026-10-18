@@ -93,6 +93,62 @@ Obsidian برمی‌گردند؛ تنظیمات نمای اصلی یا بلاک�
 بسته باشد، پس از بازشدن فقط مرحلهٔ منقضی‌شده محاسبه می‌شود؛ دورهای انجام‌نشده
 به‌صورت ساختگی ثبت نمی‌شوند. تایمرهای قدیمی بدون تغییر به کارشان ادامه می‌دهند.
 
+## Focus clock and task completion (1.8.0)
+
+Click a timer capsule to open the live, non-modal floating clock. Drag its title
+bar with a mouse or touch to place it anywhere inside the Obsidian window;
+focus the title bar and use arrow keys (Shift for larger steps) for keyboard
+movement. The note remains editable underneath, and clicking outside does not
+close the clock. Its position is remembered for subsequent openings in the same
+window/session and clamped when the viewport shrinks. Tab can leave the clock;
+Escape closes it only while it has focus. Start/pause/resume, reset, add five
+minutes or change the duration there. The configured sound/notifications fire at
+phase boundaries while Obsidian is running. Table, card and calendar timer
+capsules include the phase and completed/target focus rounds. Very short calendar
+blocks omit the capsule to keep their title readable; use agenda or the table.
+
+Finishing the last target focus round checks the task once. It remains checked,
+including for recurring tasks, until you manually uncheck it or start/reset/add a
+fresh Pomodoro cycle. A manual uncheck after completion is not overridden by later
+ticks or reopening the app. Ordinary countdown timers do not check tasks. Pending
+completion writes retry when the task becomes available after startup.
+
+Note embeds respond to their pane width, not just the screen width. On phones,
+each task shows only its status capsule. Tap that capsule to open the existing
+Obsidian task menu with priority, deadline, plan, timer, progress and other
+applicable controls. There is no separate ellipsis or properties popover. The
+timer section includes completed/target rounds and **Open focus clock**.
+Desktop rows retain horizontal scrolling and dragging.
+
+## Scheduling timezone
+
+In **Settings → TaskPro → General**, enter an IANA zone such as `Asia/Tehran`
+and press **Apply**. Blank follows the device timezone. This controls scheduling
+“today”/current-time defaults, automatic plans, calendar current-time markers and
+plan reminders. Existing wall-time plans are interpreted in the selected zone;
+changing zones does not rewrite their note text. Nonexistent DST wall times do
+not schedule reminders; repeated times use the earlier occurrence.
+
+This setting does **not** obtain trusted time from a server or correct an
+incorrect device UTC clock. Enable operating-system automatic date/time for that.
+Countdown durations continue using elapsed device timestamps.
+
+### نکته‌های نسخهٔ ۱.۸
+
+با زدن روی کپسول تایمر، ساعت شناور زنده باز می‌شود؛ از نوار بالایش با موس یا
+لمس جابه‌جایش کن. نوت زیر آن قابل ویرایش می‌ماند و کلیک بیرون ساعت را نمی‌بندد.
+جای آن تا پایان همان نشست پنجره به خاطر می‌ماند. با زمان باقی‌مانده و کنترل شروع، توقف و
+بازنشانی باز می‌شود. با پایان آخرین دور تمرکز، تسک یک‌بار تیک می‌خورد؛ حتی
+تسک تکرارشونده هم تیکش باقی می‌ماند. برداشتن دستی تیک با تیک بعدی تایمر
+برگردانده نمی‌شود. شروع یا بازنشانی چرخهٔ تازه، تسک را دوباره باز می‌کند.
+
+در موبایل فقط کپسول وضعیت کنار تسک می‌ماند. با زدن روی خودش، همان منوی اصلی
+تسک باز می‌شود؛ سه‌نقطه و منوی جداگانه حذف شده‌اند. جزئیات پومودورو و گزینهٔ
+«باز کردن ساعت تمرکز» هم در همان منو هستند. دسکتاپ همچنان اسکرول افقی دارد.
+در تنظیمات عمومی، تایم‌زون مثل `Asia/Tehran` را وارد کن و Apply را بزن.
+این تنظیم منطقهٔ زمانی برنامه‌ریزی و یادآورها را تغییر می‌دهد، نه ساعت اشتباه
+خود دستگاه؛ برای آن باید تنظیم خودکار ساعت سیستم فعال باشد.
+
 ## Verification
 
 - `npm run build`: TypeScript checks and production bundle.
