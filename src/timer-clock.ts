@@ -3,7 +3,7 @@ import type { TimerPopoverOptions } from './timer-popover';
 import { formatTimerClock, timerRemainingSeconds, timerState } from './types';
 import { pomodoroText } from './pomodoro';
 import { getTimerLabels } from './timer-localization';
-import { openTaskProPanel } from './ui/panel';
+import { openFloatingClock } from './ui/floating-panel';
 
 /** Live controls share the service's timer rather than a captured countdown copy. */
 export function showTimerClock(options: TimerPopoverOptions, configure: () => void): void {
@@ -15,13 +15,14 @@ export function showTimerClock(options: TimerPopoverOptions, configure: () => vo
   let current = options.timer;
   let busy = false;
   const previouslyFocused = document.activeElement as HTMLElement | null;
-  const { panel, body, footer, close } = openTaskProPanel(fa ? 'ساعت تمرکز' : 'Focus clock', {
-    onClose: () => { unsubscribe?.(); if (fallback) clearInterval(fallback); if (previouslyFocused?.isConnected) previouslyFocused.focus(); },
+  const { panel, body, footer, close } = openFloatingClock(fa ? 'ساعت تمرکز' : 'Focus clock', fa, () => {
+    unsubscribe?.(); if (fallback) clearInterval(fallback);
+    if ((panel.contains(document.activeElement) || document.activeElement === document.body) && previouslyFocused?.isConnected) previouslyFocused.focus();
   });
   panel.addClass('taskpro-clock-panel');
   panel.setAttribute('dir', fa ? 'rtl' : 'ltr');
   panel.setAttribute('role', 'dialog');
-  panel.setAttribute('aria-modal', 'true');
+  panel.setAttribute('aria-modal', 'false');
   panel.setAttribute('aria-label', fa ? 'ساعت تمرکز' : 'Focus clock');
   body.createDiv({ cls: 'taskpro-clock__task', text: current.label ?? labels.timerLabel });
   const phase = body.createDiv({ cls: 'taskpro-clock__phase' });
@@ -70,12 +71,5 @@ export function showTimerClock(options: TimerPopoverOptions, configure: () => vo
   if (options.subscribe) unsubscribe = options.subscribe(redraw);
   else fallback = setInterval(redraw, 1000);
   redraw();
-  panel.addEventListener('keydown', event => {
-    if (event.key !== 'Tab') return;
-    const enabled = Array.from(panel.querySelectorAll<HTMLButtonElement>('button:not(:disabled)'));
-    const first = enabled[0], last = enabled.at(-1);
-    if (event.shiftKey && document.activeElement === first && last) { event.preventDefault(); last.focus(); }
-    else if (!event.shiftKey && document.activeElement === last && first) { event.preventDefault(); first.focus(); }
-  });
   toggle.focus();
 }

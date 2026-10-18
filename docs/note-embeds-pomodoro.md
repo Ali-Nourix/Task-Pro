@@ -95,7 +95,13 @@ Obsidian برمی‌گردند؛ تنظیمات نمای اصلی یا بلاک�
 
 ## Focus clock and task completion (1.8.0)
 
-Click a timer capsule to open the live clock. Start/pause/resume, reset, add five
+Click a timer capsule to open the live, non-modal floating clock. Drag its title
+bar with a mouse or touch to place it anywhere inside the Obsidian window;
+focus the title bar and use arrow keys (Shift for larger steps) for keyboard
+movement. The note remains editable underneath, and clicking outside does not
+close the clock. Its position is remembered for subsequent openings in the same
+window/session and clamped when the viewport shrinks. Tab can leave the clock;
+Escape closes it only while it has focus. Start/pause/resume, reset, add five
 minutes or change the duration there. The configured sound/notifications fire at
 phase boundaries while Obsidian is running. Table, card and calendar timer
 capsules include the phase and completed/target focus rounds. Very short calendar
@@ -126,7 +132,9 @@ Countdown durations continue using elapsed device timestamps.
 
 ### نکته‌های نسخهٔ ۱.۸
 
-با زدن روی کپسول تایمر، ساعت زنده با زمان باقی‌مانده و کنترل شروع، توقف و
+با زدن روی کپسول تایمر، ساعت شناور زنده باز می‌شود؛ از نوار بالایش با موس یا
+لمس جابه‌جایش کن. نوت زیر آن قابل ویرایش می‌ماند و کلیک بیرون ساعت را نمی‌بندد.
+جای آن تا پایان همان نشست پنجره به خاطر می‌ماند. با زمان باقی‌مانده و کنترل شروع، توقف و
 بازنشانی باز می‌شود. با پایان آخرین دور تمرکز، تسک یک‌بار تیک می‌خورد؛ حتی
 تسک تکرارشونده هم تیکش باقی می‌ماند. برداشتن دستی تیک با تیک بعدی تایمر
 برگردانده نمی‌شود. شروع یا بازنشانی چرخهٔ تازه، تسک را دوباره باز می‌کند.

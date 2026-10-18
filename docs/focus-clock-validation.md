@@ -7,6 +7,9 @@
 - `test/clock-ui.mjs`: 40 checks covering desktop, 390px Persian/dark,
   320px English/light, live countdown, pause/reset, duration editing,
   calendar counters and 300px split panes.
+- `test/floating-clock-ui.mjs`: 76 checks for equal themed button metrics,
+  non-modal editing, mouse/touch/keyboard movement, edge clamping, position
+  recall, resize, single-window lifecycle, focus/Escape and cleanup.
 - `test/mobile-chips.mjs`: 10 checks for LTR/RTL viewport sizing, mouse drag,
   click suppression and native Chromium touch swipes.
 - Existing browser tests: note-embed-pomodoro-ui (33), embed-presentation-ui

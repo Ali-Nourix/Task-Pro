@@ -9438,3 +9438,30 @@ body.is-mobile .taskpro-badge-container.taskpro-chip-scroll.has-many-chips {
   .taskpro-note-embed { height: 78dvh; min-height: 180px; }
   .taskpro-clock__face { width: 144px; }
 }
+
+/* Clock stays above the note without blocking it. Its title bar is the drag handle. */
+.taskpro-panel.taskpro-floating-panel {
+  position: fixed; z-index: calc(var(--layer-modal, 100) - 1);
+  left: 16px; top: 16px; margin: 0; transform: none;
+  min-width: 0; border: 1px solid var(--background-modifier-border);
+}
+.taskpro-clock__handle {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  min-height: 44px; margin-block: -8px 8px; cursor: grab; touch-action: none;
+  user-select: none; border-radius: 6px;
+}
+.taskpro-clock__handle .taskpro-panel__title { margin: 0; font-size: 15px; }
+.taskpro-clock__grip { color: var(--text-muted); display: flex; flex: 0 0 20px; }
+.taskpro-clock__grip svg { width: 20px; height: 20px; }
+.taskpro-clock__handle:focus-visible { outline: 2px solid var(--interactive-accent); outline-offset: 2px; }
+.taskpro-floating-panel.is-dragging .taskpro-clock__handle { cursor: grabbing; }
+/* Obsidian/themes may give mod-cta a fixed 28px height or margin. Normalize
+   every clock control explicitly, including the accent button, without recoloring it. */
+.taskpro-panel.taskpro-clock-panel .taskpro-clock__controls,
+.taskpro-panel.taskpro-clock-panel .taskpro-panel__footer { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; }
+.taskpro-panel.taskpro-clock-panel button.taskpro-panel__btn {
+  box-sizing: border-box; display: flex; align-items: center; justify-content: center;
+  width: 100%; height: auto; min-height: 44px; max-height: none; min-width: 0;
+  margin: 0; padding: 10px 12px; line-height: 1.35; white-space: normal;
+  align-self: stretch;
+}

@@ -2,7 +2,8 @@
 
 ## 1.8.0 — Focus clock, mobile embeds and scheduling timezone
 
-- Open timer chips as a live clock with remaining time, circular progress, pause/resume, reset and duration controls.
+- Open timer chips as a non-modal floating clock with remaining time, circular progress, pause/resume, reset and duration controls. Drag its title bar by mouse/touch or move it with arrow keys; keep notes usable underneath and remember its position within the window/session.
+- Normalize accent and secondary clock buttons to the same width, height and alignment, including themes with fixed-size primary buttons.
 - Complete a task once its target focus rounds finish; retain completion until a manual uncheck or a new cycle. Preserve completed recurring Pomodoro tasks instead of immediately rolling them forward.
 - Show timer phase and completed/target rounds in table, cards and calendar views.
 - Adapt embedded views to narrow panes and short screens; keep mobile rows with three or more capsules horizontally swipeable/draggable.
