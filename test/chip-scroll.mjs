@@ -27,7 +27,7 @@ try {
     await page.waitForFunction((before)=>Math.abs(document.querySelector('.row').scrollLeft-before)>1,before,{ timeout:3000 });
     ok(Math.abs(await row.evaluate(e=>e.scrollLeft)-before)>1, `${direction}: downward wheel reaches trailing chips`);
     await row.locator('button.chip').last().focus();
-    await page.waitForFunction(() => { const row=document.querySelector('.row').getBoundingClientRect(); const last=document.querySelector('.row button.chip:nth-last-child(2)').getBoundingClientRect(); return last.left>=row.left-1 && last.right<=row.right+1; },undefined,{timeout:3000});
+    await page.waitForFunction(() => { const row=document.querySelector('.row').getBoundingClientRect(); const last=document.querySelector('.row button.chip:last-child').getBoundingClientRect(); return last.left>=row.left-1 && last.right<=row.right+1; },undefined,{timeout:3000});
     ok(true, `${direction}: keyboard focus brings the last chip into view`);
     await page.evaluate(()=>window.chipScroll.releaseChipRow(document.querySelector('.row')));
     const clean = await row.evaluate(e=>e.scrollLeft);

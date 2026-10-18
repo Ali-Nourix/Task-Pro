@@ -1052,6 +1052,13 @@ export default class TaskProPlugin extends Plugin {
         onTimerChange: async (newTimer) => {
           await this.handleTimerUpdate(resolvedFilePath, lineContent, blockId, newTimer);
         },
+        onOpenTimer: () => {
+          targetElement.dispatchEvent(new CustomEvent('taskpro-timer-click', {
+            bubbles: true,
+            detail: { lineContent, filePath: resolvedFilePath, targetElement,
+              blockId: blockId || mapping?.importedBlockId, language: this.settings.badgeLanguage },
+          }));
+        },
         onTimerStart: async () => {
           const effectiveBlockId = blockId || mapping?.importedBlockId;
           if (!effectiveBlockId) return;

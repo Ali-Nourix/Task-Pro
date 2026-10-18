@@ -114,10 +114,11 @@ ticks or reopening the app. Ordinary countdown timers do not check tasks. Pendin
 completion writes retry when the task becomes available after startup.
 
 Note embeds respond to their pane width, not just the screen width. On phones,
-each task shows one capsule plus a touch-sized **More (⋯)** button when it has
-additional properties. More opens the original property controls in a small
-popover, without wrapping or horizontal swiping. Escape or tapping outside
-closes it. Desktop rows retain horizontal scrolling and dragging.
+each task shows only its status capsule. Tap that capsule to open the existing
+Obsidian task menu with priority, deadline, plan, timer, progress and other
+applicable controls. There is no separate ellipsis or properties popover. The
+timer section includes completed/target rounds and **Open focus clock**.
+Desktop rows retain horizontal scrolling and dragging.
 
 ## Scheduling timezone
 
@@ -141,8 +142,9 @@ Countdown durations continue using elapsed device timestamps.
 تسک تکرارشونده هم تیکش باقی می‌ماند. برداشتن دستی تیک با تیک بعدی تایمر
 برگردانده نمی‌شود. شروع یا بازنشانی چرخهٔ تازه، تسک را دوباره باز می‌کند.
 
-در موبایل، فقط یک کپسول کنار تسک دیده می‌شود؛ دکمهٔ «⋯» بقیهٔ ویژگی‌ها و
-کنترل‌های اصلی را در منوی کوچک باز می‌کند. دسکتاپ همچنان اسکرول افقی دارد.
+در موبایل فقط کپسول وضعیت کنار تسک می‌ماند. با زدن روی خودش، همان منوی اصلی
+تسک باز می‌شود؛ سه‌نقطه و منوی جداگانه حذف شده‌اند. جزئیات پومودورو و گزینهٔ
+«باز کردن ساعت تمرکز» هم در همان منو هستند. دسکتاپ همچنان اسکرول افقی دارد.
 در تنظیمات عمومی، تایم‌زون مثل `Asia/Tehran` را وارد کن و Apply را بزن.
 این تنظیم منطقهٔ زمانی برنامه‌ریزی و یادآورها را تغییر می‌دهد، نه ساعت اشتباه
 خود دستگاه؛ برای آن باید تنظیم خودکار ساعت سیستم فعال باشد.

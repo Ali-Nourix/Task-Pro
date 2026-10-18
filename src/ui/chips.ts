@@ -160,6 +160,7 @@ export function createStatusChip(options: {
   );
   badge.setAttribute('data-status', options.status);
   badge.setAttribute('role', 'button');
+  badge.setAttribute('aria-haspopup', 'menu');
   badge.tabIndex = 0;
 
   badge.addEventListener('click', (e) => {
@@ -181,6 +182,14 @@ export function createStatusChip(options: {
         },
       })
     );
+  });
+
+  badge.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      event.stopPropagation();
+      badge.click();
+    }
   });
 
   return badge;

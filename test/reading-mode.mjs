@@ -123,18 +123,18 @@ await page.addStyleTag({content:'body{margin:0;padding:20px;background:var(--bac
 await page.evaluate(()=>{document.body.classList.add('is-mobile','theme-dark');document.querySelector('.markdown-preview-section').classList.add('markdown-preview-view');});
 await page.setViewportSize({width:390,height:844});
 const first=page.locator('li[data-line="0"] > .taskpro-badge-container');
-const more=first.locator('.taskpro-chip-more');await more.waitFor();
+const status=first.locator('.taskpro-interactive-badge');await status.waitFor();
+await page.waitForFunction(()=>document.querySelector('li[data-line="0"] > .taskpro-badge-container').classList.contains('is-mobile-single-chip'));
 const mobile = {};
 mobile.visible = await first.locator('.taskpro-chip:visible').count();
+mobile.extra = await page.locator('.taskpro-chip-more,.taskpro-mobile-chip-menu').count();
 await page.evaluate(()=>document.addEventListener('taskpro-badge-click',e=>{window.clickedAnchor=e.detail.targetElement;window.clickedTask={file:e.detail.filePath,targetConnected:e.detail.targetElement.isConnected};}));
-await more.click();const pop=page.locator('.taskpro-mobile-chip-menu');await pop.waitFor();
-mobile.plan = await pop.locator('.taskpro-schedule-badge').count();
-await page.screenshot({path:'/data/taskpro-mobile-reading-more.png'});
-await pop.locator('.taskpro-schedule-badge').click();await pop.waitFor({state:'detached'});
+await status.click();
 mobile.context = await page.evaluate(()=>window.clickedTask);
-mobile.anchor = await page.evaluate(()=>clickedAnchor.isConnected && clickedAnchor.classList.contains('taskpro-chip-more') && clickedAnchor.getBoundingClientRect().width > 0);
-await more.click();await page.evaluate(()=>readingHarness.children.forEach(child=>child.unload()));
-mobile.unloaded = await page.locator('.taskpro-mobile-chip-menu, .taskpro-chip-more').count();
+mobile.anchor = await page.evaluate(()=>clickedAnchor.isConnected && clickedAnchor.classList.contains('taskpro-interactive-badge') && clickedAnchor.getBoundingClientRect().width > 0);
+await page.screenshot({path:'/data/taskpro-mobile-reading-status-only.png'});
+await page.evaluate(()=>readingHarness.children.forEach(child=>child.unload()));
+mobile.unloaded = await page.locator('.is-mobile-single-chip,.taskpro-chip-collapsed').count();
 await browser.close();
 
 let checked = 0;
@@ -147,10 +147,10 @@ function eq(actual, expected, label) {
 
 eq(errors, [], 'no page errors');
 eq(mobile.visible, 1, 'real mobile note has one visible capsule');
-eq(mobile.plan, 1, 'real plan chip is reachable in More');
+eq(mobile.extra, 0, 'no extra trigger or menu in real Reading note');
 eq(mobile.context, {file:'Planner/Launch.md',targetConnected:true}, 'real chip retains task event and usable anchor');
-eq(mobile.anchor, true, 'async editor anchor stays visible after More closes');
-eq(mobile.unloaded, 0, 'Reading lifecycle unload removes menus and listeners');
+eq(mobile.anchor, true, 'main menu keeps the original visible status anchor');
+eq(mobile.unloaded, 0, 'Reading lifecycle unload removes collapse state and listeners');
 eq(result.containers, 5, 'one row of chips per task');
 eq(result.parentChipsBeforeSubtasks, 'UL', "a parent's chips on its own line, before its subtasks");
 eq(result.parentSubtasks, '1/2', "a parent's subtask progress");

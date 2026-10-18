@@ -6,7 +6,7 @@ import { mobileChipMenu } from './mobile-chip-menu';
 // chips beyond it fades out softly instead of cutting a chip in half, so a
 // long row reads as "there is more this way" rather than as clutter. The
 // mouse wheel scrolls it too, so a desktop without a trackpad can reach the
-// chips at the end. Mobile notes instead use one capsule plus a More menu.
+// chips at the end. Mobile notes instead keep one status capsule opening the usual task menu.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const SCROLLER_CLASS = 'taskpro-chip-scroll';
