@@ -9414,19 +9414,6 @@ body {
 .taskpro-badge-container.taskpro-chip-scroll.is-overflowing { cursor: grab; }
 .taskpro-badge-container.taskpro-chip-scroll.is-drag-scrolling { cursor: grabbing; user-select: none; }
 
-/* A phone shows one capsule's worth of a long row; the rest remain swipeable. */
-body.is-mobile .taskpro-badge-container.taskpro-chip-scroll.has-many-chips {
-  width: min(var(--taskpro-first-chip-width, 120px), 38vw);
-  max-width: min(var(--taskpro-first-chip-width, 120px), 38vw);
-  flex-wrap: nowrap;
-}
-@media (max-width: 600px) {
-  .taskpro-badge-container.taskpro-chip-scroll.has-many-chips {
-    width: min(var(--taskpro-first-chip-width, 120px), 38vw);
-    max-width: min(var(--taskpro-first-chip-width, 120px), 38vw);
-    flex-wrap: nowrap;
-  }
-}
 /* Container width, not just the screen, governs a note embed in a split pane. */
 .taskpro-note-embed { container-type: inline-size; height: min(640px, 78dvh); min-height: min(280px, 65dvh); }
 @container (max-width: 420px) {
@@ -9465,3 +9452,34 @@ body.is-mobile .taskpro-badge-container.taskpro-chip-scroll.has-many-chips {
   margin: 0; padding: 10px 12px; line-height: 1.35; white-space: normal;
   align-self: stretch;
 }
+
+/* Mobile notes expose one capsule and an explicit More control, not a swipe row. */
+.taskpro-badge-container.taskpro-chip-scroll.is-mobile-chip-menu {
+  width: auto; max-width: min(100%, 78vw); overflow: visible; flex-wrap: nowrap;
+  touch-action: auto; mask-image: none; -webkit-mask-image: none; cursor: default;
+}
+.taskpro-badge-container.is-mobile-chip-menu > .taskpro-chip-collapsed { display: none !important; }
+.taskpro-badge-container.is-mobile-chip-menu > .taskpro-chip:not(.taskpro-chip-collapsed) { max-width: calc(78vw - 52px); overflow: hidden; }
+.taskpro-badge-container .taskpro-chip-more {
+  box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center;
+  width: 44px; min-width: 44px; height: 44px; min-height: 44px; margin: -6px 0;
+  padding: 0; border: 0; border-radius: 8px; background: transparent;
+  box-shadow: none; font-size: 24px; line-height: 1; color: var(--text-muted);
+}
+.taskpro-badge-container .taskpro-chip-more[hidden] { display: none; }
+.taskpro-chip-more:focus-visible { outline: 2px solid var(--interactive-accent); outline-offset: -2px; }
+.taskpro-mobile-chip-menu {
+  position: fixed; z-index: var(--layer-menu, 200); box-sizing: border-box;
+  width: min(300px, calc(100vw - 16px)); max-height: min(440px, calc(100dvh - 16px));
+  overflow-y: auto; display: flex; flex-direction: column; gap: 8px;
+  padding: 12px; border: 1px solid var(--background-modifier-border); border-radius: 12px;
+  background: var(--background-primary); box-shadow: var(--taskpro-float-shadow);
+}
+.taskpro-mobile-chip-menu__title { font-size: 14px; line-height: 1.5; color: var(--text-muted); padding: 0 4px 4px; }
+.taskpro-mobile-chip-menu > .taskpro-chip-in-menu {
+  display: flex !important; flex: 0 0 auto; box-sizing: border-box;
+  width: 100%; max-width: 100%; min-height: 44px; padding: 10px 12px;
+  margin: 0; font-size: 14px; line-height: 1.5; cursor: pointer;
+}
+.taskpro-mobile-chip-menu .taskpro-chip__label { white-space: normal; overflow-wrap: anywhere; }
+.taskpro-mobile-chip-menu > .taskpro-chip-in-menu:focus-visible { outline: 2px solid var(--interactive-accent); outline-offset: -2px; }

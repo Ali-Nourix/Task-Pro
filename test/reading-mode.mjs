@@ -8,6 +8,7 @@
  */
 import * as esbuild from 'esbuild';
 import path from 'path';
+import fs from 'node:fs';
 import { fileURLToPath } from 'url';
 import { chromium } from 'playwright';
 
@@ -83,7 +84,9 @@ const result = await page.evaluate((source) => {
   };
   const process = window.createReadingModeProcessor({}, () => settings, () => undefined, () => undefined);
   const root = document.querySelector('.markdown-preview-section');
-  const ctx = { sourcePath: 'Planner/Launch.md', getSectionInfo: () => ({ text: source, lineStart: 0, lineEnd: 4 }) };
+  const children = [];
+  const ctx = { sourcePath: 'Planner/Launch.md', getSectionInfo: () => ({ text: source, lineStart: 0, lineEnd: 4 }), addChild: child => children.push(child) };
+  window.readingHarness = { settings, children, process, root, ctx };
   process(root, ctx);
 
   const item = (line) => document.querySelector(`li[data-line="${line}"]`);
@@ -113,6 +116,25 @@ const result = await page.evaluate((source) => {
     remindText: own(4),
   };
 }, SOURCE);
+// Exercise the same real Reading renderer in a mobile note, not only a mock row.
+await page.addStyleTag({content: fs.readFileSync(path.join(here,'obsidian-theme.css'),'utf8')});
+await page.addStyleTag({content: fs.readFileSync(path.join(here,'../styles.css'),'utf8')});
+await page.addStyleTag({content:'body{margin:0;padding:20px;background:var(--background-primary);color:var(--text-normal);font:16px/1.8 Arial;}ul{padding-inline-start:20px;}li{padding-block:8px;} .markdown-preview-section{max-width:100%;}'});
+await page.evaluate(()=>{document.body.classList.add('is-mobile','theme-dark');document.querySelector('.markdown-preview-section').classList.add('markdown-preview-view');});
+await page.setViewportSize({width:390,height:844});
+const first=page.locator('li[data-line="0"] > .taskpro-badge-container');
+const more=first.locator('.taskpro-chip-more');await more.waitFor();
+const mobile = {};
+mobile.visible = await first.locator('.taskpro-chip:visible').count();
+await page.evaluate(()=>document.addEventListener('taskpro-badge-click',e=>{window.clickedAnchor=e.detail.targetElement;window.clickedTask={file:e.detail.filePath,targetConnected:e.detail.targetElement.isConnected};}));
+await more.click();const pop=page.locator('.taskpro-mobile-chip-menu');await pop.waitFor();
+mobile.plan = await pop.locator('.taskpro-schedule-badge').count();
+await page.screenshot({path:'/data/taskpro-mobile-reading-more.png'});
+await pop.locator('.taskpro-schedule-badge').click();await pop.waitFor({state:'detached'});
+mobile.context = await page.evaluate(()=>window.clickedTask);
+mobile.anchor = await page.evaluate(()=>clickedAnchor.isConnected && clickedAnchor.classList.contains('taskpro-chip-more') && clickedAnchor.getBoundingClientRect().width > 0);
+await more.click();await page.evaluate(()=>readingHarness.children.forEach(child=>child.unload()));
+mobile.unloaded = await page.locator('.taskpro-mobile-chip-menu, .taskpro-chip-more').count();
 await browser.close();
 
 let checked = 0;
@@ -124,6 +146,11 @@ function eq(actual, expected, label) {
 }
 
 eq(errors, [], 'no page errors');
+eq(mobile.visible, 1, 'real mobile note has one visible capsule');
+eq(mobile.plan, 1, 'real plan chip is reachable in More');
+eq(mobile.context, {file:'Planner/Launch.md',targetConnected:true}, 'real chip retains task event and usable anchor');
+eq(mobile.anchor, true, 'async editor anchor stays visible after More closes');
+eq(mobile.unloaded, 0, 'Reading lifecycle unload removes menus and listeners');
 eq(result.containers, 5, 'one row of chips per task');
 eq(result.parentChipsBeforeSubtasks, 'UL', "a parent's chips on its own line, before its subtasks");
 eq(result.parentSubtasks, '1/2', "a parent's subtask progress");

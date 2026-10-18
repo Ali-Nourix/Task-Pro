@@ -1,3 +1,4 @@
+import { mobileChipMenu } from './mobile-chip-menu';
 // ── ui/chip-scroll.ts ─────────────────────────────────────────────────────
 // A task's chip row scrolls sideways once it has more chips than room.
 //
@@ -5,7 +6,7 @@
 // chips beyond it fades out softly instead of cutting a chip in half, so a
 // long row reads as "there is more this way" rather than as clutter. The
 // mouse wheel scrolls it too, so a desktop without a trackpad can reach the
-// chips at the end; on a touch screen it is an ordinary swipe.
+// chips at the end. Mobile notes instead use one capsule plus a More menu.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const SCROLLER_CLASS = 'taskpro-chip-scroll';
@@ -21,9 +22,6 @@ const cleanups = new WeakMap<HTMLElement, () => void>();
 function updateFades(row: HTMLElement): void {
   const box = row.getBoundingClientRect();
   if (!box.width) return;
-  const visible = (Array.from(row.children) as HTMLElement[]).filter(child => getComputedStyle(child).display !== 'none' && child.getBoundingClientRect().width > 0);
-  row.classList.toggle('has-many-chips', visible.length >= 3);
-  if (visible[0]) row.style.setProperty('--taskpro-first-chip-width', `${Math.ceil(visible[0].getBoundingClientRect().width) + 4}px`);
   let left = Infinity;
   let right = -Infinity;
   for (const child of Array.from(row.children) as HTMLElement[]) {
@@ -44,15 +42,17 @@ function updateFades(row: HTMLElement): void {
  * that is not in the document yet: the fades are worked out once it is laid
  * out. Call {@link releaseChipRow} when the row is thrown away.
  */
-export function makeChipRowScrollable(row: HTMLElement): void {
+export function makeChipRowScrollable(row: HTMLElement, language: 'fa' | 'en' = 'en'): void {
   if (cleanups.has(row)) return;
   row.classList.add(SCROLLER_CLASS);
 
+  const mobileMenu = mobileChipMenu(row, language);
   let frame = 0;
   const schedule = () => {
     if (frame) return;
     frame = requestAnimationFrame(() => {
       frame = 0;
+      mobileMenu.sync();
       updateFades(row);
     });
   };
@@ -182,6 +182,7 @@ export function makeChipRowScrollable(row: HTMLElement): void {
   mutations?.observe(row, { childList: true });
 
   cleanups.set(row, () => {
+    mobileMenu.destroy();
     if (frame) cancelAnimationFrame(frame);
     if (glide) cancelAnimationFrame(glide);
     row.removeEventListener('scroll', schedule);

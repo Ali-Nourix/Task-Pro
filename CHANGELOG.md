@@ -6,9 +6,10 @@
 - Normalize accent and secondary clock buttons to the same width, height and alignment, including themes with fixed-size primary buttons.
 - Complete a task once its target focus rounds finish; retain completion until a manual uncheck or a new cycle. Preserve completed recurring Pomodoro tasks instead of immediately rolling them forward.
 - Show timer phase and completed/target rounds in table, cards and calendar views.
-- Adapt embedded views to narrow panes and short screens; keep mobile rows with three or more capsules horizontally swipeable/draggable.
+- Adapt embedded views to narrow panes and short screens; show one mobile note capsule plus a touch-sized More menu for the remaining original controls, while preserving desktop horizontal scrolling.
 - Add an explicit IANA scheduling timezone for today/current-time defaults, automatic plans and reminder instants, with DST gap/fold handling. This does not synchronize a wrong device clock.
-- Add clock UI, completion/reconciliation, timezone and touch/drag regression tests.
+- Simplify Telegram home navigation and task cards with Tools and More menus; retain existing commands, editing actions and callback compatibility. No database migration is needed for this UI update; redeploy the telegram Edge Function.
+- Add clock UI, completion/reconciliation, timezone, mobile-menu and Telegram navigation regression tests.
 
 ## 1.7.1 — Inline embed state persistence
 

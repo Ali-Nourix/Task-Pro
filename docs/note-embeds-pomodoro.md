@@ -114,8 +114,10 @@ ticks or reopening the app. Ordinary countdown timers do not check tasks. Pendin
 completion writes retry when the task becomes available after startup.
 
 Note embeds respond to their pane width, not just the screen width. On phones,
-rows with three or more note capsules show roughly one capsule at a time; swipe
-horizontally, or drag with a mouse, to reveal the others without wrapping.
+each task shows one capsule plus a touch-sized **More (⋯)** button when it has
+additional properties. More opens the original property controls in a small
+popover, without wrapping or horizontal swiping. Escape or tapping outside
+closes it. Desktop rows retain horizontal scrolling and dragging.
 
 ## Scheduling timezone
 
@@ -139,7 +141,8 @@ Countdown durations continue using elapsed device timestamps.
 تسک تکرارشونده هم تیکش باقی می‌ماند. برداشتن دستی تیک با تیک بعدی تایمر
 برگردانده نمی‌شود. شروع یا بازنشانی چرخهٔ تازه، تسک را دوباره باز می‌کند.
 
-در موبایل، ردیف‌های دارای حداقل سه کپسول به‌جای شکستن خط، افقی اسکرول می‌شوند.
+در موبایل، فقط یک کپسول کنار تسک دیده می‌شود؛ دکمهٔ «⋯» بقیهٔ ویژگی‌ها و
+کنترل‌های اصلی را در منوی کوچک باز می‌کند. دسکتاپ همچنان اسکرول افقی دارد.
 در تنظیمات عمومی، تایم‌زون مثل `Asia/Tehran` را وارد کن و Apply را بزن.
 این تنظیم منطقهٔ زمانی برنامه‌ریزی و یادآورها را تغییر می‌دهد، نه ساعت اشتباه
 خود دستگاه؛ برای آن باید تنظیم خودکار ساعت سیستم فعال باشد.
