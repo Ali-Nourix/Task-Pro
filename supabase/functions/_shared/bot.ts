@@ -213,7 +213,7 @@ async function runCommand(command: string, args: string, ctx: Ctx): Promise<void
   switch (command) {
     case 'start':
       await tg.setCommands(chatId, w.commands);
-      if (ctx.deps.miniAppUrl) await tg.setMiniAppMenu?.(chatId, ctx.deps.miniAppUrl, owner.language === 'fa' ? 'تسک‌ها' : 'Tasks').catch(() => console.error('miniapp menu setup failed'));
+      if (ctx.deps.miniAppUrl) await tg.setMiniAppMenu?.(chatId, ctx.deps.miniAppUrl, 'Task Pro').catch(() => console.error('miniapp menu setup failed'));
       return sendView(ctx, await homeView(ctx));
     case 'help':
       return sendView(ctx, helpView(ctx));

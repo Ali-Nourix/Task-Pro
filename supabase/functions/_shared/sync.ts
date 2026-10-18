@@ -1,4 +1,4 @@
-// The sync with the plugin: it uploads the open tasks and what it has applied,
+// The sync with the plugin: new clients upload every status and what they applied,
 // and is handed the changes made in Telegram since.
 
 import { addDays, isClock, isRealDate } from './time.ts';
@@ -18,6 +18,8 @@ export interface Ack {
 
 export interface SyncRequest {
   snapshot?: unknown[];
+  /** New clients send every status; omitted means a legacy open-only client. */
+  snapshotScope?: 'all';
   acks?: Ack[];
   /** The tags the notes know, with how many tasks have each. */
   tags?: unknown[];
@@ -121,6 +123,12 @@ export async function handleSync(
     const keep = new Set<string>();
     for (const command of await store.pendingCommands()) {
       if (typeof command.payload.key === 'string') keep.add(command.payload.key);
+    }
+    // A legacy plugin omits closed tasks, not proof that they were deleted. Preserve
+    // already-known terminal rows until an all-status client provides an authoritative upload.
+    if(request.snapshotScope!=='all'){
+      const uploaded=new Set(rows.map(t=>t.key));
+      for(const task of await store.allTasks())if((task.status==='done'||task.status==='failed')&&!uploaded.has(task.key))keep.add(task.key);
     }
     await store.replaceSnapshot(rows, keep);
   }

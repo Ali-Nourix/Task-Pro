@@ -25,6 +25,14 @@ let result=await run({action:'list'});eq(result.tasks,[],'empty state');eq(Objec
 result=await run({action:'create',title:'Report @timer(5) ^spoof',tags:['work'],priority:'high',deadline:'2026-10-20'});const n=result.task.n;
 eq(result.task.title.includes('@timer'),false,'same note-safe title cleaner');eq(result.task.pending,true,'new task waits for plugin');eq(result.task.plan_start,'10:30','owner timezone / tracking reused');eq(store.commands[0].kind,'add','same command queue');eq('key'in result.task,false,'internal task keys omitted');
 await run({action:'status',n,status:'done'});eq(store.commands.at(-1).kind,'status','status queued');eq(store.tasks[0].status,'done','status applied');
+eq((await run({action:'list'})).tasks.length,0,'legacy list remains open only');
+eq((await run({action:'list',scope:'all'})).tasks[0].status,'done','calendar includes completed tasks');
+await run({action:'status',n,status:'failed'});
+eq((await run({action:'list',scope:'all'})).tasks[0].status,'failed','calendar includes failed tasks');
+const allSnapshot=await run({action:'status',n,status:'done',snapshot:true,scope:'all'});
+eq(allSnapshot.tasks[0].status,'done','all-status mutation retains completed row');
+await run({action:'list',scope:'all'},401,'bad');
+await run({action:'list',scope:'all'},403,sign(8));
 await run({action:'status',n,status:'open'});eq((await run({action:'list'})).tasks.length,1,'manual reopen');
 await run({action:'edit',n,fields:{title:'Edited',priority:'low',deadline:null,repeat:'2w',tags:['home']}});eq(store.tasks[0].title,'Edited','real edit effect');eq(store.commands.at(-1).kind,'edit','edit queued');
 await run({action:'plan',n,plan:{date:'2026-10-20',start:'09:00',end:'10:00'}});eq(store.tasks[0].plan_end,'10:00','plan effect');
@@ -50,7 +58,7 @@ await run({action:'delete',n,confirm:true});eq(await store.taskByN(n),null,'conf
 const menus=[],sent=[];const tg={send:async(...a)=>sent.push(a),edit:async()=>{},answer:async()=>{},setCommands:async()=>{},setMiniAppMenu:async(...a)=>menus.push(a)};
 const bd={store,tg,pairingCode:'',now,miniAppUrl:origin};
 await handleUpdate({message:{from:{id:8},chat:{id:8,type:'private'},message_id:1,text:'/app'}},bd);eq(menus.length,0,'strangers cannot configure launcher');
-await handleUpdate({message:{from:{id:7},chat:{id:7,type:'private'},message_id:2,text:'/app'}},bd);eq(menus[0],[7,origin,'تسک‌ها'],'owner app command sets scoped Web App menu');
+await handleUpdate({message:{from:{id:7},chat:{id:7,type:'private'},message_id:2,text:'/app'}},bd);eq(menus[0],[7,origin,'Task Pro'],'owner app command sets scoped Web App menu');
 // Snapshots remove a second frontend list round-trip without weakening auth.
 const snap=await run({action:'create',title:'Snapshot',snapshot:true});eq(Array.isArray(snap.tasks),true,'mutation includes authorized snapshot');eq(snap.owner.timezone,'Asia/Tehran','snapshot owner zone');
 const sn=snap.task.n;const completed=await run({action:'status',n:sn,status:'done',snapshot:true});eq(completed.tasks.some(t=>t.n===sn),false,'completed removed from snapshot');
@@ -65,4 +73,10 @@ for(const body of [{action:'chat',text:''},{action:'chat',text:'x'.repeat(2001)}
 const aiBefore=aiCalls;await chat({action:'chat',text:'x'},401,'bad');await chat({action:'chat',text:'x'},403,sign(8));eq(aiCalls,aiBefore,'unauthorized users cannot call paid provider');
 await chat({action:'chat',text:'x'},503,sign(),{ai:{...ai,chat:async()=>{throw new Error('private-provider-secret');}}});
 const rejected=await chat({action:'chat',text:'x'},503,sign(),{ai:{...ai,chat:async()=>({text:'I changed a task',calls:[{name:'set_status',args:{n:1,status:'done'}}]})}});eq(rejected.error,'ai_busy','unexpected model tool calls never execute');eq(store.commands.length,queueBefore,'even forged model calls have no effects');
+// The real Supabase adapter must not truncate calendar history at the default row cap.
+const adapterBuild=await esbuild.build({stdin:{contents:"export {supabaseStore} from './supabase/functions/_shared/supabase-store.ts';",resolveDir:process.cwd(),loader:'ts'},bundle:true,write:false,platform:'node',format:'esm',logLevel:'error',plugins:[{name:'fake-supabase',setup(b){b.onResolve({filter:/^npm:@supabase\/supabase-js/},()=>({path:'client',namespace:'fake'}));b.onLoad({filter:/.*/,namespace:'fake'},()=>({contents:'export const createClient=()=>globalThis.__calendarDb;',loader:'js'}));}}]});
+let pages=0;const large=Array.from({length:1205},(_,i)=>({n:i+1,status:i%2?'done':'failed'}));
+globalThis.__calendarDb={from:()=>({select(){return this;},in(){return this;},order(){return this;},async range(a,b){pages++;return {data:large.slice(a,b+1),error:null};}})};
+const {supabaseStore}=await import('data:text/javascript;base64,'+Buffer.from(adapterBuild.outputFiles[0].text).toString('base64'));
+eq((await supabaseStore('test','test').allTasks()).length,1205,'adapter pages beyond 1000 rows');eq(pages,7,'bounded storage page size');delete globalThis.__calendarDb;
 console.log(`TELEGRAM_MINIAPP_OK (${count} checks)`);

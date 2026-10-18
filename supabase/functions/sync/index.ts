@@ -1,4 +1,4 @@
-// The plugin's side: it uploads the open tasks and is handed Telegram's changes.
+// The plugin uploads its snapshot (all statuses in new clients) and receives Telegram changes.
 
 import { hasBearer, json } from '../_shared/http.ts';
 import { handleSync } from '../_shared/sync.ts';

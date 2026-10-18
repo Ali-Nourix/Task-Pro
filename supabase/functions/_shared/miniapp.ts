@@ -64,7 +64,7 @@ export async function handleMiniApp(request: Request, deps: Deps): Promise<Respo
       const utc=localToUtc(owner.timezone,result.date,result.time);
       if(!Number.isFinite(utc.getTime()) || utc.getTime() <= now.getTime())bad();return result;
     };
-    const snapshot=async()=>({owner:meta,tasks:(await deps.store.openTasks()).map(publicTask)});
+    const snapshot=async()=>({owner:meta,tasks:(await (data.scope==='all'?deps.store.allTasks():deps.store.openTasks())).map(publicTask)});
     if(data.action==='list') return reply({ok:true,...await snapshot()});
     if(data.action==='chat') {
       const input=chatInput(data);if(!input)bad();

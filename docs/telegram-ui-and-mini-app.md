@@ -32,9 +32,8 @@ merely because it appears in the connected account.
 ## Deployment checkpoint
 
 The confirmed production bot project is **Obsidian Reminder**. Its schema was
-inspected; no migration was applied. `telegram` is ACTIVE at version 20 and
-`miniapp` at version 3. Both use the real frontend URL. `sync`, `tick`, webhook
-configuration and existing secrets were not changed.
+inspected; no migration was applied. `telegram` is ACTIVE at version 21,
+`miniapp` at version 4 and `sync` at version 21. They use the same confirmed project and frontend URL. `tick`, webhook configuration and existing secrets were not changed. No migration was applied.
 
 Frontend: https://taskpro-miniapp.alinorizadeh1384.workers.dev
 
@@ -73,3 +72,16 @@ Monthly Jalali/Gregorian calendar with daily task counts and agenda; explicit su
 The owner reported a successful connection. Native Main Mini App setup via BotFather remains a manual owner step using the frontend URL; it is not equivalent to setting a per-chat menu button.
 
 Follow-up deployed: miniapp v3 ACTIVE and Worker deployment fbe175d9f6e14fa5af58c70e8eb51e4d. Public frontend exactly matches the tested build; health 200 ready:true, preflight 204, unsigned AI POST 401, foreign origin 403. Full build and 22 backend/plugin suites passed, plus 140 UI/calendar checks. Production AI completion was not simulated with owner credentials.
+
+
+## All-status calendar and Task Pro name
+
+Calendar now includes open, in-progress, done and failed tasks, with multi-select status filters, Select all/Clear selection and undated records. The grid counts, status markers and day agenda share the same filtered source. Filter preferences persist locally, but task data, chat history and credentials do not. Completing a task does not remove it from the default all-status calendar; Undo restores the original status. Home and Tasks still list active tasks.
+
+The plugin uploads all four statuses with `snapshotScope:all`. Install this revision’s plugin files, reload it and sync once to populate closed tasks that still exist in notes. Older open-only clients preserve already-known closed records but cannot restore records already dropped by previous snapshots. New authoritative uploads remove genuinely deleted tasks; this is not an immutable completion-event archive. The 5,000-task upload limit is unchanged and oversized uploads fail without silently truncating.
+
+The Telegram menu label and HTML document title are **Task Pro**. The owner sends `/app` once to refresh the menu label. BotFather Main Mini App/profile metadata remains a separate manual owner setting.
+
+The bottom dock has a reserved layout region; the main content scrolls independently and the final agenda row remains reachable above navigation. Calendar rows use neutral bordered surfaces and explicit status labels; checkboxes retain keyboard focus while filtering. Long titles/tags, three-digit counts and six-row months have regression coverage.
+
+Deployed: miniapp v4, sync v21, telegram v21; Worker deployment `24cd9c548e4143d19e34eb393b78dfeb`. Build and all 22 regression suites passed (2,328 checks), plus 207 browser checks. Browser screenshots use fixtures, not private production tasks. Public smoke: frontend 200 and exact build match, health ready:true, preflight 204, unsigned all-status list 401, foreign origin 403, unsigned sync/webhook 403. No production task writes or manufactured owner sessions were used for verification.

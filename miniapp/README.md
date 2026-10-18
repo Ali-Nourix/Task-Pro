@@ -1,4 +1,4 @@
-# TaskPro Telegram Mini App
+# Task Pro Telegram Mini App
 
 Mobile-first companion to the existing single-owner bot. The conversational bot,
 AI, reminders, settings, commands and legacy callback buttons remain available.
@@ -9,7 +9,7 @@ There is no second task database.
 - Persian/English, RTL/LTR, bundled Vazirmatn font, light/dark Telegram themes.
 - Home: interactive week strip, upcoming scheduled task, compact daily list.
 - Tasks: all open tasks, Today/Overdue filters and title/tag search.
-- Calendar: a complete month in the owner’s Jalali/Gregorian calendar, task counts on dates, month navigation and a selected-day agenda in start-time order. Home keeps its compact week strip.
+- Calendar: a complete Jalali/Gregorian month with every status (open, in progress, done, not done), multi-select status filters, Select all/Clear selection, undated tasks and a selected-day agenda. Counts and markers use the same filtered records. Only display filter preferences persist locally. Home keeps its compact week strip and active-task lists.
 - Create normal tasks by default; an explicit subtask toggle reveals the custom parent picker. Complete with quick Undo, change status/title/priority,
   deadline, recurrence and tags; set/remove a plan or reminder; confirmed delete.
 - Owner timezone governs plan/reminder entry. List dates follow the owner's
@@ -19,8 +19,17 @@ There is no second task database.
 - Collapsible editing sections, keyboard focus, accessible names, 44px controls,
   reduced motion, offline/session-expiry messages and safe text-only titles.
 
-The backend reads the existing *open-task snapshot*, not a permanent completed
-history. Obsidian receives edits through the bot's existing command queue on its
+The backend reads the existing task snapshot, including all four statuses when
+uploaded by the updated plugin (`snapshotScope:all`). **Install the updated
+Obsidian plugin and sync once to populate completed/failed tasks still in notes.**
+Records already removed by older open-only snapshots cannot be recovered without
+the notes. This is not an immutable completion-event archive: deleted notes/tasks
+are removed by a later authoritative all-status upload. Old clients retain known
+closed records but cannot upload missing historical closed tasks. Existing sync
+limit remains 5,000 tasks; oversized uploads fail rather than silently truncate.
+Calendar days include plan date, deadline or reminder in the owner timezone;
+a task matching multiple fields on the same day is counted once. Unscheduled
+records are accessible under Undated rather than assigned a fictitious date. Obsidian receives edits through the bot's existing command queue on its
 next sync. Do not treat a lost network response as proof a write failed; refresh
 before retrying. Mutation requests are not automatically retried or guaranteed
 transactionally atomic/idempotent.
@@ -57,7 +66,7 @@ multi-tenant SaaS or a public bot for arbitrary Telegram users.
    `supabase/functions/_shared/miniapp-config.ts` (`MINI_APP_URL`). Redeploy both
    `telegram` and `miniapp`. Keep existing secrets and webhook unchanged.
 5. The registered owner sends `/app` or `/start` in the private bot chat. The
-   bot configures the owner-specific Telegram menu button using `setChatMenuButton`.
+   bot configures the owner-specific **Task Pro** Telegram menu button using `setChatMenuButton`. Send `/app` again to replace an older button label. The document title is also Task Pro; BotFather profile/Main Mini App metadata is a separate owner-controlled setting.
    Open the button and verify real authenticated reads and one reversible edit.
    Never extract the production bot token just to manufacture test initData.
 
@@ -98,4 +107,4 @@ see `assets/OFL.txt` and the notice embedded in `assets/font.css`.
 
 ## Latest UI audit
 
-Used 0design/unslop-skill’s local detector and requirement-fidelity protocol; see `plans/003-miniapp-controls-calendar.md`. Remote UNSLOP canon was not connected, so no canon-based pass or full project audit is claimed. Token declarations were distinguished from real token bypasses; screenshot fixes live in the shared controls, not generated output. Behavioral checks cover monthly calendar boundaries including Jalali leap years, parent controls, keyboard selection, AI failure/unsafe text, and one-request mutation snapshots.
+Used 0design/unslop-skill’s local detector and requirement-fidelity protocol; see `plans/003-miniapp-controls-calendar.md` and `plans/004-calendar-statuses.md`. Remote UNSLOP canon was not connected, so no canon-based pass or full project audit is claimed. Token declarations were distinguished from real token bypasses; screenshot fixes live in the shared controls, not generated output. Behavioral checks cover monthly calendar boundaries including Jalali leap years, parent controls, keyboard selection, AI failure/unsafe text, and one-request mutation snapshots.
