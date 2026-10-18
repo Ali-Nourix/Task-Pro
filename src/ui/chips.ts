@@ -222,6 +222,9 @@ export function createTimerChip(options: {
     icon,
     [pomodoroText(options.timer, options.language), state === 'done' ? labels.doneChip : formatTimerClock(remaining)].filter(Boolean).join(' · ')
   );
+  badge.addEventListener('keydown', event => {
+    if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); badge.click(); }
+  });
   badge.dataset.state = state;
   if (options.blockId) badge.dataset.timerKey = `${options.filePath}:${options.blockId}`;
   badge.setAttribute('aria-label', `${pomodoroText(options.timer, options.language)} ${labels.chipAria(formatTimerClock(remaining), state)}`.trim());

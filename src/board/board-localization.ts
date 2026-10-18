@@ -44,6 +44,7 @@ export interface BoardLabels {
     waiting: string;
     repeat: string;
     progress: string;
+    timer: string;
     note: string;
   };
   /** The properties menu: which properties the table or the cards show. */
@@ -237,6 +238,7 @@ const EN: BoardLabels = {
     waiting: 'Waiting on',
     repeat: 'Repeat',
     progress: 'Progress',
+    timer: 'Timer / Pomodoro',
     note: 'Note',
   },
   properties: 'Properties',
@@ -434,6 +436,7 @@ const FA: BoardLabels = {
     waiting: 'منتظرِ',
     repeat: 'تکرار',
     progress: 'پیشرفت',
+    timer: 'تایمر / پومودورو',
     note: 'یادداشت',
   },
   properties: 'ویژگی‌ها',

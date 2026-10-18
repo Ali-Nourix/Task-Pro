@@ -1,7 +1,7 @@
 {
   "id": "taskpro",
   "name": "TaskPro",
-  "version": "1.7.1",
+  "version": "1.8.0",
   "minAppVersion": "1.5.0",
   "description": "Task management with your own coloured tags, a Notion-style board and calendar of every task in the vault (plan by the hour in the Gregorian or Jalali calendar, with a note for each day), and per-task capabilities — progress bars, focus timers with desktop notifications, and repeating tasks — plus bi-directional sync, badges, and deadline tracking.",
   "author": "Ali",

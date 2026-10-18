@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.8.0 — Focus clock, mobile embeds and scheduling timezone
+
+- Open timer chips as a live clock with remaining time, circular progress, pause/resume, reset and duration controls.
+- Complete a task once its target focus rounds finish; retain completion until a manual uncheck or a new cycle. Preserve completed recurring Pomodoro tasks instead of immediately rolling them forward.
+- Show timer phase and completed/target rounds in table, cards and calendar views.
+- Adapt embedded views to narrow panes and short screens; keep mobile rows with three or more capsules horizontally swipeable/draggable.
+- Add an explicit IANA scheduling timezone for today/current-time defaults, automatic plans and reminder instants, with DST gap/fold handling. This does not synchronize a wrong device clock.
+- Add clock UI, completion/reconciliation, timezone and touch/drag regression tests.
+
 ## 1.7.1 — Inline embed state persistence
 
 - Remember each inline block’s layout, filters, calendar mode/system, and visited date across Markdown rerenders and Obsidian restarts, without changing the main board or other embeds.

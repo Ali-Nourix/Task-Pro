@@ -2,6 +2,7 @@
 // Settings tab UI
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { getTaskTimeZone, setTaskTimeZone, validTimeZone } from './task-clock';
 import { App, PluginSettingTab, Setting, Notice, setIcon } from 'obsidian';
 import TaskProPlugin from '../main';
 import {
@@ -393,6 +394,21 @@ export class TaskProSettingTab extends PluginSettingTab {
           this.plugin.settings.calendarSystem = value as 'gregorian' | 'jalali';
           await this.plugin.saveSettings();
         }));
+
+    const zoneSetting = new Setting(containerEl)
+      .setName(this.plugin.settings.badgeLanguage === 'fa' ? 'منطقهٔ زمانی برنامه‌ریزی' : 'Scheduling time zone')
+      .setDesc(this.plugin.settings.badgeLanguage === 'fa'
+        ? 'شناسهٔ IANA مانند Asia/Tehran؛ خالی یعنی منطقهٔ دستگاه. ساعت نادرست دستگاه را اصلاح نمی‌کند. برنامه‌ها و اعلان‌های ساعت‌دار در این منطقه تفسیر می‌شوند.'
+        : 'IANA name, e.g. Asia/Tehran. Empty follows the device. This does not correct an inaccurate device clock. Timed plans and reminders use this zone.');
+    let pendingZone = getTaskTimeZone();
+    zoneSetting.addText(text => text.setPlaceholder('Asia/Tehran').setValue(pendingZone)
+      .onChange(value => { pendingZone = value.trim(); }));
+    zoneSetting.addButton(button => button.setButtonText(this.plugin.settings.badgeLanguage === 'fa' ? 'اعمال' : 'Apply').onClick(async () => {
+      if (!validTimeZone(pendingZone)) { new Notice('Invalid IANA time zone / منطقهٔ زمانی نامعتبر'); return; }
+      this.plugin.settings.timeZone = setTaskTimeZone(pendingZone);
+      await this.plugin.saveSettings();
+      this.plugin.refreshBoards();
+    }));
 
     // Badge Size
     new Setting(containerEl)

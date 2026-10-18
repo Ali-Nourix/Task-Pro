@@ -93,6 +93,49 @@ Obsidian برمی‌گردند؛ تنظیمات نمای اصلی یا بلاک�
 بسته باشد، پس از بازشدن فقط مرحلهٔ منقضی‌شده محاسبه می‌شود؛ دورهای انجام‌نشده
 به‌صورت ساختگی ثبت نمی‌شوند. تایمرهای قدیمی بدون تغییر به کارشان ادامه می‌دهند.
 
+## Focus clock and task completion (1.8.0)
+
+Click a timer capsule to open the live clock. Start/pause/resume, reset, add five
+minutes or change the duration there. The configured sound/notifications fire at
+phase boundaries while Obsidian is running. Table, card and calendar timer
+capsules include the phase and completed/target focus rounds. Very short calendar
+blocks omit the capsule to keep their title readable; use agenda or the table.
+
+Finishing the last target focus round checks the task once. It remains checked,
+including for recurring tasks, until you manually uncheck it or start/reset/add a
+fresh Pomodoro cycle. A manual uncheck after completion is not overridden by later
+ticks or reopening the app. Ordinary countdown timers do not check tasks. Pending
+completion writes retry when the task becomes available after startup.
+
+Note embeds respond to their pane width, not just the screen width. On phones,
+rows with three or more note capsules show roughly one capsule at a time; swipe
+horizontally, or drag with a mouse, to reveal the others without wrapping.
+
+## Scheduling timezone
+
+In **Settings → TaskPro → General**, enter an IANA zone such as `Asia/Tehran`
+and press **Apply**. Blank follows the device timezone. This controls scheduling
+“today”/current-time defaults, automatic plans, calendar current-time markers and
+plan reminders. Existing wall-time plans are interpreted in the selected zone;
+changing zones does not rewrite their note text. Nonexistent DST wall times do
+not schedule reminders; repeated times use the earlier occurrence.
+
+This setting does **not** obtain trusted time from a server or correct an
+incorrect device UTC clock. Enable operating-system automatic date/time for that.
+Countdown durations continue using elapsed device timestamps.
+
+### نکته‌های نسخهٔ ۱.۸
+
+با زدن روی کپسول تایمر، ساعت زنده با زمان باقی‌مانده و کنترل شروع، توقف و
+بازنشانی باز می‌شود. با پایان آخرین دور تمرکز، تسک یک‌بار تیک می‌خورد؛ حتی
+تسک تکرارشونده هم تیکش باقی می‌ماند. برداشتن دستی تیک با تیک بعدی تایمر
+برگردانده نمی‌شود. شروع یا بازنشانی چرخهٔ تازه، تسک را دوباره باز می‌کند.
+
+در موبایل، ردیف‌های دارای حداقل سه کپسول به‌جای شکستن خط، افقی اسکرول می‌شوند.
+در تنظیمات عمومی، تایم‌زون مثل `Asia/Tehran` را وارد کن و Apply را بزن.
+این تنظیم منطقهٔ زمانی برنامه‌ریزی و یادآورها را تغییر می‌دهد، نه ساعت اشتباه
+خود دستگاه؛ برای آن باید تنظیم خودکار ساعت سیستم فعال باشد.
+
 ## Verification
 
 - `npm run build`: TypeScript checks and production bundle.

@@ -1,3 +1,4 @@
+import { setTaskTimeZone } from './src/task-clock';
 import { TaskProNoteEmbed, embedStateKey } from './src/note-embed';
 // ── main.ts ───────────────────────────────────────────────────────────────
 // TaskPro - Main plugin entry point
@@ -258,7 +259,9 @@ export default class TaskProPlugin extends Plugin {
       setEntries: (entries) => {
         this.settings.taskTimers = entries;
       },
-      save: () => this.saveSettings(),
+      save: async () => { await this.saveSettings(); this.refreshBoards(); },
+      onPomodoroComplete: (path, id) => this.setPomodoroTaskStatus(path, id, '[x]'),
+      onPomodoroRestart: async (path, id) => { await this.setPomodoroTaskStatus(path, id, '[ ]'); },
       getLanguage: () => this.settings.badgeLanguage,
       getSettings: () => ({
         showTimerBadges: this.settings.showTimerBadges,
@@ -276,6 +279,7 @@ export default class TaskProPlugin extends Plugin {
 
     // Rebuild block ID cache from saved mappings (survives plugin reload)
     this.rebuildBlockIdCache();
+    this.app.workspace.onLayoutReady(() => { void this.timerService.reconcileCompletions(); });
 
     // After vault is ready: strip any inline block IDs from imported files (runs once)
     if (!this.settings.blockIdMigrationDone) {
@@ -376,6 +380,8 @@ export default class TaskProPlugin extends Plugin {
           app: this.app,
           targetElement,
           timer,
+          getTimer: () => this.timerService.get(resolvedFilePath, blockId),
+          subscribe: (listener) => this.timerService.subscribe(listener),
           language: language || this.settings.badgeLanguage,
           // Every action re-reads the timer: the menu can sit open while the
           // countdown keeps running, so the captured copy above goes stale.
@@ -910,9 +916,21 @@ export default class TaskProPlugin extends Plugin {
 
   }
 
+  private async setPomodoroTaskStatus(filePath: string, blockId: string, status: TaskStatus): Promise<boolean> {
+    const file = this.app.vault.getFileByPath(filePath);
+    if (!file) return false;
+    const lines = (await this.app.vault.cachedRead(file)).split('\n');
+    const lineNumber = lines.findIndex((line) => TASK_LINE_REGEX.test(line) &&
+      ((BLOCK_ID_TAIL_REGEX.exec(line)?.[1] ?? this.getStoredBlockId(filePath, line)) === blockId));
+    if (lineNumber < 0) return false;
+    await this.setTaskStatusFor({ filePath, blockId, lineContent: lines[lineNumber], lineNumber }, status);
+    return true;
+  }
+
   async loadSettings() {
     const saved = await this.loadData();
     this.settings = Object.assign({}, DEFAULT_SETTINGS, saved);
+    this.settings.timeZone = setTaskTimeZone(typeof saved?.timeZone === 'string' ? saved.timeZone : '');
 
     // Reminder settings are a nested object: merge them field by field so
     // newly added options get their defaults, and always work on a copy so the
@@ -1529,6 +1547,11 @@ export default class TaskProPlugin extends Plugin {
         },
       }),
       savePreferences: () => this.saveSettings(),
+      getTimer: (task) => {
+        const ref = this.boardTaskRef(task);
+        return this.timerService.get(task.filePath, ref.blockId);
+      },
+      getTimerBlockId: (task) => this.boardTaskRef(task).blockId,
       getProgress: (task) => {
         const ref = this.boardTaskRef(task);
         return this.getTaskProgress(task.filePath, ref.blockId, task.line);
@@ -3094,6 +3117,10 @@ export default class TaskProPlugin extends Plugin {
 
       const repeat = extractRepeat(line);
       if (!repeat) return null;
+      const timerId = BLOCK_ID_TAIL_REGEX.exec(line)?.[1] ?? this.getStoredBlockId(file.path, line);
+      const timer = this.timerService.get(file.path, timerId);
+      // A completed Pomodoro stays checked, even on a recurring task, until explicitly reopened.
+      if (timer?.pomodoro && timer.completedAt) return null;
 
       const deadline = extractDeadline(line);
       const schedule = extractSchedule(line);

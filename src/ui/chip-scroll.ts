@@ -21,6 +21,9 @@ const cleanups = new WeakMap<HTMLElement, () => void>();
 function updateFades(row: HTMLElement): void {
   const box = row.getBoundingClientRect();
   if (!box.width) return;
+  const visible = (Array.from(row.children) as HTMLElement[]).filter(child => getComputedStyle(child).display !== 'none' && child.getBoundingClientRect().width > 0);
+  row.classList.toggle('has-many-chips', visible.length >= 3);
+  if (visible[0]) row.style.setProperty('--taskpro-first-chip-width', `${Math.ceil(visible[0].getBoundingClientRect().width) + 4}px`);
   let left = Infinity;
   let right = -Infinity;
   for (const child of Array.from(row.children) as HTMLElement[]) {
@@ -127,6 +130,48 @@ export function makeChipRowScrollable(row: HTMLElement): void {
     schedule();
   };
 
+  // Mouse drag mirrors a phone's native horizontal swipe, without activating a chip.
+  let drag: { id: number; x: number; y: number; left: number; active: boolean } | null = null;
+  let suppressClickUntil = 0;
+  const onPointerDown = (event: PointerEvent) => {
+    if (event.pointerType !== 'mouse' || event.button !== 0 || row.scrollWidth <= row.clientWidth + 1) return;
+    target = null;
+    if (glide) cancelAnimationFrame(glide);
+    glide = 0;
+    drag = { id: event.pointerId, x: event.clientX, y: event.clientY, left: row.scrollLeft, active: false };
+  };
+  const onPointerMove = (event: PointerEvent) => {
+    if (!drag || drag.id !== event.pointerId) return;
+    const dx = event.clientX - drag.x, dy = event.clientY - drag.y;
+    if (!drag.active) {
+      if (Math.abs(dy) > 6 && Math.abs(dy) > Math.abs(dx)) { drag = null; return; }
+      if (Math.abs(dx) < 6) return;
+      drag.active = true;
+      row.setPointerCapture(event.pointerId);
+      row.classList.add('is-drag-scrolling');
+    }
+    event.preventDefault();
+    row.scrollLeft = drag.left - dx;
+    schedule();
+  };
+  const onPointerEnd = (event: PointerEvent) => {
+    if (!drag || drag.id !== event.pointerId) return;
+    if (drag.active) {
+      suppressClickUntil = performance.now() + 250;
+      if (row.hasPointerCapture(event.pointerId)) row.releasePointerCapture(event.pointerId);
+    }
+    drag = null;
+    row.classList.remove('is-drag-scrolling');
+  };
+  const onClick = (event: MouseEvent) => {
+    if (performance.now() < suppressClickUntil) { event.preventDefault(); event.stopImmediatePropagation(); }
+  };
+  row.addEventListener('pointerdown', onPointerDown);
+  row.addEventListener('pointermove', onPointerMove);
+  row.addEventListener('pointerup', onPointerEnd);
+  row.addEventListener('pointercancel', onPointerEnd);
+  row.addEventListener('click', onClick, true);
+
   row.addEventListener('scroll', schedule, { passive: true });
   row.addEventListener('wheel', onWheel, { passive: false });
   row.addEventListener('focusin', onFocus);
@@ -142,6 +187,11 @@ export function makeChipRowScrollable(row: HTMLElement): void {
     row.removeEventListener('scroll', schedule);
     row.removeEventListener('wheel', onWheel);
     row.removeEventListener('focusin', onFocus);
+    row.removeEventListener('pointerdown', onPointerDown);
+    row.removeEventListener('pointermove', onPointerMove);
+    row.removeEventListener('pointerup', onPointerEnd);
+    row.removeEventListener('pointercancel', onPointerEnd);
+    row.removeEventListener('click', onClick, true);
     resize?.disconnect();
     mutations?.disconnect();
   });

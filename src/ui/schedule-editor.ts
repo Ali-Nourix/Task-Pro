@@ -3,6 +3,7 @@
 // palette or the task menu. The calendar does the same by dragging.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { getTaskTimeZone, taskClockParts } from '../task-clock';
 import { Notice } from 'obsidian';
 import { CalendarSystem, Language, TaskSchedule, TimeFormat } from '../types';
 import { formatClock, formatDay, isDayKey, parseClock, parseTypedClock, toClock, todayKey } from '../calendar/calendar-dates';
@@ -82,6 +83,7 @@ export function openSchedulePanel(options: {
       onClose: () => finish(undefined),
     });
     panel.addClass('taskpro-schedule-panel');
+    if (getTaskTimeZone()) body.createDiv({ cls: 'taskpro-schedule-zone', text: getTaskTimeZone() });
 
     const dateField = body.createDiv({ cls: 'taskpro-panel__field' });
     dateField.createEl('label', { text: labels.date, cls: 'taskpro-panel__label' });
@@ -115,7 +117,7 @@ export function openSchedulePanel(options: {
       return input;
     };
     const duration = options.defaultDuration ?? 60;
-    const startMinutes = parseClock(current?.start) ?? 9 * 60;
+    const startMinutes = parseClock(current?.start) ?? Math.min(23 * 60, Math.ceil(taskClockParts().minutes / 15) * 15);
     const startInput = timeField(labels.from, startMinutes);
     const endInput = timeField(labels.to, parseClock(current?.end) ?? Math.min(24 * 60, startMinutes + duration));
     const syncTimes = () => {
