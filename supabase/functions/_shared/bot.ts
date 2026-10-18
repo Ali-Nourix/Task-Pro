@@ -36,10 +36,11 @@ export interface BotDeps {
   now: () => Date;
   /** The assistant (Cloudflare Workers AI), when its keys are set. */
   ai?: Ai;
+  miniAppUrl?: string;
 }
 
 const COMMANDS: Record<string, string> = {
-  start: 'start', menu: 'start', منو: 'start',
+  start: 'start', app: 'start', menu: 'start', منو: 'start',
   help: 'help', راهنما: 'help',
   today: 'today', امروز: 'today',
   list: 'list', لیست: 'list',
@@ -212,6 +213,7 @@ async function runCommand(command: string, args: string, ctx: Ctx): Promise<void
   switch (command) {
     case 'start':
       await tg.setCommands(chatId, w.commands);
+      if (ctx.deps.miniAppUrl) await tg.setMiniAppMenu?.(chatId, ctx.deps.miniAppUrl, owner.language === 'fa' ? 'تسک‌ها' : 'Tasks').catch(() => console.error('miniapp menu setup failed'));
       return sendView(ctx, await homeView(ctx));
     case 'help':
       return sendView(ctx, helpView(ctx));
@@ -1543,6 +1545,11 @@ async function undoAssistant(numbers: string, ctx: Ctx): Promise<void> {
   }
   ctx.toast = w.deletedToast;
   await present(ctx, { text: w.ai.undone(count), buttons: [[{ text: w.buttons.all, data: 'ls:a:0' }, { text: w.buttons.menu, data: 'home' }]] });
+}
+
+/** Authenticated Mini App uses the same effects as the bot/assistant, not a second queue. */
+export function miniAppEffects(deps: BotDeps, owner: OwnerRow) {
+  return { ...effectsFor(ctxFor(deps, owner, owner.chat_id)), remove: (task: TaskRow) => removeTask(task, deps) };
 }
 
 // ── Changing a task ────────────────────────────────────────────────────────

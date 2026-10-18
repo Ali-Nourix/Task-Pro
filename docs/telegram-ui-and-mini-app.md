@@ -23,32 +23,25 @@ plugin ZIP alone does not update the bot. Use the repository's existing update
 script after checking its linked project, or the documented Supabase deployment
 workflow. Keep the existing bot secret, webhook and credentials unchanged.
 
-This UI-only update adds no database columns, tables, migrations or new secrets.
-An older installation may still need migrations from earlier versions. The
-current production deployment has not been verified, so no claim is made that
-its existing functions or schema are up to date. Do not deploy to an unrelated
-project merely because it appears in the connected account.
+The bot UI polish adds no database columns or new secrets. The companion Mini App
+adds an authenticated Edge Function and a separately hosted frontend; see
+[Mini App setup](../miniapp/README.md) for the current implementation, security
+boundary, limitations and activation steps. Never deploy to an unrelated project
+merely because it appears in the connected account.
 
-## Optional next phase: Telegram Mini App
+## Deployment checkpoint
 
-A Mini App can coexist with the conversational bot; it need not replace commands,
-reminders or notifications. It is **not implemented in this update**.
+The confirmed production bot project is **Obsidian Reminder**. Its existing
+schema was inspected; no migration was applied. The polished `telegram` function
+is active at version 19, and `miniapp` backend version 1 is deployed with the
+frontend URL deliberately unset. `sync`, `tick`, existing webhook configuration
+and secrets were not changed.
 
-A scoped first version could provide Today / All tasks, task details and editing,
-launched via Telegram's menu button. It requires an HTTPS-hosted frontend and a
-backend authorization path:
-
-1. Pass `Telegram.WebApp.initData` to the server. Validate the official signature
-   with the bot token and reject expired `auth_date` values.
-2. Resolve the authenticated Telegram user to the existing TaskPro owner; enforce
-   ownership on every read and write. Do not trust `initDataUnsafe` for auth.
-3. Keep the bot token and Supabase service-role key only on the backend. Reuse
-   existing task validation and synchronization rules rather than creating a
-   separate, conflicting task store.
-4. Verify RTL/LTR, mobile layout, loading/offline/error states and every existing
-   editing operation before enabling the menu button in production.
-
-Official specification: https://core.telegram.org/bots/webapps
+Public smoke checks: health 200 with `ready:false`; unsigned API requests 401;
+untrusted browser origin 403; unsigned Telegram webhook requests 403.
+Authenticated Mini App production testing remains pending a working HTTPS host
+and real Telegram launch. Cloudflare hosting was blocked by a connection that
+requires re-authentication. The Mini App menu is **not active yet**.
 
 ## Verification
 

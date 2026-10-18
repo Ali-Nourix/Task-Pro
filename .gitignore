@@ -23,3 +23,6 @@ data.json
 supabase/.temp/
 supabase/.branches/
 supabase/.env*
+
+# Generated public Mini App build
+miniapp/dist/

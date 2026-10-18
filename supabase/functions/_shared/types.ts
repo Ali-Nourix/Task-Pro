@@ -228,6 +228,8 @@ export interface Telegram {
   answer(callbackId: string, text?: string): Promise<void>;
   /** The list of commands in the chat's menu. */
   setCommands(chatId: number, commands: BotCommand[]): Promise<void>;
+  /** Owner-scoped launch button; other bot commands remain available. */
+  setMiniAppMenu?(chatId: number, url: string, text: string): Promise<void>;
   /** Shows «typing…» in the chat while the assistant thinks. */
   typing?(chatId: number): Promise<void>;
   /**
