@@ -31,17 +31,29 @@ merely because it appears in the connected account.
 
 ## Deployment checkpoint
 
-The confirmed production bot project is **Obsidian Reminder**. Its existing
-schema was inspected; no migration was applied. The polished `telegram` function
-is active at version 19, and `miniapp` backend version 1 is deployed with the
-frontend URL deliberately unset. `sync`, `tick`, existing webhook configuration
-and secrets were not changed.
+The confirmed production bot project is **Obsidian Reminder**. Its schema was
+inspected; no migration was applied. `telegram` is ACTIVE at version 20 and
+`miniapp` at version 2. Both use the real frontend URL. `sync`, `tick`, webhook
+configuration and existing secrets were not changed.
 
-Public smoke checks: health 200 with `ready:false`; unsigned API requests 401;
-untrusted browser origin 403; unsigned Telegram webhook requests 403.
-Authenticated Mini App production testing remains pending a working HTTPS host
-and real Telegram launch. Cloudflare hosting was blocked by a connection that
-requires re-authentication. The Mini App menu is **not active yet**.
+Frontend: https://taskpro-miniapp.alinorizadeh1384.workers.dev
+
+Cloudflare connection re-authentication is resolved. `taskpro-miniapp` is deployed
+as an ES-module Worker with workers.dev enabled and preview URLs disabled. Its
+public HTML was fetched successfully with a browser User-Agent and matched the
+locally tested build byte-for-byte. Python's default User-Agent received a
+Cloudflare 1010 rejection; ordinary browser requests returned 200.
+
+Live smoke checks: frontend 200 with security headers; API health 200 with
+`ready:true`; approved-origin preflight 204; unsigned approved-origin API request
+401 with correct CORS; unrelated origin 403; unsigned webhook 403. No production
+task data was changed by these tests.
+
+**Owner launch remains required:** send `/app` or `/start` in the bot's private
+chat to configure the owner-specific menu button. Then open it and check a real
+authenticated task list and a reversible edit. No bot token was retrieved and no
+signed production user session was fabricated, so authenticated Telegram
+end-to-end testing is not claimed yet.
 
 ## Verification
 

@@ -59,9 +59,14 @@ multi-tenant SaaS or a public bot for arbitrary Telegram users.
    Open the button and verify real authenticated reads and one reversible edit.
    Never extract the production bot token just to manufacture test initData.
 
-The default `MINI_APP_URL` is empty deliberately: browser API origins are denied,
-health reports `ready:false`, and no menu button is configured until a real host
-is available. An API deployment alone does **not** mean the Mini App is live.
+Current deployment: https://taskpro-miniapp.alinorizadeh1384.workers.dev
+
+`MINI_APP_URL` is set to this public frontend, and API health reports `ready:true`.
+The owner still needs to send `/app` or `/start` once to configure the Telegram
+menu, then perform the real authenticated launch check. For a fresh deployment,
+do not copy an unrelated installation's URL. Clearing `MINI_APP_URL` intentionally
+denies browser API origins and makes health report `ready:false`; it does not
+revoke an already configured Telegram menu button.
 
 Official Telegram specification: https://core.telegram.org/bots/webapps
 
