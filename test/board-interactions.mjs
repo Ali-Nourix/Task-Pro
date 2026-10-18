@@ -219,9 +219,9 @@ try {
   await page.close();
 
   // ── Table columns: the plan's hours, and moving, resizing, hiding columns ─
-  page = await open('?scope=vault&group=none', 1700);
+  page = await open('?scope=vault&group=none', 2100);
   const headers = () => page.$$eval('thead th[data-column]', (els) => els.map((el) => el.dataset.column));
-  eq(await headers(page), ['status', 'tags', 'priority', 'deadline', 'plan', 'waiting', 'progress', 'note'], 'default columns, repeat hidden');
+  eq(await headers(page), ['status', 'tags', 'priority', 'deadline', 'plan', 'waiting', 'progress', 'timer', 'note'], 'default columns, repeat hidden');
   const planCell = row(page, 'Send the quote to Acme').locator('.taskpro-table__plan');
   eq(await planCell.locator('.taskpro-chip__label').textContent(), 'Today', 'the plan cell names the day');
   eq(await planCell.locator('.taskpro-board__time').textContent(), '14:00 – 15:30', 'and the hours, from when to when');
@@ -247,7 +247,7 @@ try {
   const noteHead = await center('th[data-column="note"]');
   const status = await center('th[data-column="status"]');
   await drag(noteHead, { x: status.box.x + 6, y: status.y });
-  eq(await headers(page), ['note', 'status', 'tags', 'priority', 'deadline', 'plan', 'waiting', 'progress'], 'a dragged header moves its column');
+  eq(await headers(page), ['note', 'status', 'tags', 'priority', 'deadline', 'plan', 'waiting', 'progress', 'timer'], 'a dragged header moves its column');
   eq((await page.$$eval('tbody .taskpro-table__row:first-child td[data-column]', (els) => els.map((el) => el.dataset.column)))[0], 'note', 'and its cells move with it');
   eq(await page.locator('th.is-sorted').count(), 0, 'the drop is not a click that sorts');
 
@@ -282,7 +282,7 @@ try {
   eq((await items()).slice(0, 4), ['Note', 'Status', 'Progress', 'Tags'], 'a property dragged in the list');
   eq((await headers(page)).slice(0, 4), ['note', 'status', 'progress', 'tags'], 'and in the table');
   await page.locator('.taskpro-menu__item', { hasText: 'Reset to default' }).click();
-  eq(await headers(page), ['status', 'tags', 'priority', 'deadline', 'plan', 'waiting', 'progress', 'note'], 'reset to the default columns');
+  eq(await headers(page), ['status', 'tags', 'priority', 'deadline', 'plan', 'waiting', 'progress', 'timer', 'note'], 'reset to the default columns');
   await page.keyboard.press('Escape');
 
   // A header moves with Alt and the arrow keys too.
@@ -293,7 +293,7 @@ try {
   await page.close();
 
   // Persian: the far edge is on the left, so dragging it left widens the column.
-  page = await open('?scope=vault&group=none&lang=fa', 1700);
+  page = await open('?scope=vault&group=none&lang=fa', 2100);
   const faEdge = await page.locator('th[data-column="tags"] .taskpro-table__resize').boundingBox();
   await drag({ x: faEdge.x + faEdge.width / 2, y: faEdge.y + 10 }, { x: faEdge.x + faEdge.width / 2 - 40, y: faEdge.y + 10 });
   eq(await page.$eval('col[data-column="tags"]', (el) => el.style.width), '220px', 'RTL resize follows the edge');

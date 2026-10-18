@@ -1,5 +1,5 @@
 import { TaskProNoteEmbed } from '../../src/note-embed';
-import { showTimerEditor } from '../../src/timer-popover';
+import { TaskTimerPopover, showTimerEditor } from '../../src/timer-popover';
 import { createTimerChip } from '../../src/ui/chips';
 import { newPomodoro } from '../../src/pomodoro';
 import { TaskTimerService } from '../../src/timer-service';
@@ -320,7 +320,11 @@ const dayNoteTarget = (day: string, system: CalendarSystem) => {
 
 const noop = async () => undefined;
 const EMPTY_NOTES = ['Inbox.md', 'Projects/Someday.md'];
+let clockTask: BoardTask | undefined;
+let clockTimer: TaskTimer | undefined;
 const host = {
+  getTimer: (task: BoardTask) => params.has('clock') && task.id === clockTask?.id ? clockTimer : undefined,
+  getTimerBlockId: (task: BoardTask) => task.id === clockTask?.id ? 'demo' : task.blockId,
   app: {},
   store,
   getSettings: () => settings,
@@ -486,17 +490,32 @@ async function main(): Promise<void> {
       children.push(child);
     }
     let timer: TaskTimer = { enabled: true, durationSeconds: 1500, elapsedSeconds: 0, runningSince: 0, label: 'Write', pomodoro: newPomodoro() };
-    let entries: TaskTimerEntry[] = [{ filePath: 'Inbox.md', blockId: 'demo', timer }];
+    clockTask = tasks.find(task => task.schedule?.date === inDays(0) && task.schedule?.start);
+    clockTimer = timer;
+    const timerPath = params.has('clock') ? clockTask!.filePath : 'Inbox.md';
+    let entries: TaskTimerEntry[] = [{ filePath: timerPath, blockId: 'demo', timer }];
     const service = new TaskTimerService({
-      getEntries: () => entries, setEntries: (next) => { entries = next; timer = next[0]?.timer; },
-      save: async () => {}, getLanguage: () => language,
+      getEntries: () => entries, setEntries: (next) => { entries = next; timer = next[0]?.timer; clockTimer = timer; },
+      save: async () => { if (params.has('clock')) children.forEach(child => child.refresh()); }, getLanguage: () => language,
       getSettings: () => ({ showTimerBadges: true, timerSystemNotification: false, timerSound: false, timerInStatusBar: false }),
       registerInterval: () => {},
     });
     const chip = root.createDiv();
-    chip.appendChild(createTimerChip({ timer, filePath: 'Inbox.md', lineContent: '- [ ] Write', blockId: 'demo', language }));
+    chip.appendChild(createTimerChip({ timer, filePath: timerPath, lineContent: '- [ ] Write', blockId: 'demo', language }));
     root.createEl('button', { text: 'Configure timer', attr: { id: 'configure-timer' } }).addEventListener('click', () => {
-      showTimerEditor({ language, timer, onSave: (next) => { void service.set('Inbox.md', 'demo', next); } });
+      showTimerEditor({ language, timer, onSave: (next) => { void service.set(timerPath, 'demo', next); } });
+    });
+    if (params.has('clock')) document.body.addEventListener('taskpro-timer-click', event => {
+      const detail = (event as CustomEvent).detail;
+      const read = () => service.get(timerPath, 'demo');
+      new TaskTimerPopover({ app: host.app as never, targetElement: detail.targetElement, timer: read()!, language,
+        getTimer: read, subscribe: listener => service.subscribe(listener),
+        onStart: () => service.start(timerPath, 'demo', read()!),
+        onPause: () => service.pause(timerPath, 'demo', read()!),
+        onReset: () => service.reset(timerPath, 'demo', read()!),
+        onExtend: minutes => service.extend(timerPath, 'demo', read()!, minutes),
+        onChange: next => service.set(timerPath, 'demo', next),
+      }).show();
     });
     (window as unknown as { embedTest: unknown }).embedTest = {
       children, service, settings, paintStats,
