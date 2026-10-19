@@ -7,7 +7,7 @@ There is no second task database.
 ## Implemented
 
 - Persian/English, RTL/LTR, bundled Vazirmatn font, light/dark Telegram themes.
-- Home: interactive week strip, upcoming scheduled task, compact daily list.
+- Home: real Today/Open/Done counts, daily completion progress, interactive week strip and actionable tasks in the first viewport. Future planned tasks appear below the list; today’s task is not repeated as an upcoming card.
 - Tasks: all open tasks, Today/Overdue filters and title/tag search.
 - Calendar: a complete Jalali/Gregorian month with every status (open, in progress, done, not done), multi-select status filters, Select all/Clear selection, undated tasks and a selected-day agenda. Counts and markers use the same filtered records. Only display filter preferences persist locally. Home keeps its compact week strip and active-task lists.
 - Create normal tasks by default; an explicit subtask toggle reveals the custom parent picker. Complete with quick Undo, change status/title/priority,
@@ -99,12 +99,19 @@ protection against unauthorized access and accidental deletes.
 ## Design provenance
 
 Restyled from the user's organizer/calendar references using the `minimalist-ui`
-and `redesign-existing-projects` guides from `Leonxlnx/taste-skill`: warm neutral
-canvas, quiet date navigation, soft semantic surfaces, compact task cards and a
-bottom dock. Reference avatars, chat messages, notes and alarms are not invented
+and `redesign-existing-projects` guides from `Leonxlnx/taste-skill`. The latest TODO-focused redesign follows the user’s peach/teal and pastel task-app references: cool quiet canvas, peach daily overview, teal actions, consistent task records and semantic status colors. It replaces the earlier rejected olive/neutral direction. A compact calendar gives room to the day agenda; the bottom navigation has reserved layout space. Reference avatars, chat messages, notes and alarms are not invented
 as features or fake user data. Calendar includes a month grid and day agenda, not a drag-and-drop weekly scheduler. Vazirmatn is distributed under the SIL Open Font License;
 see `assets/OFL.txt` and the notice embedded in `assets/font.css`.
 
 ## Latest UI audit
 
 Used 0design/unslop-skill’s local detector and requirement-fidelity protocol; see `plans/003-miniapp-controls-calendar.md` and `plans/004-calendar-statuses.md`. Remote UNSLOP canon was not connected, so no canon-based pass or full project audit is claimed. Token declarations were distinguished from real token bypasses; screenshot fixes live in the shared controls, not generated output. Behavioral checks cover monthly calendar boundaries including Jalali leap years, parent controls, keyboard selection, AI failure/unsafe text, and one-request mutation snapshots.
+
+## TODO product redesign
+
+- Shared CSS was consolidated instead of layering more overrides. Persian/English, Telegram/system light and dark modes and Vazirmatn remain supported.
+- Calendar shows all four statuses and undated tasks. Status filters float without shifting the month; Escape/outside click dismiss them. Dates support arrow-key navigation. Agenda time appears once, as a start/end rail.
+- Creation can send title, date/time range, priority, tags and parent in one existing API request. Priority/tags/subtasks use progressive disclosure. Invalid or incomplete time ranges show inline validation without sending a request. A calendar-day creation preselects that day.
+- Long forms scroll inside a separate body, leaving the title/close control visible without covering fields. Custom choice menus scroll fully into view.
+- AI stays read-only; authentication, task sync and backend schemas are unchanged. This frontend-only update requires no plugin ZIP or Supabase redeploy.
+- Verification: build and 22 regression suites (2,328 checks); 240 browser checks, including creation payloads, time validation, first-viewport task visibility, keyboard filters, long forms, dense six-week calendars and unsafe text. QA uses fixture data, not production owner sessions.
