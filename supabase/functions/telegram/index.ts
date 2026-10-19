@@ -1,3 +1,4 @@
+import { MINI_APP_URL } from '../_shared/miniapp-config.ts';
 // The Telegram webhook: every message and button press the bot gets arrives here.
 
 import { handleUpdate } from '../_shared/bot.ts';
@@ -46,6 +47,7 @@ Deno.serve(async (request) => {
       store: supabaseStore(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_SECRET_KEY')!),
       tg: telegramApi(Deno.env.get('TELEGRAM_BOT_TOKEN')!, { thinking: thinkingStyle() }),
       pairingCode: Deno.env.get('PAIRING_CODE') ?? '',
+      miniAppUrl: MINI_APP_URL || undefined,
       allowedUserId: allowedUser(),
       now: () => new Date(),
       ai: assistant(),

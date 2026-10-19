@@ -11,3 +11,7 @@ verify_jwt = false
 
 [functions.tick]
 verify_jwt = false
+
+# Signed Telegram initData is checked by the function before any data access.
+[functions.miniapp]
+verify_jwt = false

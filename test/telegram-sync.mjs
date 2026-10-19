@@ -66,6 +66,20 @@ eq(keyForNewTask(two, 'B.md', 'Same'), 'B.md|Same|0', 'in another note, from the
 }
 
 const defaults = { enabled: true, leadMinutes: 10 };
+eq(buildSnapshot(two,defaults,{allStatuses:true}).map(t=>t.status),['open','open','open','done','doing'],'full snapshot includes completed tasks');
+eq(buildSnapshot(tasksOf('F.md','- [!] Failed @deadline(2026-10-18)'),defaults,{allStatuses:true})[0].status,'failed','full snapshot includes failed tasks');
+// Legacy uploads cannot erase closed history; explicit all-status uploads remain authoritative.
+{
+ const store=new mod.MemoryStore(),now=()=>new Date('2026-10-18T07:00:00Z');
+ const closed=buildSnapshot(tasksOf('H.md','- [x] Completed @schedule(2026-10-18)\n- [!] Unfinished'),defaults,{allStatuses:true});
+ await mod.handleSync({snapshot:closed,snapshotScope:'all'},{store,now});
+ eq((await store.allTasks()).length,2,'full upload stores closed rows');
+ await mod.handleSync({snapshot:[]},{store,now});
+ eq((await store.allTasks()).length,2,'legacy open-only upload preserves closed rows');
+ await mod.handleSync({snapshot:closed.slice(0,1),snapshotScope:'all'},{store,now});
+ eq((await store.allTasks()).map(t=>t.status),['done'],'authoritative upload removes genuinely deleted closed task');
+}
+
 const at = (line) => reminderAt(tasksOf('A.md', line)[0], defaults);
 const local = (y, m, d, h, mi) => new Date(y, m - 1, d, h, mi).toISOString();
 eq(at('- [ ] x @schedule(2026-10-05 09:30-10:00)'), local(2026, 10, 5, 9, 20), 'a plan with a time reminds ten minutes before, by the setting');
@@ -309,7 +323,9 @@ eq([syncEndpoint('https://abc.supabase.co'), syncEndpoint('https://abc.supabase.
   const vet = store.tasks.find((t) => t.title === 'Call the vet');
   eq([vet.key, vet.pending, vet.n], ['Inbox.md|Call the vet|0', false, 3], 'the bot has the new task under its note’s key, and its number did not change');
   eq((await store.pendingCommands()).length, 0, 'nothing is left waiting');
-  eq(store.tasks.some((t) => t.title === 'Report'), false, 'a task ticked off is no longer open');
+  eq(store.tasks.find((t) => t.title === 'Report').status, 'done', 'completed task stays available for calendar history');
+  eq((await store.openTasks()).some(t=>t.title==='Report'),false,'bot open lists exclude completed history');
+  eq(posts[0].body.snapshotScope,'all','plugin opts into authoritative all-status protocol');
 
   // A title changed in Telegram renames the task in the notes; the bot keeps its number.
   await handleUpdate({ message: { chat: { id: 7, type: 'private' }, text: 'Existing renamed', message_id: 2, reply_to_message: { text: '✏️ عنوان تازه برای #۱\n«Existing»' } } }, { store, tg, pairingCode: 'k', now: () => clock.now });

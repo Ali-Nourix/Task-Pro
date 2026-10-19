@@ -23,11 +23,13 @@ export class OverlayStore implements Store {
 
   /** The real tasks with the changes laid over them, then the new ones. */
   private async all(): Promise<TaskRow[]> {
-    const real = (await this.base.openTasks()).filter((task) => !this.removed.has(task.key)).map((task) => this.changed.get(task.key) ?? task);
+    const real = (await this.base.allTasks()).filter((task) => !this.removed.has(task.key)).map((task) => this.changed.get(task.key) ?? task);
     const known = new Set(real.map((task) => task.key));
     const added = [...this.changed.values()].filter((task) => !known.has(task.key) && !this.removed.has(task.key));
     return [...real, ...added];
   }
+
+  async allTasks(): Promise<TaskRow[]> { return (await this.all()).map(task=>({...task})); }
 
   async openTasks(): Promise<TaskRow[]> {
     return (await this.all()).filter((task) => isOpen(task.status)).map((task) => ({ ...task }));

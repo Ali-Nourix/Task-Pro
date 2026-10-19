@@ -48,7 +48,7 @@ echo   Open it in Telegram and send /start to see the new menu.
 goto :end
 
 :deploy_all
-for %%F in (telegram sync tick) do (
+for %%F in (telegram sync tick miniapp) do (
   echo   Deploying %%F ...
   call npx --yes supabase@latest functions deploy %%F --project-ref %REF% --no-verify-jwt --use-api
   if errorlevel 1 set "FAILED=1"
