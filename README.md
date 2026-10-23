@@ -1,3 +1,7 @@
+![TaskPro — project cover](docs/images/readme-cover-20261023.svg)
+
+<sub>AI-generated editorial cover; not an application screenshot.</sub>
+
 <div align="center">
 
 # TaskPro
@@ -29,6 +33,16 @@ per-task capabilities you add only where you want them.
 <sub>Rendered from the plugin's own code and `styles.css` over Obsidian's default
 theme variables (see <a href="#previews">Development → Previews</a>), not
 screenshots of a live vault.</sub>
+
+## Start here
+
+| Your goal | Guide |
+| --- | --- |
+| Install and configure | [Installation](#installation) · [Setup](#setup) |
+| Choose a workflow | [Task board](#task-board) · [Calendar](#calendar) · [Task syntax](#task-syntax) |
+| Build and protect your notes | [Development](#development) · [Privacy before sharing](#privacy-before-sharing) |
+
+Tasks live in your notes; review backup and sharing guidance before connecting external services.
 
 ## Contents
 
@@ -308,7 +322,7 @@ theme, not harness renders.</sub>
 The plugin sizes the window and dims what is behind it. The blur belongs to the
 theme: while the float is open the plugin puts `taskpro-board-is-floating` on
 `<body>` and `taskpro-board-float` on the modal container, and a theme blurs
-from those — [Bookcloth](https://github.com/Ali-Nourix/Obsidian-Theme) does, and
+from those — [Bookcloth](https://github.com/Ali-Nourix/Bookcloth) does, and
 exposes the strength as a Style Settings slider. A theme that blurs should put
 `filter: blur()` on `body > .app-container` (and `.titlebar`) rather than
 `backdrop-filter` on the modal background: measured in Obsidian with the board
