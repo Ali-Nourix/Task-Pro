@@ -11,6 +11,7 @@ globalThis.window = globalThis;
 const build = await esbuild.build({
   stdin: {
     contents: `
+      export { isWithinTargetFolder } from "../src/path-utils";
       export { parseBoardTasks } from "../src/board/task-store";
       export { keyTasks, keyForNewTask, reminderAt, buildSnapshot, buildTagCatalog } from "../src/telegram/snapshot";
       export { applyCommands, lineForNewTask } from "../src/telegram/apply";
@@ -405,6 +406,88 @@ eq([syncEndpoint('https://abc.supabase.co'), syncEndpoint('https://abc.supabase.
   sync.tasksChanged();
   await sleep(200);
   eq(posts.length, 3, 'and once stopped, a change sends nothing');
+}
+
+// ── Changing the target folder (including an empty folder) ──────────────────
+{
+  const { handleSync, MemoryStore, isWithinTargetFolder } = mod;
+  eq(isWithinTargetFolder('Work/Day.md', 'Work'), true, 'the folder itself is included');
+  eq(isWithinTargetFolder('Work/Sub/Day.md', ' /Work/ '), true, 'nested notes and normalized folder paths are included');
+  eq(isWithinTargetFolder('Work-old/Day.md', 'Work'), false, 'a sibling with the same prefix is not included');
+  eq(isWithinTargetFolder('Daily/Day.md', 'Work'), false, 'daily notes do not bypass an explicit target folder');
+  eq(isWithinTargetFolder('Daily/Day.md', ''), true, 'no restriction still means the entire vault');
+  const n = notes({ 'Old/Day.md': '- [ ] Old task', 'New/Day.md': '- [ ] New task', 'New-old/Day.md': '- [ ] Prefix sibling', 'Daily/Day.md': '- [ ] Daily task' });
+  const store = new MemoryStore();
+  let folder = 'Old';
+  const posts = [];
+  const settings = { enabled: true, url: 'https://one.supabase.co', token: 'secret', intervalMinutes: 60 };
+  const scoped = () => n.host.tasks().filter((t) => isWithinTargetFolder(t.filePath, folder));
+  let pause = null;
+  const sync = new TelegramSync({
+    settings: () => settings, scope: () => folder, tasks: scoped,
+    defaults: () => defaults, apply: { ...n.host, tasks: scoped },
+    post: async (_url, _token, body) => {
+      posts.push(body);
+      const reply = await handleSync(body, { store, now: () => new Date('2026-10-27T12:00:00Z') });
+      if (pause) await pause;
+      return { status: 200, json: reply };
+    },
+    save: async () => {}, report: () => {}, registerInterval: () => {}, now: () => Date.now(),
+  });
+  await sync.syncNow();
+  eq(store.tasks.map((t) => t.title), ['Old task'], 'the first folder reaches the real server sync logic');
+  await sync.syncNow();
+  eq(posts.at(-1).snapshot, undefined, 'an unchanged upload can still be skipped');
+  folder = 'New';
+  await sync.syncNow();
+  eq(store.tasks.map((t) => t.title), ['New task'], 'switching folders replaces stale server tasks, without daily notes or prefix siblings');
+  eq(n.text('Old/Day.md'), '- [ ] Old task', 'removing a task from the bot does not delete its note');
+  folder = 'Empty';
+  await sync.syncNow();
+  eq([posts.at(-1).snapshot, store.tasks], [[], []], 'an explicitly empty folder clears the server snapshot');
+  folder = 'Another empty';
+  await sync.syncNow();
+  eq(posts.at(-1).snapshot, [], 'a different empty scope still forces a complete snapshot');
+  settings.url = 'https://two.supabase.co';
+  await sync.syncNow();
+  eq(posts.at(-1).snapshot, [], 'a different project gets a full snapshot even when tasks are identical');
+  folder = '';
+  await sync.syncNow();
+  eq(store.tasks.length, 4, 'removing the restriction uploads the whole vault');
+
+  // A response for an old scope must not execute its queued commands in a new one.
+  folder = 'Old';
+  await store.addCommand('status', { key: 'Old/Day.md|Old task|0', status: 'done' });
+  let release;
+  pause = new Promise((resolve) => { release = resolve; });
+  const running = sync.syncNow();
+  while (posts.at(-1).snapshot?.[0]?.title !== 'Old task') await new Promise((r) => setTimeout(r, 0));
+  folder = 'New';
+  pause = null;
+  release();
+  const outcome = await running;
+  eq(outcome.ok, false, 'a reply for a previous folder is not reported as synchronized');
+  eq(n.text('Old/Day.md'), '- [ ] Old task', 'a late reply cannot change the previous folder’s notes');
+  eq((await store.pendingCommands()).length, 1, 'skipped commands are not falsely acknowledged');
+  await sync.syncNow();
+  eq(store.tasks.map((t) => t.title), ['New task'], 'the following sync settles the current folder');
+}
+
+// ── A Telegram task cannot be silently written outside the selected scope ───
+{
+  const n = notes({ 'Inbox.md': '', 'Work/Inbox.md': '' });
+  const restricted = { ...n.host, canWritePath: (path) => path.startsWith('Work/') };
+  const [inbox] = await applyCommands([{ id: 'scope-inbox', kind: 'add', payload: { key: 'tg:outside', title: 'Keep me' } }], restricted);
+  eq(inbox.error, 'the inbox note is outside the target folder; update the inbox setting', 'an out-of-scope inbox is rejected with an actionable reason');
+  eq(n.text('Inbox.md'), '', 'the rejected inbox write does not touch the note');
+  let written = false;
+  const [daily] = await applyCommands([{ id: 'scope-day', kind: 'add', payload: { key: 'tg:day', title: 'Daily', day: '2026-10-27' } }], {
+    ...restricted, dayTarget: () => 'Daily/2026-10-27.md', addTaskOnDay: async () => { written = true; return 'Daily/2026-10-27.md'; },
+  });
+  eq(daily.error, 'the daily note is outside the target folder; update Calendar settings', 'an out-of-scope daily target is rejected rather than silently disappearing after sync');
+  eq(written, false, 'no out-of-scope daily note was created');
+  const [inside] = await applyCommands([{ id: 'scope-ok', kind: 'add', payload: { key: 'tg:inside', title: 'In scope' } }], { ...restricted, inboxPath: () => 'Work/Inbox.md' });
+  eq([inside.error ?? null, n.text('Work/Inbox.md')], [null, '\n- [ ] In scope'], 'an in-scope inbox continues to work');
 }
 
 console.log(`TELEGRAM_SYNC_OK (${checked} checks)`);

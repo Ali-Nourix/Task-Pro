@@ -405,6 +405,76 @@ eq([note('Move/Bulk1.md'), note('Move/Bulk2.md')], bulkBefore, 'and its Undo put
 eq(await host.deleteTasks([]), 0, 'nothing to delete, nothing said');
 eq(notices.length, noticesBefore + 1, 'no notice for it');
 
+// ── Folder changes notify Telegram even without any note edits ──────────────
+{
+  const before = plugin.settings.targetFolder;
+  const changed = plugin.telegramSync.tasksChanged.bind(plugin.telegramSync);
+  let notified = 0;
+  plugin.telegramSync.tasksChanged = () => { notified++; };
+  plugin.settings.targetFolder = 'Life';
+  await plugin.saveSettings();
+  eq(notified, 1, 'saving a new folder schedules Telegram sync without editing a note');
+  eq(plugin.syncableTasks().every((task) => task.filePath.startsWith('Life/')), true, 'the plugin passes only the selected folder to Telegram, not daily notes');
+  eq(plugin.isFileInTargetFolder('Lifestyle/Task.md'), false, 'a similarly named sibling folder is not part of the restriction');
+  plugin.settings.targetFolder = ' /Life/ ';
+  await plugin.saveSettings();
+  eq(notified, 1, 'normalizing the same folder does not schedule a redundant sync');
+  plugin.settings.targetFolder = 'Missing';
+  await plugin.saveSettings();
+  eq([notified, plugin.syncableTasks()], [2, []], 'an empty folder is a real scope change, not an unready index');
+  plugin.settings.targetFolder = before;
+  await plugin.saveSettings();
+  plugin.telegramSync.tasksChanged = changed;
+}
+
+// ── Target Folder supplies the daily-note default, not a permanent lock ─────
+{
+  const folderApp = new App({ 'Old/Keep.md': '- [ ] Keep the original note' });
+  folderApp.data = {
+    targetFolder: 'Old', autoPlanNewTasks: false, autoTrackTaskTime: false,
+    calendar: { dailyNotesFolder: 'Old', dailyNoteNaming: 'gregorian', gregorianNoteFormat: 'YYYY-MM-DD', newTaskTarget: 'daily' },
+  };
+  const linked = new TaskProPlugin(folderApp, { id: 'taskpro', version: 'test' });
+  await linked.onload();
+  linked.settings.targetFolder = ' /New\\Tasks/ ';
+  await linked.saveSettings();
+  eq(linked.settings.calendar.dailyNotesFolder, 'New/Tasks', 'changing Target Folder supplies a normalized daily-note destination');
+  eq(folderApp.data.calendar.dailyNotesFolder, 'New/Tasks', 'the new destination is persisted together with the target');
+  eq(linked.dayNoteTarget('2099-04-05', 'gregorian').path, 'New/Tasks/2099-04-05.md', 'Telegram and the calendar resolve the same new daily-note path');
+  const created = await linked.addTaskOnDay('2099-04-05', '- [ ] From Telegram', 'gregorian');
+  eq(created, 'New/Tasks/2099-04-05.md', 'the real write creates the task note in the new folder');
+  eq(folderApp.vault.files.get('Old/Keep.md'), '- [ ] Keep the original note', 'existing notes are not moved or rewritten');
+  eq(folderApp.vault.files.has('Old/2099-04-05.md'), false, 'no task note is created in the old folder');
+
+  linked.settings.calendar.dailyNotesFolder = 'New/Tasks/Manual';
+  await linked.saveSettings();
+  linked.settings.telegram.lastSyncAt = '2099-04-05T12:00:00Z';
+  await linked.saveSettings();
+  linked.settings.badgeLanguage = 'en';
+  await linked.saveSettings();
+  eq(linked.settings.calendar.dailyNotesFolder, 'New/Tasks/Manual', 'sync bookkeeping and unrelated saves preserve a manual Calendar folder');
+  linked.settings.targetFolder = 'New/Tasks/';
+  await linked.saveSettings();
+  eq(linked.settings.calendar.dailyNotesFolder, 'New/Tasks/Manual', 'normalizing the unchanged target does not reset the manual override');
+  const restartedApp = new App(Object.fromEntries(folderApp.vault.files));
+  restartedApp.data = structuredClone(folderApp.data);
+  const restarted = new TaskProPlugin(restartedApp, { id: 'taskpro', version: 'test' });
+  await restarted.onload();
+  await restarted.saveSettings();
+  eq(restarted.settings.calendar.dailyNotesFolder, 'New/Tasks/Manual', 'the manual override survives a plugin restart and its first save');
+  eq(await restarted.addTaskOnDay('2099-04-06', '- [ ] Manual destination', 'gregorian'), 'New/Tasks/Manual/2099-04-06.md', 'new daily notes actually use the preserved manual folder');
+
+  restarted.settings.targetFolder = 'Next';
+  await restarted.saveSettings();
+  eq(restarted.settings.calendar.dailyNotesFolder, 'Next', 'a later target change replaces the previous manual default');
+  restarted.settings.targetFolder = '';
+  await restarted.saveSettings();
+  eq(restarted.settings.calendar.dailyNotesFolder, '', 'clearing the target supplies the vault root for daily notes');
+  eq(restarted.dayNoteTarget('2099-04-07', 'gregorian').path, '2099-04-07.md', 'an empty target does not leave the old folder in the generated path');
+  restarted.onunload();
+  linked.onunload();
+}
+
 // ── floating board ─────────────────────────────────────────────────────────
 const floatCommand = app.commands.find((c) => c.id === 'toggle-floating-task-board');
 eq(floatCommand?.hotkeys, [{ modifiers: ['Mod', 'Shift'], key: 'b' }], 'the float has a default shortcut');
