@@ -4,6 +4,7 @@
 
 export function normalizePluginPath(value: string): string {
   return value
+    .trim()
     .replace(/\\/g, '/')
     .replace(/^\/+|\/+$/g, '')
     .trim()

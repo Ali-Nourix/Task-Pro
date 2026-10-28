@@ -56,6 +56,7 @@ import { getRepeatLabels, getTimerLabels } from './src/timer-localization';
 import { ReminderService } from './src/reminders/reminder-service';
 import { PlanReminderService } from './src/reminders/plan-reminders';
 import { TelegramSync } from './src/telegram/sync-service';
+import { isWithinTargetFolder, normalizePluginPath } from './src/path-utils';
 import { TaskCreationRegistry } from './src/task-registry';
 import { TaskIndexService } from './src/task-index-service';
 import { getReminderLabels } from './src/reminders/reminder-localization';
@@ -155,21 +156,14 @@ export default class TaskProPlugin extends Plugin {
 
   // Helper method to check if a file is within the target folder
   private isFileInTargetFolder(filePath: string): boolean {
-    // If no target folder is set, allow all files
-    if (!this.settings.targetFolder || this.settings.targetFolder.trim() === '') {
-      return true;
-    }
-
-    // Normalize paths for comparison
-    const targetFolder = this.settings.targetFolder.trim().replace(/^\/+|\/+$/g, '');
-    const normalizedPath = filePath.replace(/^\/+/, '');
-
-    // Check if file is in target folder or its subfolders
-    return normalizedPath.startsWith(targetFolder + '/') || normalizedPath.startsWith(targetFolder);
+    return isWithinTargetFolder(filePath, this.settings.targetFolder);
   }
+
+  private lastTelegramScope = '';
 
   async onload() {
     await this.loadSettings();
+    this.lastTelegramScope = normalizePluginPath(this.settings.targetFolder);
     // TaskPro's panels and calendar cards claim Escape through Obsidian's keymap.
     useKeymapOf(this.app);
 
@@ -788,6 +782,7 @@ export default class TaskProPlugin extends Plugin {
     // The Telegram bot: tasks and reminders reach it, and what is asked for there reaches the notes.
     this.telegramSync = new TelegramSync({
       settings: () => this.settings.telegram,
+      scope: () => normalizePluginPath(this.settings.targetFolder),
       tasks: () => (this.taskStore.isLoaded ? this.syncableTasks() : null),
       defaults: () => ({ enabled: this.settings.reminders.planReminders, leadMinutes: this.settings.reminders.planLeadMinutes }),
       definedTags: () => this.settings.tags,
@@ -811,6 +806,7 @@ export default class TaskProPlugin extends Plugin {
       },
       apply: {
         tasks: () => this.syncableTasks(),
+        canWritePath: (path) => this.isFileInTargetFolder(path),
         inboxPath: () => this.boardInboxPath() || null,
         appendLine: (path, line) => this.appendTaskLine(path, line),
         dayTarget: (day) => this.dayNoteTarget(day, this.settings.board.calendarSystem ?? this.settings.calendarSystem).path || null,
@@ -949,6 +945,12 @@ export default class TaskProPlugin extends Plugin {
 
   async saveSettings() {
     await this.saveData(this.settings);
+    // A folder change changes the upload even though no note was edited.
+    const scope = normalizePluginPath(this.settings.targetFolder);
+    if (scope !== this.lastTelegramScope) {
+      this.lastTelegramScope = scope;
+      this.telegramSync?.tasksChanged();
+    }
   }
 
   private dedupeMappingsByImportedTask(mappings: TaskMapping[]): TaskMapping[] {
@@ -1668,12 +1670,9 @@ export default class TaskProPlugin extends Plugin {
    * The store changed: forget the resolved links, and redraw the note chips
    * if a task something waits on was renamed, ticked off, or went away.
    */
-  /** The tasks the bot knows: the ones plan reminders watch (the target folder and the daily notes). */
+  /** The bot follows the explicit target folder, just like the restricted plugin. */
   private syncableTasks(): BoardTask[] {
-    const daily = this.settings.calendar.dailyNotesFolder.trim().replace(/^\/+|\/+$/g, '');
-    return this.taskStore
-      .all()
-      .filter((task) => this.isFileInTargetFolder(task.filePath) || (!!daily && task.filePath.startsWith(`${daily}/`)));
+    return this.taskStore.all().filter((task) => this.isFileInTargetFolder(task.filePath));
   }
 
   /** Resolves once the notes have been read again after an edit, or a moment has gone by. */

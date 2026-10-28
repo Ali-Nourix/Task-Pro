@@ -21,6 +21,8 @@ export interface Reply {
 
 export interface SyncHost {
   settings(): TelegramSettings;
+  /** Identity of the current task-folder restriction; a change invalidates the upload cache. */
+  scope?(): string;
   /** Every task, or null until the notes have been read. */
   tasks(): BoardTask[] | null;
   defaults(): ReminderDefaults;
@@ -72,6 +74,7 @@ export class TelegramSync {
   private running = false;
   private lastUploaded = '';
   private lastTags = '';
+  private lastDestination = '';
 
   constructor(private readonly host: SyncHost) {}
 
@@ -128,6 +131,9 @@ export class TelegramSync {
 
     this.running = true;
     try {
+      const scope = this.host.scope?.() ?? '';
+      const destination = JSON.stringify([endpoint, settings.token, scope]);
+      const changedDestination = destination !== this.lastDestination;
       const snapshot = buildSnapshot(this.host.tasks()!, this.host.defaults());
       const json = JSON.stringify(snapshot);
       const catalog = this.catalog();
@@ -135,28 +141,37 @@ export class TelegramSync {
       const sentAcks = [...(settings.unconfirmed ?? [])];
       const first = await this.call(endpoint, settings.token, {
         acks: sentAcks,
-        snapshot: json === this.lastUploaded ? undefined : snapshot,
-        tags: tagsJson === this.lastTags ? undefined : catalog,
+        snapshot: !changedDestination && json === this.lastUploaded ? undefined : snapshot,
+        tags: !changedDestination && tagsJson === this.lastTags ? undefined : catalog,
         planning: this.host.planning?.(),
       });
+      this.lastDestination = destination;
       this.lastUploaded = json;
       this.lastTags = tagsJson;
       this.confirm(sentAcks);
 
+      // A reply for the previous folder must not edit notes in the newly selected one.
+      if ((this.host.scope?.() ?? '') !== scope) {
+        this.dirty = true;
+        return this.finish({ ok: false, applied: 0, errors: 0, message: 'The target folder changed during sync. Sync again with the current folder.' });
+      }
       const commands = Array.isArray(first.commands) ? first.commands : [];
       let applied = 0;
       let errors = 0;
       if (commands.length) {
-        const results = await this.applyAll(commands);
+        const results = await this.applyAll(commands, scope);
         applied = results.filter((r) => !r.error).length;
         errors = results.length - applied;
         settings.unconfirmed = [...(settings.unconfirmed ?? []), ...results].slice(-KEEP_UNCONFIRMED);
         await this.host.save();
         // Tell the bot what has been done, along with the notes as they are now.
-        const after = buildSnapshot(this.host.tasks() ?? [], this.host.defaults());
+        const tasks = this.host.tasks();
+        const sameScope = (this.host.scope?.() ?? '') === scope;
+        const after = tasks !== null && sameScope ? buildSnapshot(tasks, this.host.defaults()) : undefined;
+        if (!sameScope) this.dirty = true;
         const acks = [...results];
         await this.call(endpoint, settings.token, { acks, snapshot: after });
-        this.lastUploaded = JSON.stringify(after);
+        if (after !== undefined) this.lastUploaded = JSON.stringify(after);
         this.confirm(acks);
       }
       return this.finish({ ok: true, applied, errors });
@@ -185,12 +200,16 @@ export class TelegramSync {
   }
 
   /** Makes the commands, skipping any made before whose confirmation was lost. */
-  private async applyAll(commands: readonly Command[]): Promise<Result[]> {
+  private async applyAll(commands: readonly Command[], scope: string): Promise<Result[]> {
     const known = new Map((this.host.settings().unconfirmed ?? []).map((result) => [result.id, result]));
     const aliases = new Map<string, string>();
     for (const result of known.values()) if (result.from && result.key) aliases.set(result.from, result.key);
     const results: Result[] = [];
     for (const command of commands) {
+      if ((this.host.scope?.() ?? '') !== scope) {
+        this.dirty = true;
+        break;
+      }
       const before = known.get(command.id);
       if (before) {
         results.push(before);

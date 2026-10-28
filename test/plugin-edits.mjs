@@ -405,6 +405,28 @@ eq([note('Move/Bulk1.md'), note('Move/Bulk2.md')], bulkBefore, 'and its Undo put
 eq(await host.deleteTasks([]), 0, 'nothing to delete, nothing said');
 eq(notices.length, noticesBefore + 1, 'no notice for it');
 
+// ── Folder changes notify Telegram even without any note edits ──────────────
+{
+  const before = plugin.settings.targetFolder;
+  const changed = plugin.telegramSync.tasksChanged.bind(plugin.telegramSync);
+  let notified = 0;
+  plugin.telegramSync.tasksChanged = () => { notified++; };
+  plugin.settings.targetFolder = 'Life';
+  await plugin.saveSettings();
+  eq(notified, 1, 'saving a new folder schedules Telegram sync without editing a note');
+  eq(plugin.syncableTasks().every((task) => task.filePath.startsWith('Life/')), true, 'the plugin passes only the selected folder to Telegram, not daily notes');
+  eq(plugin.isFileInTargetFolder('Lifestyle/Task.md'), false, 'a similarly named sibling folder is not part of the restriction');
+  plugin.settings.targetFolder = ' /Life/ ';
+  await plugin.saveSettings();
+  eq(notified, 1, 'normalizing the same folder does not schedule a redundant sync');
+  plugin.settings.targetFolder = 'Missing';
+  await plugin.saveSettings();
+  eq([notified, plugin.syncableTasks()], [2, []], 'an empty folder is a real scope change, not an unready index');
+  plugin.settings.targetFolder = before;
+  await plugin.saveSettings();
+  plugin.telegramSync.tasksChanged = changed;
+}
+
 // ── floating board ─────────────────────────────────────────────────────────
 const floatCommand = app.commands.find((c) => c.id === 'toggle-floating-task-board');
 eq(floatCommand?.hotkeys, [{ modifiers: ['Mod', 'Shift'], key: 'b' }], 'the float has a default shortcut');
