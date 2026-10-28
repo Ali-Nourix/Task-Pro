@@ -316,7 +316,7 @@ export class TaskProSettingTab extends PluginSettingTab {
     // Target Folder Restriction
     new Setting(containerEl)
       .setName('Target Folder')
-      .setDesc('Restrict plugin activity to a specific folder (leave empty for entire vault)')
+      .setDesc('Restrict plugin activity to a specific folder (leave empty for entire vault). Changing this also sets the daily-note folder to the same path; you can override it later in Calendar.')
       .addText(text => text
         .setPlaceholder('Example: Projects/Tasks')
         .setValue(this.plugin.settings.targetFolder)
@@ -721,7 +721,7 @@ export class TaskProSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName('Folder')
-      .setDesc('Where daily notes are kept. Leave empty for the vault root.')
+      .setDesc('Where daily notes are kept. Changing Target Folder sets this to the same path; you can edit it independently afterward. Leave empty for the vault root. Telegram task destinations must stay inside Target Folder when it is set.')
       .addText(text => text
         .setPlaceholder('Daily')
         .setValue(calendar.dailyNotesFolder)

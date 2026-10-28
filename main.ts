@@ -77,7 +77,7 @@ import { sanitizeViews } from './src/board/board-views';
 import { watchTwoFingerSwipe } from './src/ui/gestures';
 import { haptic } from './src/ui/haptics';
 import { createGestureHint } from './src/ui/gesture-hint';
-import { DailyNoteService, appendTaskLine } from './src/calendar/daily-notes';
+import { DailyNoteService, appendTaskLine, cleanFolder } from './src/calendar/daily-notes';
 import { todayKey } from './src/calendar/calendar-dates';
 import { getCalendarLabels } from './src/calendar/calendar-localization';
 import { scheduleText } from './src/calendar/schedule-text';
@@ -160,10 +160,12 @@ export default class TaskProPlugin extends Plugin {
   }
 
   private lastTelegramScope = '';
+  private lastTargetFolder = '';
 
   async onload() {
     await this.loadSettings();
     this.lastTelegramScope = normalizePluginPath(this.settings.targetFolder);
+    this.lastTargetFolder = cleanFolder(this.settings.targetFolder);
     // TaskPro's panels and calendar cards claim Escape through Obsidian's keymap.
     useKeymapOf(this.app);
 
@@ -944,6 +946,14 @@ export default class TaskProPlugin extends Plugin {
   }
 
   async saveSettings() {
+    // A newly selected target is also the default destination for daily notes.
+    // Only do this when the target actually changes: a later manual Calendar
+    // folder override must survive syncs, other settings saves, and restarts.
+    const target = cleanFolder(this.settings.targetFolder);
+    if (target !== this.lastTargetFolder) {
+      this.lastTargetFolder = target;
+      this.settings.calendar.dailyNotesFolder = target;
+    }
     await this.saveData(this.settings);
     // A folder change changes the upload even though no note was edited.
     const scope = normalizePluginPath(this.settings.targetFolder);
