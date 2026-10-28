@@ -3,6 +3,7 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import type { CommandKind, CommandRow, OwnerRow, SnapshotTask, Store, TaskRow } from './types.ts';
 import { sameInstant } from './types.ts';
+import { keyBatches } from './key-batches.ts';
 
 type Client = ReturnType<typeof createClient>;
 
@@ -86,9 +87,9 @@ export function supabaseStore(url: string, serviceKey: string): Store {
         else fail('upload tasks', first.error);
       }
       // Rows left as Telegram has them still count as seen.
-      const kept = [...keep];
-      for (let i = 0; i < kept.length; i += CHUNK) {
-        await one(db.from('tasks').update({ seen_run: run }).in('key', kept.slice(i, i + CHUNK)), 'keep tasks');
+      // Unicode titles and paths make key filters much larger after URL encoding.
+      for (const batch of keyBatches([...keep])) {
+        await one(db.from('tasks').update({ seen_run: run }).in('key', batch), 'keep tasks');
       }
       // Whatever the notes did not upload is no longer open, unless it is a task made in
       // Telegram that no note has taken in yet.
