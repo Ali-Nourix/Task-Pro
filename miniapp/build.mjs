@@ -1,0 +1,12 @@
+import {readFileSync,writeFileSync} from 'node:fs';
+import * as esbuild from 'esbuild';
+import {gzipSync} from 'node:zlib';
+const dir=new URL('./',import.meta.url);const read=p=>readFileSync(new URL(p,dir),'utf8');
+const html=read('index.html').replace('/* STYLES */',esbuild.transformSync([1,2,3].map(n=>read('font-'+n+'.txt')).join('')+'\n'+read('base.css')+'\n'+read('design.css'),{loader:'css',minify:true}).code).replace('/* APP */',esbuild.transformSync(read('app.js'),{loader:'js',minifyWhitespace:true,minifySyntax:true,minifyIdentifiers:false,target:'es2022'}).code);
+writeFileSync(new URL('dist.html',dir),html);
+const deploymentTemplate=html.replace(/data:font\/woff2;base64,[A-Za-z0-9+/=]+/, '__EXISTING_FONT__');
+writeFileSync(new URL('deploy-template.gz.b64',dir),gzipSync(Buffer.from(deploymentTemplate),{level:9}).toString('base64'));
+const packed=gzipSync(Buffer.from(deploymentTemplate),{level:9}).toString('base64');
+const font=html.match(/data:font\/woff2;base64,[A-Za-z0-9+/=]+/)[0];
+const worker=`// TaskPro mini app. Built from miniapp/; no credentials or user data.\nconst packed='${packed}',font='${font}';\nlet page;\nexport default {async fetch(request){if(!['GET','HEAD'].includes(request.method))return new Response('Method not allowed',{status:405,headers:{Allow:'GET, HEAD'}});page??=new Response(new Blob([Uint8Array.from(atob(packed),c=>c.charCodeAt(0))]).stream().pipeThrough(new DecompressionStream('gzip'))).text().then(s=>s.replace('__EXISTING_FONT__',font));const html=await page;return new Response(request.method==='HEAD'?null:html,{headers:{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-cache','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer','Permissions-Policy':'camera=(), microphone=(), geolocation=()','Content-Security-Policy':\"default-src 'none'; script-src 'unsafe-inline' https://telegram.org; style-src 'unsafe-inline'; connect-src https://hjycjrqsavmutdiwtwfj.supabase.co; img-src 'self' data:; font-src data:; base-uri 'none'; form-action 'none'; frame-ancestors https://web.telegram.org https://*.telegram.org\"}})}};`;
+writeFileSync(new URL('worker.mjs',dir),worker);console.log(JSON.stringify({htmlBytes:Buffer.byteLength(html),workerBytes:Buffer.byteLength(worker)}));
