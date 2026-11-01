@@ -28,7 +28,7 @@ function setMixedText(el,text){el.replaceChildren();let last=0;for(const match o
 function language(value) { lang = value; L = lang === 'fa' ? fa : en; document.documentElement.lang = lang; document.documentElement.dir = lang === 'fa' ? 'rtl' : 'ltr'; $('heading').textContent = L.heading; $('total-label').textContent = L.open; $('today-label').textContent = L.todayCount; $('late-label').textContent = L.late; $('search').placeholder = L.search; $('search').ariaLabel = L.search; $('refresh').ariaLabel = L.refresh; $('close').ariaLabel = L.close; $('add').ariaLabel = L.add; $('add').title = L.add; $('app').ariaLabel=lang==='fa'?'برنامهٔ تسک‌ها':'Task workspace'; $('day-overview').ariaLabel=lang==='fa'?'خلاصهٔ تسک‌های امروز':'Today summary'; $('week-panel').ariaLabel=lang==='fa'?'انتخاب روز':'Choose a day'; $('search').enterKeyHint='search'; $('chat-input').enterKeyHint='send'; $('bot').textContent = L.bot; $('this-week').textContent = L.today; $('tasks-label').textContent = lang === 'fa' ? "تسک‌ها" : 'To do'; $('upcoming-label').textContent = lang === 'fa' ? "برنامهٔ پیش رو" : 'Coming up'; $('view-plan').textContent = lang === 'fa' ? "مشاهدهٔ تقویم" : 'View plan'; $('prev-week').ariaLabel = lang === 'fa' ? "هفتهٔ پیش" : 'Previous week'; $('next-week').ariaLabel = lang === 'fa' ? 'هفتهٔ بعد' : 'Next week'; for (const b of $('bottom-nav').children)
     b.querySelector('span').textContent = ({ home: lang === 'fa' ? "خانه" : 'Home', tasks: lang === 'fa' ? 'تسک‌ها' : 'Tasks', calendar: lang === 'fa' ? 'تقویم' : 'Calendar', ai: lang === 'fa' ? 'دستیار' : 'Assistant' })[b.dataset.mode]; $('chat-title').textContent = lang === 'fa' ? "برای برنامه‌ریزی کمک بگیرید" : 'Think it through.'; $('chat-hint').textContent = lang === 'fa' ? "دربارهٔ تسک‌ها بپرسید یا برای برنامه‌ریزی روز کمک بگیرید. دستیار فقط پیشنهاد می‌دهد و تسک‌ها را تغییر نمی‌دهد." : 'Ask about your tasks or plan your day. This chat offers advice only; it does not change tasks.'; $('chat-input').placeholder = lang === 'fa' ? "مثلاً امروز از کدام تسک شروع کنم؟" : 'Write a message…'; document.querySelector('.composer-label').textContent = lang === 'fa' ? 'پیام به دستیار' : 'Message the assistant'; $('chat-input').ariaLabel = lang === 'fa' ? 'پیام به دستیار' : 'Message the assistant'; $('chat-send').textContent = lang === 'fa' ? 'ارسال' : 'Send'; $('chat-clear').textContent = lang === 'fa' ? "گفت‌وگوی جدید" : 'New conversation'; $('chat-privacy').textContent = lang === 'fa' ? "برای دریافت پاسخ، پیام و خلاصهٔ تسک‌ها به سرویس هوش مصنوعی ربات ارسال می‌شود. تاریخچهٔ این گفت‌وگو فقط تا زمان بسته‌شدن صفحه در مینی‌اپ نگه داشته می‌شود." : 'Your message and a task summary are sent to the bot’s AI provider. Chat history stays in memory until this page closes.'; $('filters').ariaLabel = lang === 'fa' ? 'فیلتر تسک‌ها' : 'Task filters'; $('bottom-nav').ariaLabel = lang === 'fa' ? 'ناوبری' : 'Navigation'; document.querySelector('.skip').textContent = lang === 'fa' ? "رفتن به فهرست تسک‌ها" : 'Skip to tasks'; }
 // Telegram's light/dark choice is respected without importing low-contrast arbitrary accent pairs.
-function theme() { const scheme=tg?.colorScheme || (matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'); document.documentElement.dataset.scheme=scheme; document.querySelector('meta[name="theme-color"]')?.setAttribute('content',scheme==='dark'?'#191919':'#f8f8f8'); }
+function theme() { const scheme=tg?.colorScheme || (matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'); document.documentElement.dataset.scheme=scheme; document.querySelector('meta[name="theme-color"]')?.setAttribute('content',scheme==='dark'?'#13201e':'#f5f8f6'); }
 function formatDate(date) { if (!date)
     return ''; try {
     return new Intl.DateTimeFormat(lang === 'fa' ? 'fa-IR' : 'en-GB', { calendar: owner?.calendar === 'jalali' ? 'persian' : 'gregory', month: 'short', day: 'numeric', timeZone: 'UTC' }).format(new Date(date + 'T12:00:00Z'));
@@ -139,7 +139,7 @@ function month() {
 }
 function overview() {
     const today = records.filter(onToday), done = today.filter(t => t.status === 'done').length, total = today.length;
-    $('overview-label').textContent = lang === 'fa' ? "خلاصهٔ امروز" : 'One task at a time';
+    $('overview-label').textContent = lang === 'fa' ? 'امروز، قدم‌به‌قدم' : 'One task at a time';
     $('overview-progress').textContent = lang === 'fa' ? `${done.toLocaleString('fa-IR')} از ${total.toLocaleString('fa-IR')} انجام شده` : `${done} of ${total} done`;
     for (const [id, value, label] of [['overview-today', tasks.filter(onToday).length, L.today], ['overview-open', tasks.length, lang === 'fa' ? "تسک باز" : 'Open'], ['overview-done', done, lang === 'fa' ? "انجام‌شدهٔ امروز" : 'Done today']]) {
         const el = $(id);
@@ -177,7 +177,7 @@ function lock(v) { busy = v; $('app').ariaBusy = String(v); document.documentEle
         b.textContent = b.dataset.label;
         delete b.dataset.label;
     }
-} for (const e of document.querySelectorAll('#sheet button,.tick,#add,#refresh'))
+} for (const e of document.querySelectorAll('#sheet button,.tick,#add,#refresh,#inline-add'))
     if (e.id !== 'close')
         e.disabled = v; }
 function adopt(data) { records = data.tasks; tasks = records.filter(isActive); owner = data.owner; selectedDay = selectedDay || owner.today; language(owner.language); notice(''); render(); }
@@ -202,6 +202,11 @@ function error(e) { clearTimeout(toastTimer); $('toast').hidden = true; notice(e
 function render() {
     const focusedDate = document.activeElement?.closest('.month-cell')?.dataset.date;
     const aiMode = mode === 'ai', cal = mode === 'calendar', list = $('tasks');
+    document.documentElement.classList.toggle('mode-home',mode==='home');
+    $('inline-add').hidden=aiMode; $('inline-add').disabled=busy||!initData;
+    $('inline-add').querySelector('span').textContent=L.add;
+    $('rail-note').textContent=lang==='fa'?'تسک‌ها، کنار یادداشت‌هایتان':'Your tasks, alongside your notes';
+    renderPrompts();
     $('day-overview').hidden = mode !== 'home';
     const overdueCount = tasks.filter(late).length;
     $('overdue-callout').hidden = mode !== 'home' || !overdueCount || filter === 'late';
@@ -216,6 +221,7 @@ function render() {
     document.querySelector('.list-tools').hidden = cal;
     document.querySelector('.search').hidden = cal || mode === 'home' && filter === 'today';
     $('heading').textContent = cal ? (lang === 'fa' ? "تقویم تسک‌ها" : 'Task calendar') : mode === 'tasks' ? (lang === 'fa' ? "همهٔ تسک‌ها" : 'My tasks') : mode === 'ai' ? (lang === 'fa' ? "دستیار" : 'My assistant') : L.heading;
+    decorateHeading(cal?'calendar':mode==='tasks'?'tasks':aiMode?'ai':'home');
     $('total-label').textContent = lang === 'fa' ? 'تسک' : 'tasks';
     $('today-count').textContent = number(tasks.filter(onToday).length);
     $('late-count').textContent = number(tasks.filter(late).length);
@@ -550,10 +556,10 @@ function chatMessage(role, text) { const article = node('article', undefined, 'c
 function sizeMessage() { const input = $('chat-input'); input.style.height = 'auto'; input.style.height = Math.min(160, input.scrollHeight) + 'px'; }
 $('chat-input').addEventListener('input', sizeMessage);
 $('chat-clear').onclick = () => { if (chatBusy)
-    return; chatHistory = []; $('chat-messages').replaceChildren(); $('chat-error').hidden = true; };
+    return; chatHistory = []; $('chat-messages').replaceChildren(); $('chat-error').hidden = true; renderPrompts(); };
 $('chat-form').onsubmit = async (e) => { e.preventDefault(); if (chatBusy || busy)
     return; const input = $('chat-input'), text = input.value.trim(); if (!text)
-    return; chatBusy = true; $('chat-send').disabled = true; $('chat-clear').disabled = true; $('chat-error').hidden = true; chatMessage('user', text); input.value = ''; sizeMessage(); const pending = chatMessage('assistant', lang === 'fa' ? "در حال آماده‌کردن پاسخ…" : 'Thinking…'); pending.classList.add('thinking'); $('chat-messages').ariaBusy = 'true'; pending.scrollIntoView({ block: 'nearest' }); try {
+    return; chatBusy = true; renderPrompts(); $('chat-send').disabled = true; $('chat-clear').disabled = true; $('chat-error').hidden = true; chatMessage('user', text); input.value = ''; sizeMessage(); const pending = chatMessage('assistant', lang === 'fa' ? "در حال آماده‌کردن پاسخ…" : 'Thinking…'); pending.classList.add('thinking'); $('chat-messages').ariaBusy = 'true'; pending.scrollIntoView({ block: 'nearest' }); try {
     const data = await request({ action: 'chat', text, history: chatHistory.slice(-8) });
     pending.remove();
     chatMessage('assistant', data.text);
@@ -572,7 +578,7 @@ finally {
     chatBusy = false;
     $('chat-send').disabled = false;
     $('chat-clear').disabled = false;
-    $('chat-messages').ariaBusy = 'false';
+    $('chat-messages').ariaBusy = 'false'; renderPrompts();
 } };
 // Calendar popover is dismissible without losing the selected statuses.
 document.addEventListener('pointerdown', e => { if (!$('calendar-filter').contains(e.target))
@@ -651,3 +657,11 @@ window.addEventListener('offline', () => notice(L.offline));
 // Re-read on return; never submit writes automatically.
 window.addEventListener('online', () => { if(initData && !$('sheet').open && !chatBusy) refresh(); });
 let hiddenAt=0; document.addEventListener('visibilitychange',()=>{if(document.hidden)hiddenAt=Date.now();else if(initData && hiddenAt && Date.now()-hiddenAt>30000 && !$('sheet').open && !chatBusy)refresh();});
+
+// Presentation only: existing data, auth, statuses and sync contracts stay untouched.
+function decorateHeading(kind){
+ const paths={home:'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.4 1.4M17.6 17.6 19 19M5 19l1.4-1.4M17.6 6.4 19 5',tasks:'M9 6h11M9 12h11M9 18h11M3 6l1 1 2-2M3 12l1 1 2-2M3 18l1 1 2-2',calendar:'M7 2v4M17 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14H3V6a2 2 0 0 1 2-2M8 14h1M15 14h1M8 18h1',ai:'M20 15a4 4 0 0 1-4 4H9l-6 3V7a4 4 0 0 1 4-4h9a4 4 0 0 1 4 4zM7 8h9M7 12h6'};
+ const el=document.createElementNS('http://www.w3.org/2000/svg','svg'),p=document.createElementNS(el.namespaceURI,'path');el.setAttribute('class','heading-icon');el.setAttribute('viewBox','0 0 24 24');el.setAttribute('fill','none');el.setAttribute('stroke','currentColor');el.setAttribute('stroke-width','1.7');el.setAttribute('stroke-linecap','round');el.setAttribute('stroke-linejoin','round');el.setAttribute('aria-hidden','true');p.setAttribute('d',paths[kind]);el.append(p);$('heading').prepend(el);
+}
+function renderPrompts(){const host=$('chat-prompts');host.replaceChildren();host.hidden=mode!=='ai'||chatHistory.length>0||chatBusy;const prompts=lang==='fa'?['امروز از کدام تسک شروع کنم؟','برای تسک‌های عقب‌افتاده پیشنهاد بده.']:['Which task should I start today?','Help me review my overdue tasks.'];for(const text of prompts){const b=node('button',text);b.type='button';b.disabled=chatBusy;b.onclick=()=>{$('chat-input').value=text;$('chat-input').dispatchEvent(new Event('input'));$('chat-input').focus();};host.append(b);}}
+$('inline-add').onclick=()=>add();
