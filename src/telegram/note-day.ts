@@ -1,31 +1,24 @@
-// Inherit a daily note's day only after the plugin's configured resolver confirms
-// the complete path. A date-looking title in an ordinary note is not a plan.
+// Daily-note identity is independent of where NEW tasks are created. Recognize
+// only a whole date-only basename (optionally a calendar emoji), not dates in
+// arbitrary titles, folders, headings or creation timestamps. Explicit plans win.
 import { dayKey, parseDayKey } from '../calendar/calendar-dates';
 import { gregorianToJalali, jalaliToGregorian } from '../date-utils';
 
-export function dailyNoteDay(path: string, target?: (day: string) => string | null): string | null {
-  if (!target) return null;
-  const name = path.split('/').pop()?.replace(/\.md$/i, '') ?? '';
-  const normalize = (value: string) => value.replace(/[۰-۹]/g, n => String(n.charCodeAt(0) - 0x6f0)).replace(/[٠-٩]/g, n => String(n.charCodeAt(0) - 0x660));
-  const dates = [...normalize(name).matchAll(/(?:^|[^\d])(\d{4})-(\d{2})-(\d{2})(?!\d)/g)];
-  const candidates = new Set<string>();
-  for (const match of dates) {
-    const [y, m, d] = match.slice(1).map(Number);
-    const g = dayKey(y, m, d);
-    if (parseDayKey(g)) candidates.add(g);
-    if (y >= 1 && y <= 3177 && m >= 1 && m <= 12 && d >= 1 && d <= 31) {
-      const converted = jalaliToGregorian(y, m, d);
-      const roundtrip = gregorianToJalali(...converted);
-      if (roundtrip[0] === y && roundtrip[1] === m && roundtrip[2] === d) candidates.add(dayKey(...converted));
-    }
+export function dailyNoteDay(path: string): string | null {
+  const name = (path.replace(/\\/g, '/').split('/').pop() ?? '').replace(/\.md$/i, '').trim()
+    .replace(/[۰-۹]/g, n => String(n.charCodeAt(0) - 0x6f0))
+    .replace(/[٠-٩]/g, n => String(n.charCodeAt(0) - 0x660));
+  const match = /^(?:(?:📅|📆|🗓\uFE0F?)\s*)?(\d{4})-(\d{2})-(\d{2})$/.exec(name);
+  if (!match) return null;
+  const [year, month, day] = match.slice(1).map(Number);
+  // Unambiguous modern daily-note conventions; unsupported/ambiguous years
+  // remain undated instead of silently assigning a wrong millennium.
+  if (year >= 1900 && year <= 2199) {
+    const key = dayKey(year, month, day);
+    return parseDayKey(key) ? key : null;
   }
-  const confirmed = [...candidates].filter(day => {
-    if (target(day) !== path) return false;
-    // An inbox destination can be the same file for every day. It cannot
-    // establish that this is a daily note, even if its name contains a date.
-    const date = new Date(day + 'T12:00:00Z');
-    date.setUTCDate(date.getUTCDate() + 1);
-    return target(date.toISOString().slice(0, 10)) !== path;
-  });
-  return confirmed.length === 1 ? confirmed[0] : null;
+  if (year < 1300 || year > 1599 || month < 1 || month > 12 || day < 1 || day > 31) return null;
+  const g = jalaliToGregorian(year, month, day);
+  const j = gregorianToJalali(...g);
+  return j[0] === year && j[1] === month && j[2] === day ? dayKey(...g) : null;
 }

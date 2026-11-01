@@ -137,7 +137,7 @@ export class TelegramSync {
       const changedDestination = destination !== this.lastDestination;
       const days = new Map<string, string | null>();
       const noteDay = (path: string): string | null => {
-        if (!days.has(path)) days.set(path, dailyNoteDay(path, this.host.apply.dayTarget?.bind(this.host.apply)));
+        if (!days.has(path)) days.set(path, dailyNoteDay(path));
         return days.get(path)!;
       };
       const snapshot = buildSnapshot(this.host.tasks()!, this.host.defaults(), noteDay);
