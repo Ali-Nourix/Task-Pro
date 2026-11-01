@@ -43,10 +43,14 @@ Prior production version: `56489114-619a-4629-8925-5c0942692c80`. Roll back via 
 
 Existing plugin/server regression: 2,098 checks across 20 suites, plus 24 current-production-source end-to-end checks passed before redesign. Initial redesign UI: 28 browser checks with synthetic records (home/all/overdue/search, responsive widths 360/390/768/1440, details, failed create preserving draft, retry, status/undo, calendar/undated, assistant response, dark theme, outside-Telegram auth gate), plus 3 Worker build/HTTP checks. Screenshots visually reviewed for mobile/desktop, calendar, details, error and dark mode. This does not certify absence of all bugs or replace checking the real Telegram WebView on the user's device.
 
-Design: UI UX Pro Max accessible flat/minimal guidance + taste-skill app/workspace Achromatic ledger, seed 1127536246. Product face: daily-note-aware date lanes, explicit overdue boundary and honest Obsidian snapshot receipt. Persian typography is retained rather than substituting a Latin-only recommendation. Existing behavior is modularized, not migrated to a new framework.
+Initial design (superseded): UI UX Pro Max accessible flat/minimal guidance + taste-skill app/workspace Achromatic ledger, seed 1127536246. Product face: daily-note-aware date lanes, explicit overdue boundary and honest Obsidian snapshot receipt. Persian typography is retained rather than substituting a Latin-only recommendation. Existing behavior is modularized, not migrated to a new framework.
 
 Seven-question critique: the main job is today's work; primary create is clear; navigation and selected day are visible; data density remains scannable; dates/statuses and sync source provide product identity; error/empty states remain actionable; mobile and RTL are first-class. Deliberate exceptions: no photos or decorative charts for a task utility, and no animation required for comprehension.
 
 ## Layout and Persian follow-up
 
 The subsequent Impeccable/Emil/Persian-writing refinement has 42 browser checks and 3 Worker checks. See REFINEMENT.md for scope, copy policy, evidence and real-device limitations. This pass does not rerun or replace the earlier 2,098 backend/plugin checks.
+
+## Replacement visual world
+
+The rejected achromatic direction is replaced by Daily folio, based on the Taste editorial-greeting app workflow and inspected Things/Todoist/Structured references. See ../PRODUCT.md, ../DESIGN.md and REDESIGN.md for decisions, repository usage,49 current browser checks and the explicitly incomplete Taste runtime inspector. Persian copy policy and backend/auth contracts are preserved.
