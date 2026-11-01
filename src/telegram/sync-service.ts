@@ -9,6 +9,7 @@
 // not made twice.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { dailyNoteDay } from './note-day';
 import type { BoardTask } from '../board/task-store';
 import type { TelegramSettings } from '../types';
 import { ApplyHost, Command, Result, applyCommands } from './apply';
@@ -134,7 +135,12 @@ export class TelegramSync {
       const scope = this.host.scope?.() ?? '';
       const destination = JSON.stringify([endpoint, settings.token, scope]);
       const changedDestination = destination !== this.lastDestination;
-      const snapshot = buildSnapshot(this.host.tasks()!, this.host.defaults());
+      const days = new Map<string, string | null>();
+      const noteDay = (path: string): string | null => {
+        if (!days.has(path)) days.set(path, dailyNoteDay(path, this.host.apply.dayTarget?.bind(this.host.apply)));
+        return days.get(path)!;
+      };
+      const snapshot = buildSnapshot(this.host.tasks()!, this.host.defaults(), noteDay);
       const json = JSON.stringify(snapshot);
       const catalog = this.catalog();
       const tagsJson = JSON.stringify(catalog);
@@ -167,7 +173,7 @@ export class TelegramSync {
         // Tell the bot what has been done, along with the notes as they are now.
         const tasks = this.host.tasks();
         const sameScope = (this.host.scope?.() ?? '') === scope;
-        const after = tasks !== null && sameScope ? buildSnapshot(tasks, this.host.defaults()) : undefined;
+        const after = tasks !== null && sameScope ? buildSnapshot(tasks, this.host.defaults(), noteDay) : undefined;
         if (!sameScope) this.dirty = true;
         const acks = [...results];
         await this.call(endpoint, settings.token, { acks, snapshot: after });

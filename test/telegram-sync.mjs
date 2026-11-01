@@ -15,6 +15,7 @@ const build = await esbuild.build({
       export { parseBoardTasks } from "../src/board/task-store";
       export { keyTasks, keyForNewTask, reminderAt, buildSnapshot, buildTagCatalog } from "../src/telegram/snapshot";
       export { applyCommands, lineForNewTask } from "../src/telegram/apply";
+      export { dailyNoteDay } from "../src/telegram/note-day";
       export { TelegramSync, syncEndpoint } from "../src/telegram/sync-service";
       export { setSchedule, setRemind, setPriority, setDeadline, setTags, setRepeat, replaceTaskText } from "../src/task-metadata";
       export { handleUpdate } from "../supabase/functions/_shared/bot.ts";
@@ -57,6 +58,38 @@ const two = tasksOf('A.md', ['- [ ] Same', '- [ ] Same', '- [ ] Own id ^tp-1', '
 eq([...keyTasks(two).keys()], ['A.md|Same|0', 'A.md|Same|1', 'A.md|^tp-1|0', 'A.md|Finished|0', 'A.md|Doing|0'], 'a task is named by its note, its block ID or title, and which of the same');
 eq(keyForNewTask(two, 'A.md', 'Same'), 'A.md|Same|2', 'a task about to be appended is named the same way');
 eq(keyForNewTask(two, 'B.md', 'Same'), 'B.md|Same|0', 'in another note, from the start');
+
+// ── A daily note's day survives the trip to Telegram ───────────────────────
+{
+  const defaults = { enabled: true, leadMinutes: 10 };
+  const path = 'Daily/📅 1405-08-10.md';
+  const target = day => day === '2026-11-01' ? path : `Daily/${day}.md`;
+  const day = file => mod.dailyNoteDay(file, target);
+  eq(day(path), '2026-11-01', 'an emoji-prefixed Jalali daily note inherits its Gregorian day');
+  eq(mod.dailyNoteDay('Daily/2026-11-01.md', d => `Daily/${d}.md`), '2026-11-01', 'Gregorian daily notes inherit their day too');
+  eq(mod.dailyNoteDay('Daily/📅 ۱۴۰۵-۰۸-۱۰.md', d => d === '2026-11-01' ? 'Daily/📅 ۱۴۰۵-۰۸-۱۰.md' : null), '2026-11-01', 'Persian digits are accepted only after full path confirmation');
+  eq(day('Other/📅 1405-08-10.md'), null, 'a date in an unrelated folder is not a plan');
+  eq(mod.dailyNoteDay(path, () => path), null, 'a fixed inbox destination must not be mistaken for a daily note');
+  eq(mod.dailyNoteDay(path), null, 'without a configured daily resolver no date is guessed');
+  eq(mod.dailyNoteDay('Daily/2026-02-30.md', d => `Daily/${d}.md`), null, 'an invalid Gregorian date is rejected');
+  eq(mod.dailyNoteDay('Daily/1405-08-31.md', d => d === '2026-11-22' ? 'Daily/1405-08-31.md' : null), null, 'an invalid Jalali day must not roll over to another month');
+  const original = tasksOf(path, '- [/] First\n- [/] Second\n- [ ] Explicit @schedule(2026-11-03)');
+  const snapshot = buildSnapshot(original, defaults, day);
+  eq(snapshot.map(t => [t.status, t.plan_date]), [['doing', '2026-11-01'], ['doing', '2026-11-01'], ['open', '2026-11-03']], 'both screenshot tasks reach today; an explicit plan always wins');
+  eq(snapshot.map(t => t.remind_at), [null, null, null], 'inheriting a day never invents a time or a reminder');
+  eq(original.map(t => t.schedule?.date ?? null), [null, null, '2026-11-03'], 'the snapshot does not modify notes or task objects');
+  const n = notes({ [path]: '- [/] First\n- [/] Second' });
+  const posts = [];
+  const sync = new TelegramSync({
+    settings: () => ({ enabled: true, url: 'https://example.supabase.co', token: 'test' }),
+    tasks: n.host.tasks, defaults: () => defaults,
+    apply: { ...n.host, dayTarget: target },
+    post: async (_url, _token, body) => { posts.push(body); return { status: 200, json: { commands: [] } }; },
+    save: async () => {}, report: () => {}, registerInterval: () => {}, now: () => 0,
+  });
+  eq((await sync.syncNow()).ok, true, 'daily-note tasks synchronize successfully');
+  eq(posts[0].snapshot.map(t => t.plan_date), ['2026-11-01', '2026-11-01'], 'the actual HTTP payload carries both daily-note dates');
+}
 
 // ── The tags the bot may list ──────────────────────────────────────────────
 {

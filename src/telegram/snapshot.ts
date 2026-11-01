@@ -111,7 +111,7 @@ export const repeatToken = (repeat: TaskRepeat | undefined): string | null => (r
 const STATUS_WORDS: Partial<Record<TaskStatus, 'open' | 'doing'>> = { '[ ]': 'open', '[/]': 'doing' };
 
 /** The open tasks, as the bot wants them. Tasks already done are left out: the bot lists what is open. */
-export function buildSnapshot(tasks: readonly BoardTask[], defaults: ReminderDefaults): SnapshotTask[] {
+export function buildSnapshot(tasks: readonly BoardTask[], defaults: ReminderDefaults, noteDay?: (path: string) => string | null): SnapshotTask[] {
   const out: SnapshotTask[] = [];
   const keyed = keyTasks(tasks);
   const byId = new Map<string, { key: string; task: BoardTask }>();
@@ -126,7 +126,7 @@ export function buildSnapshot(tasks: readonly BoardTask[], defaults: ReminderDef
       status,
       priority: task.priority ?? null,
       deadline: task.deadline ?? null,
-      plan_date: task.schedule?.date ?? null,
+      plan_date: task.schedule?.date ?? noteDay?.(task.filePath) ?? null,
       plan_start: task.schedule?.start ?? null,
       plan_end: task.schedule?.end && task.schedule.end !== '24:00' ? task.schedule.end : null,
       remind_at: reminderAt(task, defaults),
