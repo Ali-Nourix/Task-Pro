@@ -2,7 +2,7 @@
 const API = 'https://hjycjrqsavmutdiwtwfj.supabase.co/functions/v1/miniapp';
 const tg = window.Telegram?.WebApp;
 const $ = id => document.getElementById(id);
-const fa = { heading: 'برنامهٔ من', open: 'کار باز', today: 'امروز', todayCount: 'برای امروز', all: 'همه', late: 'عقب‌افتاده', search: 'جست‌وجوی تسک‌ها…', add: 'تسک جدید', refresh: 'تازه‌سازی', close: 'بستن', bot: 'بازگشت به ربات', loading: 'در حال دریافت تسک‌ها…', empty: 'اینجا کاری نمانده.', emptyHint: 'یک تسک تازه بساز یا فیلتر دیگری را انتخاب کن.', save: 'ذخیره', cancel: 'انصراف', title: 'عنوان', tags: 'برچسب‌ها (با فاصله)', priority: 'اولویت', deadline: 'سررسید', repeat: 'تکرار', none: 'ندارد', status: 'وضعیت', openStatus: 'شروع نشده', doing: 'در حال انجام', done: 'انجام شد', failed: 'انجام نشد', plan: 'برنامه', date: 'تاریخ', start: 'شروع', end: 'پایان', removePlan: 'حذف برنامه', reminder: 'یادآوری', setReminder: 'تنظیم یادآوری', off: 'حذف یادآوری', defaultReminder: 'قبل از برنامه', time: 'ساعت', remove: 'حذف تسک', confirm: 'این تسک و درخواست حذفش به یادداشت‌ها فرستاده شود؟', saved: 'ذخیره شد؛ در همگام‌سازی بعدی به Obsidian می‌رسد.', undo: 'برگردان', sync: 'آخرین همگام‌سازی', never: 'هنوز همگام نشده', pending: 'منتظر Obsidian', parent: 'زیرتسکِ', noParent: 'بدون تسک والد', subtask: 'افزودن زیرتسک', session: 'نشست معتبر نیست یا منقضی شده؛ مینی‌اپ را ببند و از منوی ربات دوباره باز کن.', outside: 'این برنامه را از دکمهٔ Task Pro در ربات تلگرام باز کن.', offline: 'اتصال برقرار نشد؛ اینترنت را بررسی کن و تازه‌سازی را بزن. اگر ذخیره می‌کردی، قبل از تلاش دوباره نتیجه را بررسی کن.', invalid: 'مقدار یکی از فیلدها معتبر نیست. تاریخ و ساعت و بازه را بررسی کن.', missing: 'تسک دیگر در عکس فعلی موجود نیست؛ تازه‌سازی کن.', error: 'درخواست انجام نشد؛ دوباره وضعیت را بررسی کن.', help: 'گفت‌وگو با دستیار در تب دستیار؛ تنظیمات کامل در ربات هستند.', gregorian: 'تاریخ فرم‌ها میلادی است؛ نمایش فهرست از تقویم تنظیم‌شدهٔ ربات پیروی می‌کند.', hours: 'ساعت‌ها بر اساس', highest: 'بحرانی', high: 'زیاد', medium: 'متوسط', low: 'کم', lowest: 'خیلی کم' };
+const fa = { heading: "برنامهٔ روز", open: "تسک باز", today: 'امروز', todayCount: "تسک‌های امروز", all: 'همه', late: 'عقب‌افتاده', search: "جست‌وجو در عنوان و برچسب‌ها", add: "افزودن تسک", refresh: "به‌روزرسانی فهرست", close: 'بستن', bot: 'بازگشت به ربات', loading: 'در حال دریافت تسک‌ها…', empty: "تسکی برای نمایش نیست", emptyHint: "تسک جدیدی اضافه کنید یا فیلتر دیگری را ببینید.", save: 'ذخیره', cancel: 'انصراف', title: "عنوان تسک", tags: "برچسب‌ها (با فاصله جدا کنید)", priority: 'اولویت', deadline: 'سررسید', repeat: 'تکرار', none: 'ندارد', status: 'وضعیت', openStatus: 'شروع نشده', doing: 'در حال انجام', done: 'انجام شد', failed: 'انجام نشد', plan: "زمان‌بندی", date: "تاریخ (میلادی)", start: "ساعت شروع", end: "ساعت پایان", removePlan: "حذف زمان‌بندی", reminder: 'یادآوری', setReminder: 'تنظیم یادآوری', off: 'حذف یادآوری', defaultReminder: "یادآوری پیش از شروع", time: 'ساعت', remove: 'حذف تسک', confirm: "این تسک حذف شود؟ حذف آن در همگام‌سازی بعدی در یادداشت‌های Obsidian هم اعمال می‌شود.", saved: "ذخیره شد. تغییرات با همگام‌سازی بعدی به Obsidian می‌رسند.", undo: "بازگردانی", sync: "آخرین دریافت از Obsidian", never: "هنوز اطلاعاتی از Obsidian دریافت نشده است.", pending: "در انتظار ارسال به Obsidian", parent: "تسک اصلی:", noParent: "بدون تسک اصلی", subtask: 'افزودن زیرتسک', session: "اعتبار ورود تمام شده است. مینی‌اپ را ببندید و از منوی ربات دوباره باز کنید.", outside: "برای دیدن تسک‌ها، مینی‌اپ را از دکمهٔ Task Pro در ربات تلگرام باز کنید.", offline: "ارتباط با سرور برقرار نشد. اینترنت را بررسی و فهرست را به‌روز کنید. اگر در حال ذخیره بودید، پیش از تکرار، نتیجه را در فهرست بررسی کنید.", invalid: "اطلاعات واردشده معتبر نیست. تاریخ و ساعت را بررسی کنید؛ ساعت پایان باید پس از شروع باشد.", missing: "این تسک دیگر در فهرست نیست. فهرست را به‌روز کنید.", error: "درخواست انجام نشد. فهرست را به‌روز کنید و پیش از تلاش دوباره، نتیجه را بررسی کنید.", help: "برای گفت‌وگو، بخش «دستیار» را باز کنید. تنظیمات بیشتر در ربات است.", gregorian: "تاریخ فرم‌ها میلادی است. تاریخ‌های فهرست با تقویم انتخاب‌شده در ربات نمایش داده می‌شوند.", hours: "منطقهٔ زمانی:", highest: "فوری", high: 'زیاد', medium: 'متوسط', low: 'کم', lowest: 'خیلی کم' };
 const en = { heading: 'My day', open: 'Open tasks', today: 'Today', todayCount: 'For today', all: 'All', late: 'Overdue', search: 'Search tasks…', add: 'New task', refresh: 'Refresh', close: 'Close', bot: 'Back to bot', loading: 'Loading your tasks…', empty: 'A clear space.', emptyHint: 'Add a task or choose a different filter.', save: 'Save', cancel: 'Cancel', title: 'Title', tags: 'Tags (space-separated)', priority: 'Priority', deadline: 'Deadline', repeat: 'Repeat', none: 'None', status: 'Status', openStatus: 'Not started', doing: 'In progress', done: 'Done', failed: 'Not done', plan: 'Plan', date: 'Date', start: 'Start', end: 'End', removePlan: 'Remove plan', reminder: 'Reminder', setReminder: 'Set reminder', off: 'Remove reminder', defaultReminder: 'Before the plan', time: 'Time', remove: 'Delete task', confirm: 'Delete this task and queue the deletion for your notes?', saved: 'Saved. Obsidian will receive it on the next sync.', undo: 'Undo', sync: 'Last sync', never: 'Not synced yet', pending: 'Waiting for Obsidian', parent: 'Subtask of', noParent: 'No parent task', subtask: 'Add subtask', session: 'Your session is invalid or expired. Close and reopen the app from the bot menu.', outside: 'Open this app from the Task Pro button in your Telegram bot.', offline: 'Connection failed. Check your internet and refresh. If saving, check the result before trying again.', invalid: 'Check the fields, dates, times and time range.', missing: 'This task is no longer in the current snapshot. Refresh the list.', error: 'The request failed. Check the current state before retrying.', help: 'Chat is in the Assistant tab. Full preferences remain in the bot.', gregorian: 'Form dates use the Gregorian calendar; list dates follow your bot calendar preference.', hours: 'Times use', highest: 'Highest', high: 'High', medium: 'Medium', low: 'Low', lowest: 'Lowest' };
 let lang = tg?.initDataUnsafe?.user?.language_code?.startsWith('fa') ? 'fa' : 'en', L = lang === 'fa' ? fa : en;
 let chatHistory = [], chatBusy = false;
@@ -16,13 +16,19 @@ try {
 catch { }
 let tasks = [], owner = null, filter = 'today', mode = 'home', selectedDay = null, weekOffset = 0, busy = false, toastTimer;
 const initData = tg?.initData || '';
+// Localize display only. IDs, API dates, times, form values and user content stay unchanged.
+const number = value => Number(value).toLocaleString(lang === 'fa' ? 'fa-IR' : 'en-GB', {useGrouping:false});
+const displayTime = value => lang === 'fa' ? String(value).replace(/[0-9]/g, d => '۰۱۲۳۴۵۶۷۸۹'[Number(d)]) : value;
 function node(tag, text, cls) { const e = document.createElement(tag); if (text !== undefined)
     e.textContent = text; if (cls)
     e.className = cls; return e; }
-function language(value) { lang = value; L = lang === 'fa' ? fa : en; document.documentElement.lang = lang; document.documentElement.dir = lang === 'fa' ? 'rtl' : 'ltr'; $('heading').textContent = L.heading; $('total-label').textContent = L.open; $('today-label').textContent = L.todayCount; $('late-label').textContent = L.late; $('search').placeholder = L.search; $('search').ariaLabel = L.search; $('refresh').ariaLabel = L.refresh; $('close').ariaLabel = L.close; $('add').ariaLabel = L.add; $('add').title = L.add; $('bot').textContent = L.bot; $('this-week').textContent = L.today; $('tasks-label').textContent = lang === 'fa' ? 'کارهای من' : 'To do'; $('upcoming-label').textContent = lang === 'fa' ? 'برنامهٔ بعدی' : 'Coming up'; $('view-plan').textContent = lang === 'fa' ? 'دیدن برنامه' : 'View plan'; $('prev-week').ariaLabel = lang === 'fa' ? 'هفتهٔ قبل' : 'Previous week'; $('next-week').ariaLabel = lang === 'fa' ? 'هفتهٔ بعد' : 'Next week'; for (const b of $('bottom-nav').children)
-    b.querySelector('span').textContent = ({ home: lang === 'fa' ? 'خانه' : 'Home', tasks: lang === 'fa' ? 'تسک‌ها' : 'Tasks', calendar: lang === 'fa' ? 'تقویم' : 'Calendar', ai: lang === 'fa' ? 'دستیار' : 'Assistant' })[b.dataset.mode]; $('chat-title').textContent = lang === 'fa' ? 'با هم مرتبش کنیم.' : 'Think it through.'; $('chat-hint').textContent = lang === 'fa' ? 'از تسک‌هایت بپرس یا برای روزت ایده بگیر. این گفت‌وگو فقط پیشنهاد می‌دهد و تسکی را تغییر نمی‌دهد.' : 'Ask about your tasks or plan your day. This chat offers advice only; it does not change tasks.'; $('chat-input').placeholder = lang === 'fa' ? 'پیامت را بنویس…' : 'Write a message…'; document.querySelector('.composer-label').textContent = lang === 'fa' ? 'پیام به دستیار' : 'Message the assistant'; $('chat-input').ariaLabel = lang === 'fa' ? 'پیام به دستیار' : 'Message the assistant'; $('chat-send').textContent = lang === 'fa' ? 'ارسال' : 'Send'; $('chat-clear').textContent = lang === 'fa' ? 'گفت‌وگوی تازه' : 'New conversation'; $('chat-privacy').textContent = lang === 'fa' ? 'پیام و خلاصهٔ تسک‌ها برای پاسخ به سرویس AI ربات فرستاده می‌شود. تاریخچه فقط تا وقتی این صفحه باز است نگه داشته می‌شود.' : 'Your message and a task summary are sent to the bot’s AI provider. Chat history stays in memory until this page closes.'; $('filters').ariaLabel = lang === 'fa' ? 'فیلتر تسک‌ها' : 'Task filters'; $('bottom-nav').ariaLabel = lang === 'fa' ? 'ناوبری' : 'Navigation'; document.querySelector('.skip').textContent = lang === 'fa' ? 'رفتن به تسک‌ها' : 'Skip to tasks'; }
+// Isolate Latin names in system copy without HTML interpolation or changing user content.
+function mixed(tag,text,cls){const el=node(tag,undefined,cls);setMixedText(el,text);return el;}
+function setMixedText(el,text){el.replaceChildren();let last=0;for(const match of String(text||'').matchAll(/[A-Za-z][A-Za-z0-9_.:/+-]*(?: [A-Za-z0-9_.:/+-]+)*/g)){el.append(document.createTextNode(text.slice(last,match.index)));const part=node('bdi',match[0]);part.dir='ltr';el.append(part);last=match.index+match[0].length;}el.append(document.createTextNode(String(text||'').slice(last)));}
+function language(value) { lang = value; L = lang === 'fa' ? fa : en; document.documentElement.lang = lang; document.documentElement.dir = lang === 'fa' ? 'rtl' : 'ltr'; $('heading').textContent = L.heading; $('total-label').textContent = L.open; $('today-label').textContent = L.todayCount; $('late-label').textContent = L.late; $('search').placeholder = L.search; $('search').ariaLabel = L.search; $('refresh').ariaLabel = L.refresh; $('close').ariaLabel = L.close; $('add').ariaLabel = L.add; $('add').title = L.add; $('app').ariaLabel=lang==='fa'?'برنامهٔ تسک‌ها':'Task workspace'; $('day-overview').ariaLabel=lang==='fa'?'خلاصهٔ تسک‌های امروز':'Today summary'; $('week-panel').ariaLabel=lang==='fa'?'انتخاب روز':'Choose a day'; $('search').enterKeyHint='search'; $('chat-input').enterKeyHint='send'; $('bot').textContent = L.bot; $('this-week').textContent = L.today; $('tasks-label').textContent = lang === 'fa' ? "تسک‌ها" : 'To do'; $('upcoming-label').textContent = lang === 'fa' ? "برنامهٔ پیش رو" : 'Coming up'; $('view-plan').textContent = lang === 'fa' ? "مشاهدهٔ تقویم" : 'View plan'; $('prev-week').ariaLabel = lang === 'fa' ? "هفتهٔ پیش" : 'Previous week'; $('next-week').ariaLabel = lang === 'fa' ? 'هفتهٔ بعد' : 'Next week'; for (const b of $('bottom-nav').children)
+    b.querySelector('span').textContent = ({ home: lang === 'fa' ? "خانه" : 'Home', tasks: lang === 'fa' ? 'تسک‌ها' : 'Tasks', calendar: lang === 'fa' ? 'تقویم' : 'Calendar', ai: lang === 'fa' ? 'دستیار' : 'Assistant' })[b.dataset.mode]; $('chat-title').textContent = lang === 'fa' ? "برای برنامه‌ریزی کمک بگیرید" : 'Think it through.'; $('chat-hint').textContent = lang === 'fa' ? "دربارهٔ تسک‌ها بپرسید یا برای برنامه‌ریزی روز کمک بگیرید. دستیار فقط پیشنهاد می‌دهد و تسک‌ها را تغییر نمی‌دهد." : 'Ask about your tasks or plan your day. This chat offers advice only; it does not change tasks.'; $('chat-input').placeholder = lang === 'fa' ? "مثلاً امروز از کدام تسک شروع کنم؟" : 'Write a message…'; document.querySelector('.composer-label').textContent = lang === 'fa' ? 'پیام به دستیار' : 'Message the assistant'; $('chat-input').ariaLabel = lang === 'fa' ? 'پیام به دستیار' : 'Message the assistant'; $('chat-send').textContent = lang === 'fa' ? 'ارسال' : 'Send'; $('chat-clear').textContent = lang === 'fa' ? "گفت‌وگوی جدید" : 'New conversation'; $('chat-privacy').textContent = lang === 'fa' ? "برای دریافت پاسخ، پیام و خلاصهٔ تسک‌ها به سرویس هوش مصنوعی ربات ارسال می‌شود. تاریخچهٔ این گفت‌وگو فقط تا زمان بسته‌شدن صفحه در مینی‌اپ نگه داشته می‌شود." : 'Your message and a task summary are sent to the bot’s AI provider. Chat history stays in memory until this page closes.'; $('filters').ariaLabel = lang === 'fa' ? 'فیلتر تسک‌ها' : 'Task filters'; $('bottom-nav').ariaLabel = lang === 'fa' ? 'ناوبری' : 'Navigation'; document.querySelector('.skip').textContent = lang === 'fa' ? "رفتن به فهرست تسک‌ها" : 'Skip to tasks'; }
 // Telegram's light/dark choice is respected without importing low-contrast arbitrary accent pairs.
-function theme() { document.documentElement.dataset.scheme = tg?.colorScheme || ''; }
+function theme() { const scheme=tg?.colorScheme || (matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'); document.documentElement.dataset.scheme=scheme; document.querySelector('meta[name="theme-color"]')?.setAttribute('content',scheme==='dark'?'#191919':'#f8f8f8'); }
 function formatDate(date) { if (!date)
     return ''; try {
     return new Intl.DateTimeFormat(lang === 'fa' ? 'fa-IR' : 'en-GB', { calendar: owner?.calendar === 'jalali' ? 'persian' : 'gregory', month: 'short', day: 'numeric', timeZone: 'UTC' }).format(new Date(date + 'T12:00:00Z'));
@@ -66,7 +72,7 @@ function calendarOptions() {
     $('calendar-options').hidden = mode !== 'calendar';
     $('week-strip').hidden = mode === 'calendar' && calendarUndated;
     const size = calendarStatuses.size;
-    $('calendar-filter-label').textContent = size === 4 ? (lang === 'fa' ? 'همهٔ وضعیت‌ها' : 'All statuses') : size === 0 ? (lang === 'fa' ? 'هیچ وضعیتی' : 'No statuses') : size + ' ' + (lang === 'fa' ? 'وضعیت' : 'statuses');
+    $('calendar-filter-label').textContent = size === 4 ? (lang === 'fa' ? 'همهٔ وضعیت‌ها' : 'All statuses') : size === 0 ? (lang === 'fa' ? "بدون انتخاب وضعیت" : 'No statuses') : number(size) + ' ' + (lang === 'fa' ? 'وضعیت' : 'statuses');
     $('calendar-filter-summary').ariaLabel = (lang === 'fa' ? 'فیلتر وضعیت: ' : 'Status filter: ') + $('calendar-filter-label').textContent;
     // Keep the checkbox nodes alive so changing a filter never drops keyboard focus.
     const container = $('calendar-statuses');
@@ -88,11 +94,11 @@ function calendarOptions() {
         label.querySelector('span').textContent = statusName(input.value);
     }
     $('calendar-all').textContent = lang === 'fa' ? 'انتخاب همه' : 'Select all';
-    $('calendar-none').textContent = lang === 'fa' ? 'پاک‌کردن انتخاب' : 'Clear selection';
+    $('calendar-none').textContent = lang === 'fa' ? "لغو انتخاب همه" : 'Clear selection';
     const count = calendarTasks().filter(isUndated).length;
-    $('calendar-undated').textContent = (lang === 'fa' ? 'بدون تاریخ' : 'Undated') + ' · ' + count;
+    $('calendar-undated').textContent = (lang === 'fa' ? "بدون تاریخ" : 'Undated') + ' · ' + number(count);
     $('calendar-undated').setAttribute('aria-pressed', String(calendarUndated));
-    $('calendar-hint').textContent = calendarUndated ? (lang === 'fa' ? 'تسک‌هایی که زمان‌بندی، سررسید یا یادآوری ندارند.' : 'Tasks without a plan, deadline or reminder.') : (lang === 'fa' ? 'هر روز شامل زمان‌بندی، سررسید یا یادآوری همان روز است.' : 'Each day includes its planned tasks, deadlines and reminders.');
+    $('calendar-hint').textContent = calendarUndated ? (lang === 'fa' ? "این تسک‌ها تاریخ برنامه، سررسید یا یادآوری ندارند." : 'Tasks without a plan, deadline or reminder.') : (lang === 'fa' ? "در هر روز، تسک‌های برنامه‌ریزی‌شده و تسک‌هایی با سررسید یا یادآوری همان روز نمایش داده می‌شوند." : 'Each day includes its planned tasks, deadlines and reminders.');
 }
 function monthBounds(anchor) { const key = d => datePart(d, { month: 'long', year: 'numeric' }); let first = anchor, last = anchor; while (key(shifted(first, -1)) === key(anchor))
     first = shifted(first, -1); while (key(shifted(last, 1)) === key(anchor))
@@ -102,7 +108,7 @@ function month() {
     strip.className = 'month-grid';
     strip.replaceChildren();
     $('week-label').textContent = datePart(first, { month: 'long', year: 'numeric' });
-    $('prev-week').ariaLabel = lang === 'fa' ? 'ماه قبل' : 'Previous month';
+    $('prev-week').ariaLabel = lang === 'fa' ? "ماه پیش" : 'Previous month';
     $('next-week').ariaLabel = lang === 'fa' ? 'ماه بعد' : 'Next month';
     const offset = (new Date(first + 'T12:00:00Z').getUTCDay() + (lang === 'fa' ? 1 : 6)) % 7, gridStart = shifted(first, -offset), days = Math.ceil((offset + Math.round((Date.parse(last) - Date.parse(first)) / 86400000) + 1) / 7) * 7;
     for (let i = 0; i < 7; i++)
@@ -113,10 +119,10 @@ function month() {
         b.setAttribute('aria-pressed', String(!calendarUndated && date === anchor));
         if (date === owner.today)
             b.setAttribute('aria-current', 'date');
-        b.ariaLabel = datePart(date, { weekday: 'long', month: 'long', day: 'numeric' }) + ' · ' + items.length + ' ' + (lang === 'fa' ? 'تسک' : 'tasks');
+        b.ariaLabel = datePart(date, { weekday: 'long', month: 'long', day: 'numeric' }) + ' · ' + number(items.length) + ' ' + (lang === 'fa' ? 'تسک' : 'tasks');
         b.append(node('span', datePart(date, { day: 'numeric' }), 'month-number'));
         if (items.length) {
-            const count = node('span', (items.length > 99 ? items.length.toLocaleString(lang === 'fa' ? 'fa-IR' : 'en-GB') : items.length + ' ' + (lang === 'fa' ? 'کار' : items.length === 1 ? 'task' : 'tasks')), 'month-task-count sr-only');
+            const count = node('span', (items.length > 99 ? items.length.toLocaleString(lang === 'fa' ? 'fa-IR' : 'en-GB') : number(items.length) + ' ' + (lang === 'fa' ? "تسک" : items.length === 1 ? 'task' : 'tasks')), 'month-task-count sr-only');
             b.append(count);
             const marks = node('span', undefined, 'month-status-marks');
             for (const status of statusKeys)
@@ -133,36 +139,36 @@ function month() {
 }
 function overview() {
     const today = records.filter(onToday), done = today.filter(t => t.status === 'done').length, total = today.length;
-    $('overview-label').textContent = lang === 'fa' ? 'امروز، قدم‌به‌قدم' : 'One task at a time';
+    $('overview-label').textContent = lang === 'fa' ? "خلاصهٔ امروز" : 'One task at a time';
     $('overview-progress').textContent = lang === 'fa' ? `${done.toLocaleString('fa-IR')} از ${total.toLocaleString('fa-IR')} انجام شده` : `${done} of ${total} done`;
-    for (const [id, value, label] of [['overview-today', tasks.filter(onToday).length, L.today], ['overview-open', tasks.length, lang === 'fa' ? 'کار باز' : 'Open'], ['overview-done', done, lang === 'fa' ? 'انجام‌شدهٔ امروز' : 'Done today']]) {
+    for (const [id, value, label] of [['overview-today', tasks.filter(onToday).length, L.today], ['overview-open', tasks.length, lang === 'fa' ? "تسک باز" : 'Open'], ['overview-done', done, lang === 'fa' ? "انجام‌شدهٔ امروز" : 'Done today']]) {
         const el = $(id);
         el.querySelector('strong').textContent = value.toLocaleString(lang === 'fa' ? 'fa-IR' : 'en-GB');
         el.querySelector('span').textContent = label;
-        el.ariaLabel = label + ' · ' + value;
+        el.ariaLabel = label + ' · ' + number(value);
     }
     $('completion-fill').style.width = (total ? done / total * 100 : 0) + '%';
     $('calendar-legend').hidden = mode !== 'calendar' || calendarUndated;
     $('calendar-legend').replaceChildren(...statusKeys.map(s => { const label = node('span', undefined, 'legend-item'); label.append(node('i', undefined, 'status-mark status-' + s), document.createTextNode(statusName(s))); return label; }));
-    $('day-add').textContent = lang === 'fa' ? '+ تسک' : '+ Task';
-    $('day-add').ariaLabel = lang === 'fa' ? 'افزودن تسک برای روز انتخاب‌شده' : 'Add a task to the selected day';
+    $('day-add').textContent = lang === 'fa' ? "+ افزودن" : '+ Task';
+    $('day-add').ariaLabel = lang === 'fa' ? "افزودن تسک به روز انتخاب‌شده" : 'Add a task to the selected day';
 }
-function timeRange(t) { const b = node('bdi', t.plan_start + (t.plan_end ? ' – ' + t.plan_end : '')); b.dir = 'ltr'; return b; }
+function timeRange(t) { const range=node('span',undefined,'time-range'); range.dir=lang==='fa'?'rtl':'ltr'; const first=node('bdi',displayTime(t.plan_start)); first.dir='ltr'; range.append(first); if(t.plan_end){const last=node('bdi',displayTime(t.plan_end));last.dir='ltr';range.append(document.createTextNode(lang==='fa'?' تا ':' – '),last);}return range; }
 function upcoming() { const card = $('next-task'); card.replaceChildren(); const target = selectedDay || owner.today, t = tasks.filter(t => t.plan_date && t.plan_date > target).sort((a, b) => (a.plan_date + (a.plan_start || '')).localeCompare(b.plan_date + (b.plan_start || '')))[0]; if (mode === 'home')
     $('upcoming').hidden = !t; card.classList.toggle('event-empty', !t); if (!t) {
-    card.append(node('strong', lang === 'fa' ? 'جا برای یک برنامهٔ تازه' : 'Room for a fresh plan'), node('small', lang === 'fa' ? 'یک تسک بساز و زمانش را مشخص کن.' : 'Add a task and make time for it.'));
+    card.append(node('strong', lang === 'fa' ? "هنوز برنامه‌ای ثبت نشده است" : 'Room for a fresh plan'), node('small', lang === 'fa' ? "تسک جدیدی اضافه و زمان آن را مشخص کنید." : 'Add a task and make time for it.'));
     card.onclick = () => add();
     return;
 } const date = node('span', undefined, 'event-date'); date.append(node('span', datePart(t.plan_date, { month: 'short' })), node('strong', datePart(t.plan_date, { day: 'numeric' }))); const content = node('span'); const meta = node('span', undefined, 'event-meta'); meta.append(t.plan_start ? timeRange(t) : document.createTextNode(L.plan), document.createTextNode(' · ' + datePart(t.plan_date, { weekday: 'long' }))); content.append(node('span', t.title, 'event-title'), meta); card.append(date, content, node('span', '›', 'event-arrow')); card.onclick = () => details(t); }
 function navigate(next) { mode = next; calendarUndated = false; notice(''); $('toast').hidden = true; filter = next === 'tasks' ? 'all' : 'today'; selectedDay = owner?.today || null; weekOffset = 0; render(); $('app').scrollTop = 0; }
 function late(t) { return (t.deadline && t.deadline < owner?.today) || (!t.deadline && t.plan_date && t.plan_date < owner?.today); }
-function notice(text) { $('notice').hidden = !text; $('notice').textContent = text || ''; }
-function toast(text, undo) { clearTimeout(toastTimer); const e = $('toast'); e.replaceChildren(node('span', text)); if (undo) {
+function notice(text) { $('notice').hidden = !text; setMixedText($('notice'),text || ''); }
+function toast(text, undo) { clearTimeout(toastTimer); const e = $('toast'); e.replaceChildren(mixed('span', text)); if (undo) {
     const b = node('button', L.undo);
     b.onclick = undo;
     e.append(b);
 } e.hidden = false; toastTimer = setTimeout(() => e.hidden = true, 7000); }
-function lock(v) { busy = v; $('app').ariaBusy = String(v); document.documentElement.classList.toggle('saving', v); $('progress').hidden = !v; $('progress').textContent = lang === 'fa' ? 'در حال انجام…' : 'Working…'; for (const b of document.querySelectorAll('#sheet button[type=submit]')) {
+function lock(v) { busy = v; $('app').ariaBusy = String(v); document.documentElement.classList.toggle('saving', v); $('progress').hidden = !v; $('progress').textContent = lang === 'fa' ? "در حال دریافت اطلاعات…" : 'Working…'; for (const b of document.querySelectorAll('#sheet button[type=submit]')) {
     if (v) {
         b.dataset.label = b.textContent;
         b.textContent = lang === 'fa' ? 'در حال ذخیره…' : 'Saving…';
@@ -199,7 +205,7 @@ function render() {
     $('day-overview').hidden = mode !== 'home';
     const overdueCount = tasks.filter(late).length;
     $('overdue-callout').hidden = mode !== 'home' || !overdueCount || filter === 'late';
-    $('overdue-callout').textContent = lang === 'fa' ? `${overdueCount.toLocaleString('fa-IR')} تسک عقب‌افتاده از روزهای قبل · بررسی ←` : `${overdueCount} overdue from previous days · Review →`;
+    $('overdue-callout').replaceChildren(node('span', lang === 'fa' ? `${number(overdueCount)} تسک عقب‌افتاده از روزهای قبل` : `${overdueCount} overdue tasks from previous days`),node('span',lang === 'fa' ? 'مشاهده' : 'Review','callout-action'));
     $('add-label').textContent = L.add;
     $('day-add').hidden = !cal;
     $('chat-panel').hidden = !aiMode;
@@ -209,15 +215,15 @@ function render() {
     $('upcoming').hidden = mode !== 'home';
     document.querySelector('.list-tools').hidden = cal;
     document.querySelector('.search').hidden = cal || mode === 'home' && filter === 'today';
-    $('heading').textContent = cal ? (lang === 'fa' ? 'تقویم کارها' : 'Task calendar') : mode === 'tasks' ? (lang === 'fa' ? 'تسک‌های من' : 'My tasks') : mode === 'ai' ? (lang === 'fa' ? 'دستیار من' : 'My assistant') : L.heading;
-    $('total-label').textContent = lang === 'fa' ? 'تسک در این نما' : 'in this view';
-    $('today-count').textContent = tasks.filter(onToday).length;
-    $('late-count').textContent = tasks.filter(late).length;
+    $('heading').textContent = cal ? (lang === 'fa' ? "تقویم تسک‌ها" : 'Task calendar') : mode === 'tasks' ? (lang === 'fa' ? "همهٔ تسک‌ها" : 'My tasks') : mode === 'ai' ? (lang === 'fa' ? "دستیار" : 'My assistant') : L.heading;
+    $('total-label').textContent = lang === 'fa' ? 'تسک' : 'tasks';
+    $('today-count').textContent = number(tasks.filter(onToday).length);
+    $('late-count').textContent = number(tasks.filter(late).length);
     const target = selectedDay || owner?.today, search = cal ? '' : $('search').value.toLocaleLowerCase();
     const source = cal ? calendarTasks() : tasks;
     const shown = source.filter(t => (cal ? (calendarUndated ? isUndated(t) : onDay(t, target)) : (filter === 'all' || filter === 'today' && onDay(t, target) || filter === 'late' && late(t))) && [t.title, ...t.tags].join(' ').toLocaleLowerCase().includes(search)).sort((a, b) => cal ? ((a.plan_date === target ? a.plan_start : null) || '99:99').localeCompare((b.plan_date === target ? b.plan_start : null) || '99:99') || a.n - b.n : 0);
-    $('total').textContent = shown.length;
-    $('tasks-label').textContent = cal ? (calendarUndated ? (lang === 'fa' ? 'کارهای بدون تاریخ' : 'Undated tasks') : datePart(target, { weekday: 'long', day: 'numeric', month: 'long' })) : (filter === 'late' ? L.late : filter === 'all' ? (lang === 'fa' ? 'همهٔ تسک‌های باز' : 'All open tasks') : (lang === 'fa' ? 'برنامهٔ روز' : 'Daily plan'));
+    $('total').textContent = number(shown.length);
+    $('tasks-label').textContent = cal ? (calendarUndated ? (lang === 'fa' ? "تسک‌های بدون تاریخ" : 'Undated tasks') : datePart(target, { weekday: 'long', day: 'numeric', month: 'long' })) : (filter === 'late' ? L.late : filter === 'all' ? (lang === 'fa' ? "تسک‌های باز" : 'All open tasks') : (lang === 'fa' ? 'برنامهٔ روز' : 'Daily plan'));
     list.replaceChildren();
     for (const t of shown) {
         const row = node('article', undefined, 'task status-' + t.status), tick = node('button', undefined, 'tick'), ring = node('span', undefined, 'check-ring');
@@ -237,7 +243,7 @@ function render() {
         else if (t.status === 'doing')
             ring.append(node('span', undefined, 'doing-dot'));
         tick.append(ring);
-        tick.ariaLabel = (t.status === 'done' ? (lang === 'fa' ? 'بازکردن دوباره' : 'Reopen') : L.done) + ': ' + t.title;
+        tick.ariaLabel = (t.status === 'done' ? (lang === 'fa' ? "بازگشایی تسک" : 'Reopen') : L.done) + ': ' + t.title;
         tick.setAttribute('aria-pressed', String(t.status === 'done'));
         tick.onclick = () => mutate({ action: 'status', n: t.n, status: t.status === 'done' ? 'open' : 'done' }, () => toast(L.saved, () => mutate({ action: 'status', n: t.n, status: t.status })));
         const main = node('button', undefined, 'task-main');
@@ -262,7 +268,7 @@ function render() {
                     date.append(timeRange(t));
             }
             else if (cal)
-                date.textContent = lang === 'fa' ? 'تمام روز' : 'All day';
+                date.textContent = '';
             if (date.textContent)
                 meta.append(date);
         }
@@ -275,27 +281,34 @@ function render() {
         if (t.parent_title)
             meta.append(node('span', L.parent + ' ' + t.parent_title));
         if (t.subs_total)
-            meta.append(node('span', `${t.subs_done || 0}/${t.subs_total}`));
+            meta.append(node('span', `${number(t.subs_done || 0)}/${number(t.subs_total)}`));
         for (const tag of t.tags.slice(0, 3))
             meta.append(node('span', '#' + tag));
         if (t.pending)
-            meta.append(node('span', L.pending));
+            meta.append(mixed('span', L.pending));
         main.append(meta);
         main.onclick = () => details(t);
         const tm = node('span', undefined, 'agenda-time');
         if (t.plan_date === target && t.plan_start) {
-            tm.append(node('bdi', t.plan_start));
+            tm.append(node('bdi', displayTime(t.plan_start)));
             if (t.plan_end)
-                tm.append(node('bdi', t.plan_end, 'agenda-end'));
+                tm.append(node('bdi', displayTime(t.plan_end), 'agenda-end'));
         }
         else
-            tm.textContent = t.plan_date === target ? (lang === 'fa' ? 'تمام روز' : 'All day') : '—';
+            tm.textContent = t.plan_date === target ? (lang === 'fa' ? "بدون ساعت" : 'All day') : '—';
         row.append(tm, tick, main);
         list.append(row);
     }
     if (!shown.length) {
         const empty = node('div', undefined, 'empty');
-        empty.append(node('strong', cal ? (calendarStatuses.size ? (lang === 'fa' ? 'تسکی برای نمایش نیست' : 'No matching tasks') : (lang === 'fa' ? 'وضعیتی انتخاب نشده' : 'No statuses selected')) : L.empty), node('span', cal ? (lang === 'fa' ? 'روز دیگری را انتخاب کن یا فیلتر وضعیت را تغییر بده.' : 'Choose another day or change the status filter.') : L.emptyHint));
+        let title, hint;
+        if (search) { title=lang === 'fa' ? 'نتیجه‌ای پیدا نشد' : 'No results'; hint=lang === 'fa' ? 'عبارت کوتاه‌تری بنویسید یا برچسب دیگری را جست‌وجو کنید.' : 'Try a shorter phrase or a different tag.'; }
+        else if (cal && !calendarStatuses.size) { title=lang === 'fa' ? 'هیچ وضعیتی انتخاب نشده است' : 'No statuses selected'; hint=lang === 'fa' ? 'از فیلتر وضعیت، دست‌کم یک مورد را انتخاب کنید.' : 'Choose at least one status in the filter.'; }
+        else if (cal && calendarUndated) { title=lang === 'fa' ? 'تسک بدون تاریخ ندارید' : 'No undated tasks'; hint=lang === 'fa' ? 'برای دیدن تسک‌های تاریخ‌دار، دوباره «بدون تاریخ» را بزنید.' : 'Toggle Undated off to see scheduled tasks.'; }
+        else if (cal || filter === 'today') { title=lang === 'fa' ? 'برای این روز تسکی نیست' : 'No tasks for this day'; hint=lang === 'fa' ? 'روز دیگری را ببینید یا تسک جدیدی اضافه کنید.' : 'Choose another day or add a task.'; }
+        else if (filter === 'late') { title=lang === 'fa' ? 'تسک عقب‌افتاده‌ای ندارید' : 'No overdue tasks'; hint=lang === 'fa' ? 'برای ادامه، تسک‌های امروز یا همهٔ تسک‌های باز را ببینید.' : 'Continue with today or all open tasks.'; }
+        else { title=lang === 'fa' ? 'تسک بازی ندارید' : 'No open tasks'; hint=lang === 'fa' ? 'تسک جدیدی اضافه کنید. تسک‌های انجام‌شده در تقویم هستند.' : 'Add a task. Completed tasks are in the calendar.'; }
+        empty.append(node('strong',title),node('span',hint));
         list.append(empty);
     }
     for (const b of $('filters').children) {
@@ -305,7 +318,7 @@ function render() {
         if (counter) {
             b.replaceChildren(document.createTextNode(label + ' '), counter);
             counter.className = 'filter-count';
-            counter.textContent = b.dataset.filter === 'today' ? tasks.filter(t => onDay(t, target)).length : tasks.filter(late).length;
+            counter.textContent = number(b.dataset.filter === 'today' ? tasks.filter(t => onDay(t, target)).length : tasks.filter(late).length);
         }
         else
             b.textContent = label;
@@ -314,8 +327,9 @@ function render() {
         b.setAttribute('aria-pressed', String(b.dataset.mode === mode));
     const syncDate = owner?.last_sync_at ? new Date(owner.last_sync_at) : null;
     const pendingCount = records.filter(t => t.pending).length;
-    $('sync').textContent = syncDate ? L.sync + ' · ' + new Intl.DateTimeFormat(lang === 'fa' ? 'fa-IR' : 'en-GB', { timeZone: owner.timezone, month:'short', day:'numeric', hour: '2-digit', minute: '2-digit' }).format(syncDate) + (pendingCount ? ' · ' + pendingCount + ' ' + L.pending : '') : L.never;
-    $('sync').title = lang === 'fa' ? 'زمان آخرین دریافت از Obsidian؛ باز بودن برنامه به‌تنهایی تأیید سینک نیست.' : 'Last snapshot received from Obsidian, not a connection indicator.';
+    const syncText = syncDate ? L.sync + ' · ' + new Intl.DateTimeFormat(lang === 'fa' ? 'fa-IR' : 'en-GB', { timeZone: owner.timezone, month:'short', day:'numeric', hour: '2-digit', minute: '2-digit' }).format(syncDate) + (pendingCount ? ' · ' + number(pendingCount) + (lang==='fa'?' تسک ':' tasks ') + L.pending : '') : L.never;
+    setMixedText($('sync'),syncText);
+    $('sync').title = lang === 'fa' ? "این زمان، آخرین دریافت اطلاعات از Obsidian است؛ باز بودن برنامه به معنی انجام همگام‌سازی نیست." : 'Last snapshot received from Obsidian, not a connection indicator.';
     $('date').textContent = owner ? datePart(owner.today, { weekday: 'long', day: 'numeric', month: 'long' }) : '';
     if (owner) {
         overview();
@@ -433,7 +447,7 @@ function add(parent) {
     f.querySelector('h3').remove();
     const name = field(f, L.title, 'text', '', true);
     name.maxLength = 300;
-    name.placeholder = lang === 'fa' ? 'چه کاری می‌خواهی انجام بدهی؟' : 'What needs to get done?';
+    name.placeholder = lang === 'fa' ? "مثلاً بازبینی گزارش هفتگی" : 'What needs to get done?';
     const schedule = node('fieldset', undefined, 'create-schedule');
     schedule.append(node('legend', L.plan));
     f.append(schedule);
@@ -441,10 +455,10 @@ function add(parent) {
     const times = node('div', undefined, 'form-row');
     schedule.append(times);
     const start = field(times, L.start, 'time'), end = field(times, L.end, 'time');
-    schedule.append(node('p', L.hours + ' ' + owner.timezone + ' · ' + (lang === 'fa' ? 'تاریخ ورودی میلادی است' : 'Gregorian date input'), 'help'));
+    schedule.append(mixed('p', L.hours + ' ' + owner.timezone + ' · ' + (lang === 'fa' ? "تاریخ را به میلادی وارد کنید." : 'Gregorian date input'), 'help'));
     const more = node('details', undefined, 'create-more');
     more.open = !!parent;
-    more.append(node('summary', lang === 'fa' ? 'اولویت، برچسب و زیرتسک' : 'Priority, tags & subtasks'));
+    more.append(node('summary', lang === 'fa' ? "گزینه‌های بیشتر" : 'Priority, tags & subtasks'));
     const options = node('div');
     more.append(options);
     f.append(more);
@@ -454,15 +468,15 @@ function add(parent) {
     sub.type = 'checkbox';
     sub.checked = !!parent;
     sub.disabled = !parentTasks.length;
-    subLabel.append(sub, node('span', lang === 'fa' ? 'این تسک زیرتسک است' : 'Make this a subtask'));
+    subLabel.append(sub, node('span', lang === 'fa' ? "این مورد، زیرتسک است" : 'Make this a subtask'));
     options.append(subLabel);
     const parentWrap = node('div', undefined, 'parent-picker');
     options.append(parentWrap);
-    const p = select(parentWrap, lang === 'fa' ? 'تسک والد' : 'Parent task', parentTasks.length ? parentTasks.map(t => [String(t.n), t.title]) : [['', L.noParent]], parent ? String(parent.n) : String(parentTasks[0]?.n || ''));
+    const p = select(parentWrap, lang === 'fa' ? "تسک اصلی" : 'Parent task', parentTasks.length ? parentTasks.map(t => [String(t.n), t.title]) : [['', L.noParent]], parent ? String(parent.n) : String(parentTasks[0]?.n || ''));
     parentWrap.hidden = !sub.checked;
     sub.onchange = () => parentWrap.hidden = !sub.checked;
     if (!parentTasks.length)
-        f.append(node('p', lang === 'fa' ? 'برای افزودن زیرتسک، ابتدا یک تسک اصلی بساز.' : 'Create a parent task first to add subtasks.', 'help'));
+        f.append(node('p', lang === 'fa' ? "برای افزودن زیرتسک، ابتدا یک تسک اصلی اضافه کنید." : 'Create a parent task first to add subtasks.', 'help'));
     save(f, L.add);
     f.onsubmit = e => {
         e.preventDefault();
@@ -484,22 +498,26 @@ function details(t) {
     openSheet(t.title);
     const facts = node('div', undefined, 'detail-facts');
     if (t.subs_total)
-        facts.append(node('span', `${t.subs_done || 0}/${t.subs_total} · ${lang === 'fa' ? 'زیرتسک تکمیل شده' : 'subtasks complete'}`));
-    facts.append(node('span', L.hours + ' ' + owner.timezone));
+        facts.append(node('span', `${number(t.subs_done || 0)}/${number(t.subs_total)} · ${lang === 'fa' ? "زیرتسک انجام شده" : 'subtasks complete'}`));
+    facts.append(mixed('span', L.hours + ' ' + owner.timezone));
     $('sheet-body').append(facts);
     const st = form(L.status);
     const status = select(st, L.status, [['open', L.openStatus], ['doing', L.doing], ['done', L.done], ['failed', L.failed]], t.status);
     save(st);
     st.onsubmit = e => { e.preventDefault(); mutate({ action: 'status', n: t.n, status: status.value }); };
-    const f = form(L.title), name = field(f, L.title, 'text', t.title, true), p = select(f, L.priority, priorities(), t.priority || ''), due = field(f, L.deadline, 'date', t.deadline), repeat = field(f, L.repeat + ' · 1d / 2w / 1m', 'text', t.repeat), tags = field(f, L.tags, 'text', t.tags.join(' '));
+    const f = form(lang==='fa'?'جزئیات تسک':'Task details'), name = field(f, L.title, 'text', t.title, true), p = select(f, L.priority, priorities(), t.priority || ''), due = field(f, L.deadline+(lang==='fa'?' (میلادی)':''), 'date', t.deadline), repeat = field(f, L.repeat, 'text', t.repeat), tags = field(f, L.tags, 'text', t.tags.join(' '));
     name.maxLength = 300;
     repeat.pattern = '[1-9][0-9]{0,2}[dwm]';
+    const repeatHint=node('p',undefined,'help');
+    if(lang==='fa') repeatHint.append(document.createTextNode('کد تکرار: '),node('bdi','1d'),document.createTextNode(' روزانه، '),node('bdi','2w'),document.createTextNode(' هر دو هفته، '),node('bdi','1m'),document.createTextNode(' ماهانه. برای حذف تکرار، این کادر را خالی بگذارید.'));
+    else repeatHint.textContent='Repeat code: 1d daily, 2w every two weeks, 1m monthly. Leave blank to stop repeating.';
+    repeat.dir='ltr'; repeat.autocapitalize='none'; repeat.spellcheck=false; repeat.parentElement.append(repeatHint);
     save(f);
     f.onsubmit = e => { e.preventDefault(); mutate({ action: 'edit', n: t.n, fields: { title: name.value, priority: p.value || null, deadline: due.value || null, repeat: repeat.value || null, tags: cleanTags(tags.value) } }); };
     const pf = form(L.plan), date = field(pf, L.date, 'date', t.plan_date, true), row = node('div', undefined, 'form-row');
     pf.append(row);
     const start = field(row, L.start, 'time', t.plan_start), end = field(row, L.end, 'time', t.plan_end);
-    pf.append(node('p', L.hours + ' ' + owner.timezone, 'help'));
+    pf.append(mixed('p', L.hours + ' ' + owner.timezone, 'help'));
     save(pf);
     pf.append(button(L.removePlan, () => mutate({ action: 'plan', n: t.n, plan: null }), 'text-button'));
     pf.onsubmit = e => { e.preventDefault(); if (end.value && (!start.value || end.value <= start.value)) {
@@ -528,14 +546,14 @@ function details(t) {
         group.append(summary, f);
     }
 }
-function chatMessage(role, text) { const article = node('article', undefined, 'chat-message ' + role); article.append(node('span', role === 'user' ? (lang === 'fa' ? 'تو' : 'You') : (lang === 'fa' ? 'دستیار' : 'Assistant'), 'chat-author'), node('p', text)); $('chat-messages').append(article); return article; }
+function chatMessage(role, text) { const article = node('article', undefined, 'chat-message ' + role); article.append(node('span', role === 'user' ? (lang === 'fa' ? "شما" : 'You') : (lang === 'fa' ? 'دستیار' : 'Assistant'), 'chat-author'), node('p', text)); $('chat-messages').append(article); return article; }
 function sizeMessage() { const input = $('chat-input'); input.style.height = 'auto'; input.style.height = Math.min(160, input.scrollHeight) + 'px'; }
 $('chat-input').addEventListener('input', sizeMessage);
 $('chat-clear').onclick = () => { if (chatBusy)
     return; chatHistory = []; $('chat-messages').replaceChildren(); $('chat-error').hidden = true; };
 $('chat-form').onsubmit = async (e) => { e.preventDefault(); if (chatBusy || busy)
     return; const input = $('chat-input'), text = input.value.trim(); if (!text)
-    return; chatBusy = true; $('chat-send').disabled = true; $('chat-clear').disabled = true; $('chat-error').hidden = true; chatMessage('user', text); input.value = ''; sizeMessage(); const pending = chatMessage('assistant', lang === 'fa' ? 'دارم بررسی می‌کنم…' : 'Thinking…'); pending.classList.add('thinking'); $('chat-messages').ariaBusy = 'true'; pending.scrollIntoView({ block: 'nearest' }); try {
+    return; chatBusy = true; $('chat-send').disabled = true; $('chat-clear').disabled = true; $('chat-error').hidden = true; chatMessage('user', text); input.value = ''; sizeMessage(); const pending = chatMessage('assistant', lang === 'fa' ? "در حال آماده‌کردن پاسخ…" : 'Thinking…'); pending.classList.add('thinking'); $('chat-messages').ariaBusy = 'true'; pending.scrollIntoView({ block: 'nearest' }); try {
     const data = await request({ action: 'chat', text, history: chatHistory.slice(-8) });
     pending.remove();
     chatMessage('assistant', data.text);
@@ -544,7 +562,7 @@ $('chat-form').onsubmit = async (e) => { e.preventDefault(); if (chatBusy || bus
 }
 catch (err) {
     pending.remove();
-    const msg = err.code === 'offline' ? (lang === 'fa' ? 'پاسخی دریافت نشد؛ اتصال را بررسی کن. متن پیام حفظ شده است.' : 'No reply received. Check your connection; your draft is preserved.') : err.code === 'ai_unavailable' ? (lang === 'fa' ? 'هوش مصنوعی ربات هنوز پیکربندی نشده است.' : 'The bot’s AI provider is not configured yet.') : err.code === 'ai_busy' ? (lang === 'fa' ? 'سرویس هوش مصنوعی فعلاً پاسخ نداد؛ کمی بعد تلاش کن.' : 'The AI service did not respond. Try again later.') : errorMessage(err);
+    const msg = err.code === 'offline' ? (lang === 'fa' ? "پاسخی دریافت نشد. اینترنت را بررسی کنید؛ متن پیام حفظ شده است." : 'No reply received. Check your connection; your draft is preserved.') : err.code === 'ai_unavailable' ? (lang === 'fa' ? "دستیار هنوز راه‌اندازی نشده است. تنظیمات هوش مصنوعی را در ربات بررسی کنید." : 'The bot’s AI provider is not configured yet.') : err.code === 'ai_busy' ? (lang === 'fa' ? "دستیار در دسترس نیست. کمی بعد دوباره پیام بفرستید." : 'The AI service did not respond. Try again later.') : errorMessage(err);
     $('chat-error').textContent = msg;
     $('chat-error').hidden = false;
     input.value = text;
@@ -610,7 +628,7 @@ language(lang);
 theme();
 tg?.ready?.();
 tg?.expand?.();
-$('tasks').append(node('p', L.loading, 'empty'));
+const skeleton=node('div',undefined,'task-skeleton'); skeleton.setAttribute('aria-hidden','true'); skeleton.append(node('span'),node('span'),node('span')); $('tasks').append(skeleton,node('p',L.loading,'loading-copy')); 
 if (!initData) {
     $('heading').textContent = 'Task Pro';
     $('week-panel').hidden = true;
