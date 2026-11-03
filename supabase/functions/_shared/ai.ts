@@ -435,7 +435,7 @@ export function cloudflareAi(config: CloudflareConfig): Ai {
         max_tokens: 2000,
         ...(withTools ? { tools: tools.map((tool) => ({ type: 'function', function: tool })), tool_choice: 'auto' } : {}),
       });
-      let answer = await post(`${root}/v1/chat/completions`, request(true), CHAT_TIMEOUT_MS);
+      let answer = await post(`${root}/v1/chat/completions`, request(tools.length > 0), CHAT_TIMEOUT_MS);
       // A model that does not take `tools` is asked again with the commands described in words only.
       if (answer.status === 400 && tools.length && failure(400, answer.text).kind === 'bad') {
         const [system, ...rest] = messages;

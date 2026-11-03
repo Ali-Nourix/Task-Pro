@@ -171,6 +171,8 @@ export interface Store {
 
   /** Open tasks (not done, not failed), by their number. */
   openTasks(): Promise<TaskRow[]>;
+  /** Current synced rows, including done/failed; deleted rows are not history. */
+  allTasks(): Promise<TaskRow[]>;
   taskByN(n: number): Promise<TaskRow | null>;
   taskByKey(key: string): Promise<TaskRow | null>;
   insertTask(task: Omit<TaskRow, 'n' | 'remind_sent_for'>): Promise<TaskRow>;
@@ -179,7 +181,7 @@ export interface Store {
   /**
    * Makes the vault's rows match the plugin's upload: rows are added or updated,
    * the ones in `keep` are left as they are (a change from Telegram is waiting for
-   * them), and vault rows that are no longer open are removed.
+   * them), and vault rows absent from the authoritative upload are removed.
    */
   replaceSnapshot(rows: SnapshotTask[], keep: ReadonlySet<string>): Promise<void>;
   /** A task made in Telegram has been written into a note: it goes by the note's key from now on. */
@@ -228,6 +230,8 @@ export interface Telegram {
   answer(callbackId: string, text?: string): Promise<void>;
   /** The list of commands in the chat's menu. */
   setCommands(chatId: number, commands: BotCommand[]): Promise<void>;
+  /** Owner-scoped launch button; other bot commands remain available. */
+  setMiniAppMenu?(chatId: number, url: string, text: string): Promise<void>;
   /** Shows «typing…» in the chat while the assistant thinks. */
   typing?(chatId: number): Promise<void>;
   /**

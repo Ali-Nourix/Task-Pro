@@ -26,6 +26,10 @@ export class MemoryStore implements Store {
     return this.tasks.filter((task) => isOpen(task.status)).sort((a, b) => a.n - b.n).map((task) => ({ ...task }));
   }
 
+  async allTasks() {
+    return [...this.tasks].sort((a,b)=>a.n-b.n).map(task=>({...task}));
+  }
+
   async taskByN(n: number) {
     const task = this.tasks.find((candidate) => candidate.n === n);
     return task ? { ...task } : null;

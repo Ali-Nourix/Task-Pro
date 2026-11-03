@@ -980,7 +980,8 @@ async function paired() {
   eq(w.store.tasks.find((t) => t.n === pending.n).status, 'done', 'while a change is waiting, an upload does not undo it');
   const status = (await w.store.pendingCommands())[0];
   await w.sync({ acks: [{ id: status.id }], snapshot: [{ key: 'Inbox.md|Other|0', title: 'Other', status: 'open' }] });
-  eq(w.store.tasks.map((t) => t.title), ['Other'], 'once applied, a task that is not open is gone from the upload and from the list');
+  eq((await w.store.openTasks()).map((t) => t.title), ['Other'], 'once applied, a closed task is excluded from open lists');
+  eq(w.store.tasks.find(t=>t.title==='Call the vet').status,'done','legacy open-only upload preserves known calendar history');
 
   await w.say('call dentist');
   const add = (await w.store.pendingCommands())[0];

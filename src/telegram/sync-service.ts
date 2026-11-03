@@ -128,12 +128,13 @@ export class TelegramSync {
 
     this.running = true;
     try {
-      const snapshot = buildSnapshot(this.host.tasks()!, this.host.defaults());
+      const snapshot = buildSnapshot(this.host.tasks()!, this.host.defaults(), { allStatuses: true });
       const json = JSON.stringify(snapshot);
       const catalog = this.catalog();
       const tagsJson = JSON.stringify(catalog);
       const sentAcks = [...(settings.unconfirmed ?? [])];
       const first = await this.call(endpoint, settings.token, {
+        snapshotScope: 'all',
         acks: sentAcks,
         snapshot: json === this.lastUploaded ? undefined : snapshot,
         tags: tagsJson === this.lastTags ? undefined : catalog,
@@ -153,9 +154,9 @@ export class TelegramSync {
         settings.unconfirmed = [...(settings.unconfirmed ?? []), ...results].slice(-KEEP_UNCONFIRMED);
         await this.host.save();
         // Tell the bot what has been done, along with the notes as they are now.
-        const after = buildSnapshot(this.host.tasks() ?? [], this.host.defaults());
+        const after = buildSnapshot(this.host.tasks() ?? [], this.host.defaults(), { allStatuses: true });
         const acks = [...results];
-        await this.call(endpoint, settings.token, { acks, snapshot: after });
+        await this.call(endpoint, settings.token, { acks, snapshot: after, snapshotScope: 'all' });
         this.lastUploaded = JSON.stringify(after);
         this.confirm(acks);
       }
