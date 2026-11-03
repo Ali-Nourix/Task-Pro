@@ -1,0 +1,8 @@
+node_modules/
+dist.html
+worker.mjs
+deploy-template.gz.b64
+font.css
+persian.woff2
+after.html
+qa-*.png
