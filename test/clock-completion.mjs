@@ -1,0 +1,41 @@
+import * as esbuild from 'esbuild';
+import assert from 'node:assert/strict';
+import { pathToFileURL } from 'node:url';
+const mock = pathToFileURL(new URL('./harness/obsidian-node-mock.mjs', import.meta.url).pathname).href;
+const built = await esbuild.build({ stdin: { contents: `export * from './src/task-clock'; export { localClock, localDayKey } from './src/auto-plan'; export * from './src/pomodoro'; export { TaskTimerService } from './src/timer-service'; export { todayKey } from './src/calendar/calendar-dates'; export { planStartsAt } from './src/reminders/plan-reminders';`, resolveDir: process.cwd(), loader: 'ts' }, bundle: true, write: false, format: 'esm', platform: 'node', plugins: [{ name: 'obsidian', setup(b) { b.onResolve({filter:/^obsidian$/}, () => ({path:mock,external:true})); } }] });
+const { localClock, localDayKey, setTaskTimeZone, taskClockParts, validTimeZone, scheduledEpoch, TaskTimerService, newPomodoro, todayKey, planStartsAt } = await import('data:text/javascript;base64,' + Buffer.from(built.outputFiles[0].text).toString('base64'));
+let checks=0; const eq=(a,b)=>{assert.deepEqual(a,b);checks++;};
+eq(validTimeZone('Asia/Tehran'),true);eq(validTimeZone('Mars/Nowhere'),false);
+eq(taskClockParts(Date.parse('2026-10-16T23:30:00Z'),'Asia/Tehran'),{date:'2026-10-17',minutes:180,second:0});
+eq(taskClockParts(Date.parse('2026-10-16T23:30:00Z'),'America/Los_Angeles').date,'2026-10-16');
+eq(scheduledEpoch('2026-10-17','03:00','Asia/Tehran'),Date.parse('2026-10-16T23:30:00Z'));
+eq(scheduledEpoch('2026-03-08','02:30','America/New_York'),null);
+eq(scheduledEpoch('2026-11-01','01:30','America/New_York'),Date.parse('2026-11-01T05:30:00Z'));
+eq(scheduledEpoch('2026-02-30','01:00','UTC'),null);
+eq(scheduledEpoch('2026-10-16','24:00','UTC'),null);
+setTaskTimeZone('Asia/Tehran');
+eq(planStartsAt({date:'2026-10-17',start:'03:00'}),Date.parse('2026-10-16T23:30:00Z'));
+let now = Date.parse('2026-10-16T23:30:00Z');const realNow=Date.now;Date.now=()=>now;
+eq(todayKey(),'2026-10-17');eq(localDayKey(new Date(now)), '2026-10-17');eq(localClock(new Date(now)), '03:00');
+eq(setTaskTimeZone('Invalid/Zone'),'');
+let entries=[],done=false,completions=0,restarts=0,sounds=0,canComplete=true;
+const flush=()=>new Promise(resolve=>setImmediate(resolve));
+const service=new TaskTimerService({getEntries:()=>entries,setEntries:e=>{entries=e;},save:async()=>{},getLanguage:()=> 'en',getSettings:()=>({timerSound:true,timerSystemNotification:false,timerInStatusBar:false}),playSound:()=>sounds++,onPomodoroComplete:async()=>{completions++;if(canComplete)done=true;return canComplete;},onPomodoroRestart:async()=>{restarts++;done=false;},registerInterval:()=>{}});
+const fresh=()=>({enabled:true,durationSeconds:60,elapsedSeconds:0,runningSince:0,pomodoro:{...newPomodoro(),focusMinutes:1,targetRounds:1}});
+try {
+ await service.set('A.md','a',fresh());eq(restarts,1);
+ await service.start('A.md','a',service.get('A.md','a'));now+=60000;service.tick();service.tick();await flush();
+ eq([done,completions,sounds],[true,1,1]);eq(service.get('A.md','a').completionPending,undefined);
+ done=false;service.tick();await service.reconcileCompletions();eq([done,completions],[false,1]);
+ entries=JSON.parse(JSON.stringify(entries));service.rebuildCache();await service.reconcileCompletions();eq([done,completions],[false,1]);
+ done=true;await service.reset('A.md','a',service.get('A.md','a'));eq([done,restarts],[false,2]);
+ await service.start('A.md','a',service.get('A.md','a'));now+=60000;service.tick();await flush();eq([done,completions],[true,2]);
+ // Delivery interrupted before the task write is retried from durable state.
+ await service.reset('A.md','a',service.get('A.md','a'));canComplete=false;
+ await service.start('A.md','a',service.get('A.md','a'));now+=60000;service.tick();await flush();eq(service.get('A.md','a').completionPending,true);
+ canComplete=true;await service.reconcileCompletions();eq([done,service.get('A.md','a').completionPending],[true,undefined]);
+ const before=completions;await service.set('B.md','b',{enabled:true,durationSeconds:60,elapsedSeconds:0,runningSince:now-60000});service.tick();await flush();eq(completions,before);
+ await service.set('C.md','c',{...fresh(),runningSince:now-60000,pomodoro:{...newPomodoro(),targetRounds:2,focusMinutes:1}});service.tick();await flush();eq(completions,before);eq(service.get('C.md','c').pomodoro.completedRounds,1);
+ let updates=0;const unsub=service.subscribe(()=>updates++);service.render();unsub();service.render();eq(updates,1);
+} finally {service.destroy();Date.now=realNow;setTaskTimeZone('');}
+console.log(`CLOCK_COMPLETION_OK (${checks} checks)`);

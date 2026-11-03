@@ -11,20 +11,20 @@
 // Pure, so it is tested without Obsidian.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { taskClockParts } from './task-clock';
 import { extractSchedule, setSchedule } from './task-metadata';
 import { parseTaskLine, taskKeyFor } from './task-identity';
 import type { TaskSchedule, TaskStatus } from './types';
 
 /** Today, or another moment, as the `YYYY-MM-DD` a plan is written with (local time). */
 export function localDayKey(now: Date = new Date()): string {
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  return taskClockParts(now.getTime()).date;
 }
 
-/** A moment as the `HH:mm` a plan is written with (local time). */
+/** A moment as HH:mm in the configured scheduling zone. */
 export function localClock(now: Date = new Date()): string {
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${pad(now.getHours())}:${pad(now.getMinutes())}`;
+  const minutes = taskClockParts(now.getTime()).minutes;
+  return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
 }
 
 /**

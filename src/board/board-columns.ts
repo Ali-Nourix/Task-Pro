@@ -9,7 +9,7 @@
 
 import type { BoardSortKey } from '../types';
 
-export type BoardPropertyId = 'status' | 'tags' | 'priority' | 'deadline' | 'plan' | 'waiting' | 'repeat' | 'progress' | 'note';
+export type BoardPropertyId = 'status' | 'tags' | 'priority' | 'deadline' | 'plan' | 'waiting' | 'repeat' | 'progress' | 'note' | 'timer';
 
 export interface BoardColumnPref {
   id: BoardPropertyId;
@@ -36,6 +36,7 @@ export const BOARD_PROPERTIES: Record<BoardPropertyId, BoardPropertyInfo> = {
   waiting: { icon: 'hourglass', width: 180, min: 110 },
   repeat: { icon: 'repeat', width: 132, min: 90 },
   progress: { icon: 'pie-chart', width: 112, min: 80, sortKey: 'progress' },
+  timer: { icon: 'timer', width: 224, min: 120 },
   note: { icon: 'file-text', width: 150, min: 90, sortKey: 'note' },
 };
 
@@ -48,6 +49,7 @@ export const DEFAULT_COLUMNS: readonly BoardColumnPref[] = [
   { id: 'plan' },
   { id: 'waiting' },
   { id: 'progress' },
+  { id: 'timer' },
   { id: 'note' },
   { id: 'repeat', hidden: true },
 ];
@@ -60,6 +62,7 @@ export const DEFAULT_CARD_PROPERTIES: readonly BoardColumnPref[] = [
   { id: 'plan' },
   { id: 'waiting' },
   { id: 'progress' },
+  { id: 'timer' },
   { id: 'note' },
   { id: 'status', hidden: true },
   { id: 'repeat', hidden: true },

@@ -9213,6 +9213,7 @@ body {
 }
 
 .taskpro-badge-container.taskpro-chip-scroll {
+  box-sizing: border-box;
   max-width: var(--taskpro-chip-row-max-width);
   overflow-x: auto;
   overflow-y: hidden;
@@ -9378,4 +9379,86 @@ body {
 @media (max-width: 640px) {
   .taskpro-board .taskpro-board__skeleton[data-calendar-view="week"] .taskpro-skeleton__calendar { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .taskpro-board .taskpro-board__skeleton[data-calendar-view="week"] .taskpro-skeleton__calendar > div:nth-child(n+10) { display: none; }
+}
+
+/* Focus clock: one readable countdown, one primary action, shared on phones. */
+.taskpro-clock-panel {
+  width: min(420px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+  box-sizing: border-box;
+}
+.taskpro-clock-panel .taskpro-panel__body { display: flex; flex-direction: column; align-items: stretch; gap: 16px; }
+.taskpro-clock__task { font-size: 16px; overflow-wrap: anywhere; text-align: center; }
+.taskpro-clock__phase, .taskpro-clock__rounds { text-align: center; color: var(--text-muted); font-size: 14px; line-height: 1.5; }
+.taskpro-clock__face {
+  --taskpro-clock-progress: 0deg;
+  width: min(224px, 100%); aspect-ratio: 1; margin-inline: auto; border-radius: 50%;
+  padding: 8px; box-sizing: border-box; display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  background: radial-gradient(closest-side, var(--background-primary) calc(100% - 8px), transparent calc(100% - 7px)),
+    conic-gradient(var(--interactive-accent) var(--taskpro-clock-progress), var(--background-modifier-border) 0);
+}
+.taskpro-clock__time { font-size: clamp(32px, 10vw, 44px); font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.3; color: var(--text-normal); }
+.taskpro-clock__status { font-size: 14px; line-height: 1.5; color: var(--text-muted); }
+.taskpro-clock__controls, .taskpro-clock-panel .taskpro-panel__footer { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+.taskpro-clock__controls > button, .taskpro-clock-panel .taskpro-panel__footer > button { min-height: 44px; flex: 1 1 120px; white-space: normal; }
+.taskpro-clock-panel .taskpro-panel__footer { margin-block-start: 16px; }
+.taskpro-board .taskpro-table__timer .taskpro-timer-badge { max-width: 100%; }
+.taskpro-cal__timer { flex: 0 1 auto; max-width: 100%; overflow: hidden; vertical-align: middle; }
+.taskpro-cal__chip > .taskpro-cal__timer { max-width: 42%; font-size: 10px; }
+.taskpro-cal__block-time .taskpro-cal__timer { margin-inline-start: 4px; max-width: 60%; font-size: 10px; }
+.taskpro-cal__block.is-short .taskpro-cal__timer { display: none; }
+.taskpro-cal__agenda-meta .taskpro-cal__timer { max-width: 100%; }
+.taskpro-badge-container.taskpro-chip-scroll.is-overflowing { cursor: grab; }
+.taskpro-badge-container.taskpro-chip-scroll.is-drag-scrolling { cursor: grabbing; user-select: none; }
+
+/* Container width, not just the screen, governs a note embed in a split pane. */
+.taskpro-note-embed { container-type: inline-size; height: min(640px, 78dvh); min-height: min(280px, 65dvh); }
+@container (max-width: 420px) {
+  .taskpro-note-embed .taskpro-board__header { gap: 8px; }
+  .taskpro-note-embed .taskpro-board__body { min-width: 0; }
+  .taskpro-note-embed .taskpro-board__toolbar { flex-wrap: wrap; }
+}
+@media (max-height: 480px) {
+  .taskpro-note-embed { height: 78dvh; min-height: 180px; }
+  .taskpro-clock__face { width: 144px; }
+}
+
+/* Clock stays above the note without blocking it. Its title bar is the drag handle. */
+.taskpro-panel.taskpro-floating-panel {
+  position: fixed; z-index: calc(var(--layer-modal, 100) - 1);
+  left: 16px; top: 16px; margin: 0; transform: none;
+  min-width: 0; border: 1px solid var(--background-modifier-border);
+}
+.taskpro-clock__handle {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  min-height: 44px; margin-block: -8px 8px; cursor: grab; touch-action: none;
+  user-select: none; border-radius: 6px;
+}
+.taskpro-clock__handle .taskpro-panel__title { margin: 0; font-size: 15px; }
+.taskpro-clock__grip { color: var(--text-muted); display: flex; flex: 0 0 20px; }
+.taskpro-clock__grip svg { width: 20px; height: 20px; }
+.taskpro-clock__handle:focus-visible { outline: 2px solid var(--interactive-accent); outline-offset: 2px; }
+.taskpro-floating-panel.is-dragging .taskpro-clock__handle { cursor: grabbing; }
+/* Obsidian/themes may give mod-cta a fixed 28px height or margin. Normalize
+   every clock control explicitly, including the accent button, without recoloring it. */
+.taskpro-panel.taskpro-clock-panel .taskpro-clock__controls,
+.taskpro-panel.taskpro-clock-panel .taskpro-panel__footer { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; }
+.taskpro-panel.taskpro-clock-panel button.taskpro-panel__btn {
+  box-sizing: border-box; display: flex; align-items: center; justify-content: center;
+  width: 100%; height: auto; min-height: 44px; max-height: none; min-width: 0;
+  margin: 0; padding: 10px 12px; line-height: 1.35; white-space: normal;
+  align-self: stretch;
+}
+
+/* Mobile notes keep one status capsule; its normal task menu holds the controls. */
+.taskpro-badge-container.taskpro-chip-scroll.is-mobile-single-chip {
+  width: auto; max-width: min(100%, 78vw); overflow: visible; flex-wrap: nowrap;
+  touch-action: auto; mask-image: none; -webkit-mask-image: none; cursor: default;
+}
+.taskpro-badge-container.is-mobile-single-chip > .taskpro-chip-collapsed { display: none !important; }
+.taskpro-badge-container.is-mobile-single-chip > .taskpro-chip:not(.taskpro-chip-collapsed) {
+  max-width: 78vw; overflow: hidden;
 }

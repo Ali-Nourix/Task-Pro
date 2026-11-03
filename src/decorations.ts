@@ -296,7 +296,7 @@ class TaskBadgeWidget extends WidgetType {
     const container = document.createElement('span');
     container.className = 'taskpro-badge-container';
     applyChipScale(container, s.badgeSize);
-    makeChipRowScrollable(container);
+    makeChipRowScrollable(container, s.language);
 
     // Embed block ID as a hidden element inside the widget — never in file text
     if (s.blockId) {

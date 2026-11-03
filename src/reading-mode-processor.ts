@@ -2,8 +2,8 @@
 // MarkdownPostProcessor for Reading Mode badges with localization support
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { makeChipRowScrollable } from './ui/chip-scroll';
-import { App, MarkdownPostProcessorContext } from 'obsidian';
+import { makeChipRowScrollable, releaseChipRow } from './ui/chip-scroll';
+import { App, MarkdownPostProcessorContext, MarkdownRenderChild } from 'obsidian';
 import {
   TaskStatus,
   Language,
@@ -187,6 +187,12 @@ export function createReadingModeProcessor(
     }
 
     const taskItems = el.querySelectorAll('li.task-list-item');
+    const rows: HTMLElement[] = [];
+    if (typeof ctx.addChild === 'function') {
+      const lifecycle = new MarkdownRenderChild(el);
+      lifecycle.onunload = () => rows.forEach(releaseChipRow);
+      ctx.addChild(lifecycle);
+    }
 
     taskItems.forEach((item) => {
       // The processor root can contain an embed as a descendant even when the
@@ -198,6 +204,7 @@ export function createReadingModeProcessor(
 
       // Remove existing badge nodes to avoid duplicates
       item.querySelectorAll('.taskpro-badge-container').forEach((existingBadge) => {
+        releaseChipRow(existingBadge as HTMLElement);
         existingBadge.remove();
       });
 
@@ -273,6 +280,7 @@ export function createReadingModeProcessor(
         { subtasks, waiting, remind, remindAt }
       );
 
+      rows.push(badgeContainer);
       hideInlineTaskMetadata(item, settings.showRepeatBadges, settings.showTagBadges, settings.showScheduleBadges);
       if (waiting) hideWaitingMarker(item);
       
@@ -376,7 +384,7 @@ function createInteractiveBadgeContainer(
   const container = document.createElement('span');
   container.className = 'taskpro-badge-container';
   applyChipScale(container, settings.badgeSize);
-  makeChipRowScrollable(container);
+  makeChipRowScrollable(container, settings.badgeLanguage);
 
   if (blockId) {
     container.setAttribute('data-block-id', blockId);

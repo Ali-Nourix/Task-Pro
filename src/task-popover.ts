@@ -1,3 +1,4 @@
+import { pomodoroText } from './pomodoro';
 // ── task-popover.ts ───────────────────────────────────────────────────────
 // Interactive popover for task management
 // ─────────────────────────────────────────────────────────────────────────────
@@ -58,6 +59,7 @@ export interface PopoverOptions {
   onDeadlineChange?: (deadline: string | null) => void;
   onProgressChange?: (progress: TaskProgress | null) => void;
   onTimerChange?: (timer: TaskTimer | null) => void;
+  onOpenTimer?: () => void;
   onTimerStart?: () => void;
   onTimerPause?: () => void;
   onRepeatChange?: (repeat: TaskRepeat | null) => void;
@@ -174,9 +176,14 @@ export class TaskPopover {
       const state = timerState(timer);
       const timerTitle = `${timerLabels.timerLabel}: ${
         state === 'done' ? timerLabels.doneChip : formatTimerClock(timerRemainingSeconds(timer))
-      }`;
+      }${timer.pomodoro ? ` · ${pomodoroText(timer, language)}` : ''}`;
       this.infoMenuTitles.push(timerTitle);
       this.menu.addItem((item) => item.setTitle(timerTitle).setIcon('timer').setDisabled(true));
+
+      if (this.options.onOpenTimer) {
+        this.menu.addItem(item => item.setTitle(timerLabels.openClock).setIcon('clock')
+          .onClick(() => this.options.onOpenTimer?.()));
+      }
 
       if (state === 'running') {
         if (this.options.onTimerPause) {

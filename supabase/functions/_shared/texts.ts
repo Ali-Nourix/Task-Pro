@@ -345,6 +345,8 @@ export interface Words {
     help: string;
     menu: string;
     details: string;
+    more: string;
+    tools: string;
     back: string;
     refresh: string;
     done: string;
@@ -659,6 +661,8 @@ const fa: Words = {
     help: '📖 راهنما',
     menu: '🏠 منو',
     details: '🔎 جزئیات',
+    more: '⋯ بیشتر',
+    tools: '🧰 ابزارها و تنظیمات',
     back: '⬅️ بازگشت',
     refresh: '🔄 تازه‌سازی',
     done: '✅ انجام شد',
@@ -1066,6 +1070,8 @@ const en: Words = {
     help: '📖 Help',
     menu: '🏠 Menu',
     details: '🔎 Details',
+    more: '⋯ More',
+    tools: '🧰 Tools & settings',
     back: '⬅️ Back',
     refresh: '🔄 Refresh',
     done: '✅ Done',
