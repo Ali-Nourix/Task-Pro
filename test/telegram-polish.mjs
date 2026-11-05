@@ -36,5 +36,6 @@ for(const lang of ['fa','en']) for(const ai of [false,true]) {
  await store.patchOwner({ai:false});await say(lang==='fa'?'خرید نان':'Buy bread');const added=sent.at(-1);eq(data(added).some(x=>x.startsWith('undo:')),true,'quick undo retained after new task');
  previews.push({lang,ai,home,tools,compact,more});
 }
-fs.writeFileSync('/data/taskpro-bot-polish-previews.json',JSON.stringify(previews));
+// Preview export is optional; CI and ordinary test runs need no machine-specific path.
+if (process.env.TASKPRO_POLISH_PREVIEWS) fs.writeFileSync(process.env.TASKPRO_POLISH_PREVIEWS, JSON.stringify(previews));
 console.log(`TELEGRAM_POLISH_OK (${checks} checks)`);
