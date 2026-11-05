@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.8.0 — Focus clock, mobile embeds and scheduling timezone
+
+- Open timer chips as a non-modal floating clock with remaining time, circular progress, pause/resume, reset and duration controls. Drag its title bar by mouse/touch or move it with arrow keys; keep notes usable underneath and remember its position within the window/session.
+- Normalize accent and secondary clock buttons to the same width, height and alignment, including themes with fixed-size primary buttons.
+- Complete a task once its target focus rounds finish; retain completion until a manual uncheck or a new cycle. Preserve completed recurring Pomodoro tasks instead of immediately rolling them forward.
+- Show timer phase and completed/target rounds in table, cards, calendar views and the task menu. Keep the floating focus clock reachable from the existing task menu.
+- Adapt embedded views to narrow panes and short screens; show only the mobile status capsule, opening the existing task menu directly without a separate ellipsis or properties popover; preserve desktop horizontal scrolling.
+- Add an explicit IANA scheduling timezone for today/current-time defaults, automatic plans and reminder instants, with DST gap/fold handling. This does not synchronize a wrong device clock.
+- Simplify Telegram home navigation and task cards with Tools and More menus; retain existing commands, editing actions and callback compatibility. No database migration is needed for this UI update; redeploy the telegram Edge Function.
+- Add clock UI, completion/reconciliation, timezone, single-status menu and Telegram navigation regression tests.
+
 ## 1.7.1 — Inline embed state persistence
 
 - Remember each inline block’s layout, filters, calendar mode/system, and visited date across Markdown rerenders and Obsidian restarts, without changing the main board or other embeds.

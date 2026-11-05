@@ -24,7 +24,7 @@ export function finishPomodoroPhase(timer: TaskTimer, now: number): TaskTimer {
   const completedRounds = p.completedRounds + (p.phase === 'focus' ? 1 : 0);
   if (p.phase === 'focus' && completedRounds >= p.targetRounds) {
     return { ...timer, elapsedSeconds: timer.durationSeconds, runningSince: 0, completedAt: now,
-      notifiedAt: now, pomodoro: { ...p, completedRounds } };
+      notifiedAt: now, completionPending: true, pomodoro: { ...p, completedRounds } };
   }
   const phase = p.phase !== 'focus' ? 'focus'
     : completedRounds % p.longBreakEvery === 0 ? 'long-break' : 'short-break';

@@ -50,6 +50,16 @@ export function supabaseStore(url: string, serviceKey: string): Store {
       return ((await one(db.from('tasks').select('*').in('status', OPEN_STATUSES).order('n'), 'open tasks')) ?? []) as TaskRow[];
     },
 
+    async allTasks() {
+      // Supabase caps a single response: page explicitly rather than truncate silently.
+      const rows: TaskRow[]=[];
+      for(let offset=0;;offset+=CHUNK){
+        const page=((await one(db.from('tasks').select('*').in('status',['open','doing','done','failed']).order('n').range(offset,offset+CHUNK-1),'all tasks'))??[]) as TaskRow[];
+        rows.push(...page);if(page.length<CHUNK)break;
+      }
+      return rows;
+    },
+
     async taskByN(n) {
       return (await one(db.from('tasks').select('*').eq('n', n).maybeSingle(), 'task by number')) as TaskRow | null;
     },
@@ -91,7 +101,7 @@ export function supabaseStore(url: string, serviceKey: string): Store {
       for (const batch of keyBatches([...keep])) {
         await one(db.from('tasks').update({ seen_run: run }).in('key', batch), 'keep tasks');
       }
-      // Whatever the notes did not upload is no longer open, unless it is a task made in
+      // Whatever the authoritative upload omitted is no longer in the notes, unless made in
       // Telegram that no note has taken in yet.
       await one(db.from('tasks').delete().eq('pending', false).or(`seen_run.is.null,seen_run.neq.${run}`), 'drop closed tasks');
     },

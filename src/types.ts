@@ -255,6 +255,8 @@ export interface TaskTimer {
   runningSince: number;
   /** Epoch ms when the timer first hit zero. Set once, kept for the chip. */
   completedAt?: number;
+  /** Durable, one-shot task-completion delivery; never re-check an acknowledged task. */
+  completionPending?: boolean;
   /** Suppresses a repeat notification after the first one for this run. */
   notifiedAt?: number;
   /**
@@ -554,6 +556,8 @@ export interface TaskProSettings {
   badgeLanguage: Language;
   badgeSize: number;
   calendarSystem: CalendarSystem; // Calendar system for date display
+  /** IANA scheduling zone; empty follows the device. Does not synchronize its clock. */
+  timeZone: string;
   targetFolder: string; // Folder restriction for plugin activity
   /** Startup scope for note embeds; block explicitly opts in to each fence's scope. */
   embedDefaultScope: EmbedScopeMode;
@@ -638,6 +642,7 @@ export const DEFAULT_SETTINGS: TaskProSettings = {
   tags: [],
   board: DEFAULT_BOARD_PREFERENCES,
   calendar: DEFAULT_CALENDAR_SETTINGS,
+  timeZone: '',
   defaultTimerMinutes: DEFAULT_TIMER_MINUTES,
   timerSystemNotification: true,
   timerSound: true,

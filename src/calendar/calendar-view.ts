@@ -117,6 +117,8 @@ import {
   waitingSections,
 } from '../board/task-actions';
 import type { RelationIndex } from '../board/task-relations';
+import { createTimerChip } from '../ui/chips';
+import { taskClockParts } from '../task-clock';
 import { getRepeatLabels } from '../timer-localization';
 
 /** Pixels per hour on the week and day grids. */
@@ -744,8 +746,7 @@ export class TaskCalendar {
   }
 
   private nowMinutes(): number {
-    const now = new Date();
-    return now.getHours() * 60 + now.getMinutes();
+    return taskClockParts().minutes;
   }
 
   /**
@@ -1544,6 +1545,16 @@ export class TaskCalendar {
     });
   }
 
+  private timerChip(parent: HTMLElement, task: BoardTask): void {
+    const timer = this.ctx.host.getTimer?.(task);
+    if (!timer?.enabled) return;
+    const chip = createTimerChip({ timer, filePath: task.filePath, lineContent: task.line,
+      blockId: this.ctx.host.getTimerBlockId?.(task) ?? task.blockId, language: this.language });
+    chip.addClass('taskpro-cal__timer');
+    chip.addEventListener('pointerdown', (event) => event.stopPropagation());
+    parent.appendChild(chip);
+  }
+
   private chip(parent: HTMLElement, item: CalendarItem): HTMLElement {
     const chip = parent.createDiv({ cls: `taskpro-cal__chip is-${item.kind}` });
     this.decorate(chip, item);
@@ -1554,6 +1565,7 @@ export class TaskCalendar {
     }
     chip.createSpan({ cls: 'taskpro-cal__chip-title', text: displayTitle(item.task.text) || '—', attr: { dir: 'auto' } });
     this.waitingMark(chip, item.task);
+    this.timerChip(chip, item.task);
     if (item.dueHere) this.icon(chip, 'flag', 'taskpro-cal__chip-flag is-due-here');
     return chip;
   }
@@ -1591,7 +1603,8 @@ export class TaskCalendar {
     top.createSpan({ cls: 'taskpro-cal__block-title', text: displayTitle(item.task.text) || '—', attr: { dir: 'auto' } });
     this.waitingMark(top, item.task);
     if (item.dueHere) this.icon(top, 'flag', 'taskpro-cal__chip-flag is-due-here');
-    el.createDiv({ cls: 'taskpro-cal__block-time', text: formatClockRange(start, end, this.cal.timeFormat, this.language) });
+    const timing = el.createDiv({ cls: 'taskpro-cal__block-time', text: formatClockRange(start, end, this.cal.timeFormat, this.language) });
+    this.timerChip(timing, item.task);
     if (props) this.blockProps(el, item);
     el.createDiv({ cls: 'taskpro-cal__resize is-start' });
     el.createDiv({ cls: 'taskpro-cal__resize is-end' });
@@ -1640,6 +1653,7 @@ export class TaskCalendar {
     this.waitingMark(title, task);
 
     const meta = row.createDiv({ cls: 'taskpro-cal__agenda-meta' });
+    this.timerChip(meta, task);
     for (const key of task.tags.slice(0, 3)) {
       const tag = resolveTag(key, this.settings.tags);
       const chip = meta.createSpan({ cls: 'taskpro-chip taskpro-tag-chip', text: tag.name });

@@ -15,12 +15,15 @@ import {
 import { getTimerLabels } from './timer-localization';
 import { addPanelButtonRow, addPanelField, openTaskProPanel } from './ui/panel';
 import { styleTaskProMenu } from './ui/menu-styling';
+import { showTimerClock } from './timer-clock';
 
 export interface TimerPopoverOptions {
   app: App;
   targetElement: HTMLElement;
   timer: TaskTimer;
   language?: Language;
+  getTimer?: () => TaskTimer | undefined;
+  subscribe?: (listener: () => void) => () => void;
   onStart: () => void | Promise<void>;
   onPause: () => void | Promise<void>;
   onReset: () => void | Promise<void>;
@@ -102,15 +105,20 @@ export class TaskTimerPopover {
     const labels = getTimerLabels(this.options.language ?? 'en');
     showTimerEditor({
       language: this.options.language ?? 'en',
-      timer: this.options.timer,
-      onSave: (timer) => {
-        void this.options.onChange(timer);
+      timer: this.options.getTimer?.() ?? this.options.timer,
+      onSave: async (timer) => {
+        await this.options.onChange(timer);
         new Notice(labels.timerUpdated(formatTimerClock(timer.durationSeconds)));
+        this.show();
       },
     });
   }
 
   show(): void {
+    showTimerClock(this.options, () => this.showEditor());
+  }
+
+  showMenu(): void {
     const rect = this.options.targetElement.getBoundingClientRect();
     this.menu.showAtPosition({ x: rect.left, y: rect.bottom });
     styleTaskProMenu(this.infoMenuTitles);
@@ -200,6 +208,7 @@ export function showTimerEditor(options: {
         durationSeconds: pomodoro ? (cycleChanged ? pomodoroDuration(pomodoro) : existing!.durationSeconds) : minutes * 60,
         elapsedSeconds: cycleChanged ? 0 : existing?.elapsedSeconds ?? 0,
         runningSince: cycleChanged ? 0 : existing?.runningSince ?? 0,
+        completionPending: cycleChanged ? undefined : existing?.completionPending,
         completedAt: cycleChanged || !pomodoro ? undefined : existing?.completedAt,
         notifiedAt: cycleChanged || !pomodoro ? undefined : existing?.notifiedAt,
       });

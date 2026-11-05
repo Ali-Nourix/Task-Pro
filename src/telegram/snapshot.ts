@@ -12,7 +12,7 @@ import type { TaskPriority, TaskRepeat, TaskStatus } from '../types';
 export interface SnapshotTask {
   key: string;
   title: string;
-  status: 'open' | 'doing';
+  status: 'open' | 'doing' | 'done' | 'failed';
   priority: TaskPriority | null;
   deadline: string | null;
   plan_date: string | null;
@@ -108,10 +108,12 @@ const REPEAT_TOKEN = { day: 'd', week: 'w', month: 'm' } as const;
 
 export const repeatToken = (repeat: TaskRepeat | undefined): string | null => (repeat ? `${repeat.every}${REPEAT_TOKEN[repeat.unit]}` : null);
 
-const STATUS_WORDS: Partial<Record<TaskStatus, 'open' | 'doing'>> = { '[ ]': 'open', '[/]': 'doing' };
+const STATUS_WORDS: Record<TaskStatus, SnapshotTask['status']> = { '[ ]': 'open', '[/]': 'doing', '[x]':'done', '[!]':'failed' };
 
-/** The open tasks, as the bot wants them. Tasks already done are left out: the bot lists what is open. */
-export function buildSnapshot(tasks: readonly BoardTask[], defaults: ReminderDefaults, noteDay?: (path: string) => string | null): SnapshotTask[] {
+/** Legacy open-only by default; sync may include all statuses and infer daily-note dates. */
+export function buildSnapshot(tasks: readonly BoardTask[], defaults: ReminderDefaults, input: { allStatuses?: boolean; noteDay?: (path: string) => string | null } | ((path: string) => string | null) = {}): SnapshotTask[] {
+  const options = typeof input === 'function' ? { noteDay: input } : input;
+  const noteDay = options.noteDay;
   const out: SnapshotTask[] = [];
   const keyed = keyTasks(tasks);
   const byId = new Map<string, { key: string; task: BoardTask }>();
@@ -119,7 +121,7 @@ export function buildSnapshot(tasks: readonly BoardTask[], defaults: ReminderDef
   const counts = subtaskCounts(tasks);
   for (const [key, task] of keyed) {
     const status = STATUS_WORDS[task.status];
-    if (!status || !task.text.trim()) continue;
+    if (!status || !task.text.trim() || (!options.allStatuses && (status==='done'||status==='failed'))) continue;
     out.push({
       key,
       title: task.text.slice(0, 500),

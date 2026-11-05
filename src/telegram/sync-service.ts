@@ -140,12 +140,13 @@ export class TelegramSync {
         if (!days.has(path)) days.set(path, dailyNoteDay(path));
         return days.get(path)!;
       };
-      const snapshot = buildSnapshot(this.host.tasks()!, this.host.defaults(), noteDay);
+      const snapshot = buildSnapshot(this.host.tasks()!, this.host.defaults(), { allStatuses: true, noteDay });
       const json = JSON.stringify(snapshot);
       const catalog = this.catalog();
       const tagsJson = JSON.stringify(catalog);
       const sentAcks = [...(settings.unconfirmed ?? [])];
       const first = await this.call(endpoint, settings.token, {
+        snapshotScope: 'all',
         acks: sentAcks,
         snapshot: !changedDestination && json === this.lastUploaded ? undefined : snapshot,
         tags: !changedDestination && tagsJson === this.lastTags ? undefined : catalog,
@@ -173,10 +174,10 @@ export class TelegramSync {
         // Tell the bot what has been done, along with the notes as they are now.
         const tasks = this.host.tasks();
         const sameScope = (this.host.scope?.() ?? '') === scope;
-        const after = tasks !== null && sameScope ? buildSnapshot(tasks, this.host.defaults(), noteDay) : undefined;
+        const after = tasks !== null && sameScope ? buildSnapshot(tasks, this.host.defaults(), { allStatuses: true, noteDay }) : undefined;
         if (!sameScope) this.dirty = true;
         const acks = [...results];
-        await this.call(endpoint, settings.token, { acks, snapshot: after });
+        await this.call(endpoint, settings.token, { acks, snapshot: after, snapshotScope: 'all' });
         if (after !== undefined) this.lastUploaded = JSON.stringify(after);
         this.confirm(acks);
       }

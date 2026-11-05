@@ -31,6 +31,7 @@ import {
   TaskRepeat,
   TaskSchedule,
   TaskStatus,
+  TaskTimer,
 } from '../types';
 import { TaskTag, applyTagColor, resolveTag, resolveTagColor } from '../tags';
 import { RemindAt, extractTags, normalizeTagKey, setDeadline, setPriority, setRemind, setSchedule, setTags } from '../task-metadata';
@@ -38,7 +39,7 @@ import { isWithinTargetFolder } from '../path-utils';
 import { gregorianToJalali } from '../date-utils';
 import { getDeadlineInfo } from '../widget-localization';
 import { getRepeatLabels } from '../timer-localization';
-import { buildChip } from '../ui/chips';
+import { buildChip, createTimerChip } from '../ui/chips';
 import {
   BOARD_STATUS_ORDER,
   BoardGroup,
@@ -197,6 +198,8 @@ export interface TaskBoardHost {
   /** Note embeds remember navigation independently of the main board. */
   getCalendarDate?(): string | undefined;
   saveCalendarDate?(day: string): Promise<void>;
+  getTimer?(task: BoardTask): TaskTimer | undefined;
+  getTimerBlockId?(task: BoardTask): string | undefined;
   getProgress(task: BoardTask): TaskProgress | undefined;
   setStatus(task: BoardTask, status: TaskStatus): Promise<void>;
   setPriority(task: BoardTask, priority: TaskPriority | null): Promise<void>;
@@ -1917,7 +1920,7 @@ export class TaskBoard {
   }
 
   private today(): Date {
-    const today = new Date();
+    const today = new Date(`${todayKey()}T00:00:00`);
     today.setHours(0, 0, 0, 0);
     return today;
   }
@@ -2623,6 +2626,12 @@ export class TaskBoard {
   }
 
   /** The progress a task shows: its own bar, else its subtasks. */
+  private timerChip(parent: HTMLElement, task: BoardTask): void {
+    const timer = this.host.getTimer?.(task);
+    if (timer?.enabled) parent.appendChild(createTimerChip({ timer, filePath: task.filePath, lineContent: task.line,
+      blockId: this.host.getTimerBlockId?.(task) ?? task.blockId, language: this.language }));
+  }
+
   private shownProgress(task: BoardTask): TaskProgress | undefined {
     const own = this.host.getProgress(task);
     if (own?.enabled) return own;
@@ -3293,6 +3302,8 @@ export class TaskBoard {
       case 'waiting':
         cell.toggleClass('is-editable', !!this.host.setWaiting);
         return this.waitingChips(cell, task);
+      case 'timer':
+        return this.timerChip(cell, task);
       case 'progress':
         return this.progressBar(cell, task);
       case 'note':
@@ -3479,6 +3490,9 @@ export class TaskBoard {
         case 'repeat':
           if (task.repeat) item('repeat', CHIP_ICON_NAMES.repeat, getRepeatLabels(this.language).chip(task.repeat));
           break;
+        case 'timer':
+          this.timerChip(meta, task);
+          break;
         case 'progress': {
           const progress = this.host.getProgress(task);
           const count = this.subtaskProgress(task);
@@ -3537,6 +3551,9 @@ export class TaskBoard {
         return;
       case 'repeat':
         if (task.repeat) this.repeatChip(cell(), task);
+        return;
+      case 'timer':
+        if (this.host.getTimer?.(task)) this.timerChip(cell(), task);
         return;
       case 'progress':
         if (this.shownProgress(task)) this.progressBar(cell(), task);
@@ -4699,6 +4716,9 @@ export class TaskBoard {
           break;
         case 'waiting':
           if (task.waiting?.length) this.waitingChips(props.createDiv({ cls: 'is-editable taskpro-card__waiting' }), task);
+          break;
+        case 'timer':
+          this.timerChip(props, task);
           break;
         case 'progress':
           this.progressBar(props, task);

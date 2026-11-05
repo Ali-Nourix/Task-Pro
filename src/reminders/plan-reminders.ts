@@ -12,6 +12,7 @@
 // a few minutes behind; older ones are let go.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { scheduledEpoch } from '../task-clock';
 import { Notice } from 'obsidian';
 import type { Language, ReminderSettings, TaskSchedule } from '../types';
 import type { BoardTask } from '../board/task-store';
@@ -39,12 +40,12 @@ export interface DueReminder {
   kind: 'plan' | 'moment';
 }
 
-/** When a timed plan starts, in epoch milliseconds, local time. Null for a whole-day plan. */
+/** When a timed plan starts, in epoch milliseconds, in the configured scheduling zone. Null for a whole-day plan. */
 export function planStartsAt(schedule: TaskSchedule): number | null {
   const time = /^(\d{1,2}):(\d{2})$/.exec(schedule.start ?? '');
   const day = /^(\d{4})-(\d{2})-(\d{2})$/.exec(schedule.date);
   if (!time || !day) return null;
-  return new Date(Number(day[1]), Number(day[2]) - 1, Number(day[3]), Number(time[1]), Number(time[2])).getTime();
+  return scheduledEpoch(schedule.date, schedule.start!);
 }
 
 export function reminderKey(task: BoardTask, lead: number): string {

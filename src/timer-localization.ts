@@ -7,6 +7,7 @@ import { isolate } from './bidi';
 
 export interface TimerLabels {
   timerLabel: string;
+  openClock: string;
   doneChip: string;
   chipAria: (clock: string, state: TaskTimerState) => string;
   statusBarAria: (note: string) => string;
@@ -35,6 +36,7 @@ export function getTimerLabels(language: Language): TimerLabels {
   if (language === 'fa') {
     return {
       timerLabel: 'تایمر تمرکز',
+      openClock: 'باز کردن ساعت تمرکز',
       doneChip: 'تمام شد',
       chipAria: (clock, state) =>
         state === 'running'
@@ -69,6 +71,7 @@ export function getTimerLabels(language: Language): TimerLabels {
 
   return {
     timerLabel: 'Focus timer',
+    openClock: 'Open focus clock',
     doneChip: 'Done',
     chipAria: (clock, state) =>
       state === 'running'

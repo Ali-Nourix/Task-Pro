@@ -154,6 +154,10 @@ export function telegramApi(token: string, options: { thinking?: 'text' | 'rich'
     async setCommands(chatId: number, commands: BotCommand[]) {
       await call('setMyCommands', { commands, scope: { type: 'chat', chat_id: chatId } }).catch(() => undefined);
     },
+    async setMiniAppMenu(chatId: number, url: string, text: string) {
+      if (!url.startsWith('https://')) return;
+      await call('setChatMenuButton', { chat_id: chatId, menu_button: { type: 'web_app', text, web_app: { url } } });
+    },
     async typing(chatId: number) {
       await call('sendChatAction', { chat_id: chatId, action: 'typing' }).catch(() => undefined);
     },
