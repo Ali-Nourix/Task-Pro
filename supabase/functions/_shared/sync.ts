@@ -1,6 +1,7 @@
 // The sync with the plugin: new clients upload every status and what they applied,
 // and is handed the changes made in Telegram since.
 
+import { dailyNoteDay } from './note-day.ts';
 import { addDays, isClock, isRealDate } from './time.ts';
 import { words } from './texts.ts';
 import type { CommandRow, OwnerRow, SnapshotTask, Status, Store, TagInfo, Telegram } from './types.ts';
@@ -54,7 +55,7 @@ export function cleanTask(value: unknown): SnapshotTask | null {
     status: v.status as Status,
     priority: typeof v.priority === 'string' && PRIORITIES.has(v.priority) ? (v.priority as SnapshotTask['priority']) : null,
     deadline: date(v.deadline),
-    plan_date: date(v.plan_date),
+    plan_date: date(v.plan_date) ?? dailyNoteDay(text(v.note_path, 600) ?? ''),
     plan_start: clock(v.plan_start),
     plan_end: clock(v.plan_end),
     remind_at: remind,

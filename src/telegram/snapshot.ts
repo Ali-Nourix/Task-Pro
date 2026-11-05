@@ -110,8 +110,10 @@ export const repeatToken = (repeat: TaskRepeat | undefined): string | null => (r
 
 const STATUS_WORDS: Record<TaskStatus, SnapshotTask['status']> = { '[ ]': 'open', '[/]': 'doing', '[x]':'done', '[!]':'failed' };
 
-/** Legacy open-only by default; sync opts into every status for the Mini App calendar. */
-export function buildSnapshot(tasks: readonly BoardTask[], defaults: ReminderDefaults, options: { allStatuses?: boolean } = {}): SnapshotTask[] {
+/** Legacy open-only by default; sync may include all statuses and infer daily-note dates. */
+export function buildSnapshot(tasks: readonly BoardTask[], defaults: ReminderDefaults, input: { allStatuses?: boolean; noteDay?: (path: string) => string | null } | ((path: string) => string | null) = {}): SnapshotTask[] {
+  const options = typeof input === 'function' ? { noteDay: input } : input;
+  const noteDay = options.noteDay;
   const out: SnapshotTask[] = [];
   const keyed = keyTasks(tasks);
   const byId = new Map<string, { key: string; task: BoardTask }>();
@@ -126,7 +128,7 @@ export function buildSnapshot(tasks: readonly BoardTask[], defaults: ReminderDef
       status,
       priority: task.priority ?? null,
       deadline: task.deadline ?? null,
-      plan_date: task.schedule?.date ?? null,
+      plan_date: task.schedule?.date ?? noteDay?.(task.filePath) ?? null,
       plan_start: task.schedule?.start ?? null,
       plan_end: task.schedule?.end && task.schedule.end !== '24:00' ? task.schedule.end : null,
       remind_at: reminderAt(task, defaults),

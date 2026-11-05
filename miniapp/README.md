@@ -1,117 +1,56 @@
-# Task Pro Telegram Mini App
+# TaskPro Mini App
 
-Mobile-first companion to the existing single-owner bot. The conversational bot,
-AI, reminders, settings, commands and legacy callback buttons remain available.
-There is no second task database.
+Production redesign, stacked on `fix/telegram-target-folder-sync`. No database migration or Edge Function replacement is required for this UI release.
 
-## Implemented
-
-- Persian/English, RTL/LTR, bundled Vazirmatn font, light/dark Telegram themes.
-- Home: real Today/Open/Done counts, daily completion progress, interactive week strip and actionable tasks in the first viewport. Future planned tasks appear below the list; today’s task is not repeated as an upcoming card.
-- Tasks: all open tasks, Today/Overdue filters and title/tag search.
-- Calendar: a complete Jalali/Gregorian month with every status (open, in progress, done, not done), multi-select status filters, Select all/Clear selection, undated tasks and a selected-day agenda. Counts and markers use the same filtered records. Only display filter preferences persist locally. Home keeps its compact week strip and active-task lists.
-- Create normal tasks by default; an explicit subtask toggle reveals the custom parent picker. Complete with quick Undo, change status/title/priority,
-  deadline, recurrence and tags; set/remove a plan or reminder; confirmed delete.
-- Owner timezone governs plan/reminder entry. List dates follow the owner's
-  calendar; browser date-entry fields use Gregorian ISO dates, explained inline.
-- Shared custom comboboxes (keyboard arrows, Home/End, Enter, Escape), composite search focus, immediate saving feedback and a single HTTP snapshot response per mutation.
-- Assistant tab: task-aware AI conversation using the bot’s existing Cloudflare AI secrets. Chat is explicitly read-only: advice does not silently change tasks; existing bot AI commands remain available. No new credentials are needed if bot AI is already configured. Missing credentials yield a clear unavailable message. Chat history is memory-only, limited to eight lines, with a 2,000-character user message limit; task summaries (up to 60 open tasks) and history go to the existing provider. No tool calls execute, and both user and model text render via textContent.
-- Collapsible editing sections, keyboard focus, accessible names, 44px controls,
-  reduced motion, offline/session-expiry messages and safe text-only titles.
-
-The backend reads the existing task snapshot, including all four statuses when
-uploaded by the updated plugin (`snapshotScope:all`). **Install the updated
-Obsidian plugin and sync once to populate completed/failed tasks still in notes.**
-Records already removed by older open-only snapshots cannot be recovered without
-the notes. This is not an immutable completion-event archive: deleted notes/tasks
-are removed by a later authoritative all-status upload. Old clients retain known
-closed records but cannot upload missing historical closed tasks. Existing sync
-limit remains 5,000 tasks; oversized uploads fail rather than silently truncate.
-Calendar days include plan date, deadline or reminder in the owner timezone;
-a task matching multiple fields on the same day is counted once. Unscheduled
-records are accessible under Undated rather than assigned a fictitious date. Obsidian receives edits through the bot's existing command queue on its
-next sync. Do not treat a lost network response as proof a write failed; refresh
-before retrying. Mutation requests are not automatically retried or guaranteed
-transactionally atomic/idempotent.
-
-## Security
-
-`miniapp` validates Telegram's HMAC-signed `initData` on every POST, accepts at
-most one-hour-old sessions (30-second future skew), rejects duplicate query
-parameters, and checks the signed user ID against `bot_owner.chat_id` and the
-existing optional `ALLOWED_USER_ID` lock **before any task reads/writes**.
-`initDataUnsafe` is used only for initial UI language, never authorization.
-
-No bot token or service-role key belongs in this frontend. No credentials are
-stored in localStorage, URL parameters or source. Request bodies are size-limited,
-CORS permits only the configured frontend origin, and API responses are no-store.
-This companion is single-owner, just like the existing installation; it is not a
-multi-tenant SaaS or a public bot for arbitrary Telegram users.
-
-## Build and activate
-
-1. Confirm the **existing bot project**, schema and webhook before deploying.
-   This addition requires no new schema or secrets for an up-to-date installation.
-2. Build the public frontend:
-
-   ```sh
-   TASKPRO_API_URL=https://YOUR_PROJECT.supabase.co/functions/v1/miniapp node miniapp/build.mjs
-   ```
-
-3. Publish `miniapp/dist/worker.js` as a Cloudflare Worker (ES module). Use its
-   real HTTPS URL; `dist/index.html` is also a self-contained static build.
-   The Worker sets CSP (including Telegram SDK, API origin and embedded font),
-   no-cache, nosniff, restrictive Permissions-Policy and Referrer-Policy headers.
-4. Set the **public HTTPS frontend URL**, not the API URL, in
-   `supabase/functions/_shared/miniapp-config.ts` (`MINI_APP_URL`). Redeploy both
-   `telegram` and `miniapp`. Keep existing secrets and webhook unchanged.
-5. The registered owner sends `/app` or `/start` in the private bot chat. The
-   bot configures the owner-specific **Task Pro** Telegram menu button using `setChatMenuButton`. Send `/app` again to replace an older button label. The document title is also Task Pro; BotFather profile/Main Mini App metadata is a separate owner-controlled setting.
-   Open the button and verify real authenticated reads and one reversible edit.
-   Never extract the production bot token just to manufacture test initData.
-
-Current deployment: https://taskpro-miniapp.alinorizadeh1384.workers.dev
-
-`MINI_APP_URL` is set to this public frontend, and API health reports `ready:true`.
-The owner reported a successful connection. Automated tests still use signed local fixtures, not a fabricated production session. Send `/app` or `/start` if the owner-specific menu needs configuring. For a fresh deployment,
-do not copy an unrelated installation's URL. Clearing `MINI_APP_URL` intentionally
-denies browser API origins and makes health report `ready:false`; it does not
-revoke an already configured Telegram menu button.
-
-For a native profile **Launch app** button, select this bot in @BotFather and configure its **Main Mini App** with the public frontend URL above (not the Supabase API URL). This is an owner action, separate from our owner-scoped chat menu. It enables the native profile launcher and `https://t.me/<botusername>?startapp`; signed initData/owner checks remain unchanged. No BotFather setting was changed automatically.
-
-Official Telegram specification: https://core.telegram.org/bots/webapps
-
-## Verification
+## Build and test
 
 ```sh
-npm run build
+cd miniapp
+npm install
+npx playwright install chromium
 npm test
-TASKPRO_API_URL=https://YOUR_PROJECT.supabase.co/functions/v1/miniapp npm run build:miniapp
-PW_CHROMIUM=$(command -v chromium) npm run test:miniapp-ui
 ```
 
-UI tests use mock fixtures, never private production task data. Captured images
-are browser previews, not screenshots from a real Telegram client. Backend tests
-exercise signature/expiry/ownership/CORS/validation, shared queue effects, and
-protection against unauthorized access and accidental deletes.
+Tests launch Chromium at `CHROME_PATH` or the Playwright installation. Synthetic Telegram/API fixtures are generated **only** as `after.html`; they are never imported by `index.html`, `dist.html` or `worker.mjs`. Never publish fixture pages.
 
-## Design provenance
+`node build.mjs` produces self-contained `dist.html` and `worker.mjs`. The Worker uses standard Web Streams gzip decompression once per isolate, keeps the result in memory, serves GET/HEAD, and rejects other methods. No build service or external asset hosting is needed. The three font text fragments concatenate to the unchanged, originally deployed Vazirmatn variable font declaration (SIL OFL, see OFL.txt).
 
-Restyled from the user's organizer/calendar references using the `minimalist-ui`
-and `redesign-existing-projects` guides from `Leonxlnx/taste-skill`. The latest TODO-focused redesign follows the user’s peach/teal and pastel task-app references: cool quiet canvas, peach daily overview, teal actions, consistent task records and semantic status colors. It replaces the earlier rejected olive/neutral direction. A compact calendar gives room to the day agenda; the bottom navigation has reserved layout space. Reference avatars, chat messages, notes and alarms are not invented
-as features or fake user data. Calendar includes a month grid and day agenda, not a drag-and-drop weekly scheduler. Vazirmatn is distributed under the SIL Open Font License;
-see `assets/OFL.txt` and the notice embedded in `assets/font.css`.
+## Authentication and privacy
 
-## Latest UI audit
+- Telegram initData stays in memory and is sent as `Authorization: tma …`, never in URLs or storage.
+- Supabase validates signatures, ownership and the exact allowed origin. No auth bypass is shipped.
+- All task/message content uses textContent, not HTML interpolation.
+- Existing CSP, Telegram frame restrictions, no-referrer, nosniff and disabled device permissions are preserved.
+- No analytics, trackers, external fonts or user content in source.
 
-Used 0design/unslop-skill’s local detector and requirement-fidelity protocol; see `plans/003-miniapp-controls-calendar.md` and `plans/004-calendar-statuses.md`. Remote UNSLOP canon was not connected, so no canon-based pass or full project audit is claimed. Token declarations were distinguished from real token bypasses; screenshot fixes live in the shared controls, not generated output. Behavioral checks cover monthly calendar boundaries including Jalali leap years, parent controls, keyboard selection, AI failure/unsafe text, and one-request mutation snapshots.
+## Product behavior
 
-## TODO product redesign
+- Home shows the selected day's active tasks. Prior overdue tasks remain in a clearly labelled separate review filter; no dates are rewritten.
+- Overdue matches the bot: overdue deadline, or past planned date when there is no deadline. A future deadline is not labelled overdue solely because of an earlier plan.
+- Today-done summary and its calendar destination share today's scope. List tally counts the displayed rows, not every active task.
+- Calendar retains all four statuses, undated tasks, Jalali display, time zone and keyboard navigation.
+- Create/edit/status/subtask/reminder/delete and undo contracts remain unchanged.
+- Errors preserve form input. Pending labels reflect actual pending records. Last-sync text is a dated snapshot receipt, **not** a claim that Obsidian is online.
+- Returning after 30 seconds or reconnecting triggers only a read refresh; active sheets/chat are not interrupted and writes are never retried automatically.
 
-- Shared CSS was consolidated instead of layering more overrides. Persian/English, Telegram/system light and dark modes and Vazirmatn remain supported.
-- Calendar shows all four statuses and undated tasks. Status filters float without shifting the month; Escape/outside click dismiss them. Dates support arrow-key navigation. Agenda time appears once, as a start/end rail.
-- Creation can send title, date/time range, priority, tags and parent in one existing API request. Priority/tags/subtasks use progressive disclosure. Invalid or incomplete time ranges show inline validation without sending a request. A calendar-day creation preselects that day.
-- Long forms scroll inside a separate body, leaving the title/close control visible without covering fields. Custom choice menus scroll fully into view.
-- AI stays read-only; authentication, task sync and backend schemas are unchanged. This frontend-only update requires no plugin ZIP or Supabase redeploy.
-- Verification: build and 22 regression suites (2,328 checks); 240 browser checks, including creation payloads, time validation, first-viewport task visibility, keyboard filters, long forms, dense six-week calendars and unsafe text. QA uses fixture data, not production owner sessions.
+## Deployment and rollback
+
+Target: existing Cloudflare Worker `taskpro-miniapp`, original compatibility date `2026-10-01`, no bindings. Upload generated `worker.mjs` as ES module `worker.js`; preserve worker name, route and settings. Frontend Supabase origin remains unchanged.
+
+Prior production version: `56489114-619a-4629-8925-5c0942692c80`. Roll back via Cloudflare version deployments if needed. UI deployment does not roll back sync v25 or edit any task rows.
+
+## Bounded verification
+
+Existing plugin/server regression: 2,098 checks across 20 suites, plus 24 current-production-source end-to-end checks passed before redesign. Initial redesign UI: 28 browser checks with synthetic records (home/all/overdue/search, responsive widths 360/390/768/1440, details, failed create preserving draft, retry, status/undo, calendar/undated, assistant response, dark theme, outside-Telegram auth gate), plus 3 Worker build/HTTP checks. Screenshots visually reviewed for mobile/desktop, calendar, details, error and dark mode. This does not certify absence of all bugs or replace checking the real Telegram WebView on the user's device.
+
+Initial design (superseded): UI UX Pro Max accessible flat/minimal guidance + taste-skill app/workspace Achromatic ledger, seed 1127536246. Product face: daily-note-aware date lanes, explicit overdue boundary and honest Obsidian snapshot receipt. Persian typography is retained rather than substituting a Latin-only recommendation. Existing behavior is modularized, not migrated to a new framework.
+
+Seven-question critique: the main job is today's work; primary create is clear; navigation and selected day are visible; data density remains scannable; dates/statuses and sync source provide product identity; error/empty states remain actionable; mobile and RTL are first-class. Deliberate exceptions: no photos or decorative charts for a task utility, and no animation required for comprehension.
+
+## Layout and Persian follow-up
+
+The subsequent Impeccable/Emil/Persian-writing refinement has 42 browser checks and 3 Worker checks. See REFINEMENT.md for scope, copy policy, evidence and real-device limitations. This pass does not rerun or replace the earlier 2,098 backend/plugin checks.
+
+## Replacement visual world
+
+The rejected achromatic direction is replaced by Daily folio, based on the Taste editorial-greeting app workflow and inspected Things/Todoist/Structured references. See ../PRODUCT.md, ../DESIGN.md and REDESIGN.md for decisions, repository usage,49 current browser checks and the explicitly incomplete Taste runtime inspector. Persian copy policy and backend/auth contracts are preserved.

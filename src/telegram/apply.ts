@@ -29,6 +29,8 @@ export interface Result {
 export interface ApplyHost {
   /** Every task the notes hold now. */
   tasks(): BoardTask[];
+  /** Reject writes outside the current target folder before touching a note. */
+  canWritePath?(path: string): boolean;
   /** The note a new task goes into, or null when there is none. */
   inboxPath(): string | null;
   appendLine(path: string, line: string): Promise<boolean>;
@@ -136,12 +138,14 @@ async function applyOne(command: Command, host: ApplyHost, aliases: Map<string, 
       if (!(await host.insertChild!(parent, line))) return void (result.error = 'the subtask could not be written under its task');
       path = parent.filePath;
     } else if (day && DAY.test(day) && host.addTaskOnDay && host.dayTarget?.(day)) {
+      if (host.canWritePath?.(host.dayTarget(day)!) === false) return void (result.error = 'the daily note is outside the target folder; update Calendar settings');
       // A task made for a day goes into that day's note, as one added on the calendar would.
       path = await host.addTaskOnDay(day, line);
       if (!path) return void (result.error = "the day's note could not be written");
     } else {
       path = host.inboxPath();
       if (!path) return void (result.error = 'no inbox note is set');
+      if (host.canWritePath?.(path) === false) return void (result.error = 'the inbox note is outside the target folder; update the inbox setting');
       if (!(await host.appendLine(path, line))) return void (result.error = 'the inbox note could not be written');
     }
     const schedule = payload.tracked === true ? plan(payload.plan) : null;
